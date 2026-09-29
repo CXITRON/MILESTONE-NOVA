@@ -4,6 +4,8 @@
 - **Date:** YYYY-MM-DD
 - **Status:** Completed
 - **Related Requests:** U#### 또는 N/A
+- **Author:** <보고서 작성 agent 이름>
+- **Performed By:** <작업 수행 agent 이름>
 
 ## Title
 
