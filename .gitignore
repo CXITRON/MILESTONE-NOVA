@@ -1,4 +1,8 @@
-AGENTS.md
-MILESTONE_Legacy/
-docs/
-scripts/
+/AGENTS.md
+/MILESTONE_Legacy/
+/build/
+/data/config/secrets.ini
+/data/config/ota_public.pem
+*.pem
+*.key
+__pycache__/

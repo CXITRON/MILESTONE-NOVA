@@ -1,0 +1,50 @@
+#pragma once
+#include "../settings/Values.h"
+#include <cstddef>
+#include <cstdint>
+namespace nova {
+struct WifiScanItem {
+  char ssid[33]{};
+  int16_t rssi = 0;
+  uint8_t auth = 0;
+  bool supported = false;
+};
+struct NetworkView {
+  char status[64]{}, ip[24]{}, ssid[33]{}, test[96]{};
+  bool connected = false, ap = false, scanning = false;
+  unsigned scanCount = 0;
+  WifiScanItem scan[24]{};
+};
+class Network {
+public:
+  void begin(const Secrets &, const Settings &);
+  void configure(const Secrets &, const Settings &);
+  void tick(uint32_t now, bool bleConnected);
+  void stop();
+  bool openAp(const Secrets &, const Settings &);
+  void closeAp();
+  bool ap() const { return ap_; }
+  const char *apPassword() const { return apPassword_; }
+  bool scan();
+  bool test(const WifiProfile &);
+  bool takeSaved(WifiProfile &);
+  void saveResult(bool saved);
+  void timeSync();
+  bool connected() const;
+  bool settled(uint32_t now) const;
+  const char *status() const;
+  void address(char *, size_t) const;
+  void snapshot(NetworkView &) const;
+
+private:
+  void connect(const WifiProfile &);
+  WifiProfile profiles_[8]{}, candidate_{};
+  unsigned count_ = 0, index_ = 0;
+  char timezone_[48]{}, apPassword_[65]{}, testStatus_[96] = "대기";
+  uint32_t started_ = 0, attempt_ = 0, retry_ = 30000, stable_ = 0, lastNtp_ = 0,
+           ntpSeconds_ = 21600, retrySeconds_ = 300;
+  bool configured_ = false, attempting_ = false, ntp_ = false, off_ = false, ap_ = false,
+       testing_ = false, saved_ = false, scanning_ = false, bootSync_ = true;
+  NetworkView scans_{};
+};
+} // namespace nova

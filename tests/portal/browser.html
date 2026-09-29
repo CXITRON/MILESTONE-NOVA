@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="ko">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>NOVA 브라우저 회귀 검사</title>
+<link rel="stylesheet" href="/style.css">
+<h1>NOVA 브라우저 검사</h1>
+<p>실제 canvas, 이미지/영상 디코더, IndexedDB를 사용합니다. 장치 API는 호출하지 않습니다.</p>
+<pre id="results" role="status">검사 중</pre>
+<script type="module">
+import {convert, drawNvi} from '/convert.js';
+import {TransferStore, crc32, matchesSource} from '/transfer.js';
+import {gifFrames} from '/gif.js';
+const output = document.querySelector('#results');
+output.textContent = '';
+const check = (ok, text) => {
+  if (!ok) throw new Error(text);
+  output.textContent += 'PASS ' + text + '\n';
+};
+const signal = new AbortController().signal;
+let store;
+try {
+  store = await new TransferStore().open();
+  const canvas = document.createElement('canvas');
+  canvas.width = canvas.height = 160;
+  const ctx = canvas.getContext('2d');
+  ctx.fillStyle = '#ff0000';
+  ctx.fillRect(0, 0, 160, 160);
+  const png = new File([await new Promise(r => canvas.toBlob(r, 'image/png'))], 'red.png');
+  let meta = await convert(png, store, {path:'/media/test.nvi', signal, progress:()=>{}});
+  let bytes = await store.chunk(0);
+  check(meta.total === 51216, '사진 → NVI1 크기');
+  check(meta.checksum === crc32(bytes), '사진 전체 CRC 식별');
+  check(new DataView(bytes.buffer).getUint16(16, true) === 0xf800, 'RGB565 색상 순서');
+  drawNvi(bytes.buffer, canvas);
+  check(ctx.getImageData(0,0,1,1).data[0] === 255, 'NVI 미리보기');
+  store.db.close();
+  store = await new TransferStore().open();
+  check((await store.get()).id === meta.id, 'IndexedDB 재연결 후 전송 상태 보존');
+  for (const suffix of ['mp4','gif']) {
+    const original = new File([await (await fetch('/tests/sample.'+suffix)).blob()], 'sample.'+suffix,
+                              {type:suffix==='mp4'?'video/mp4':'image/gif',lastModified:123});
+    meta = await convert(original, store, {path:'/media/test.njv',fps:10,signal,progress:()=>{}});
+    check(await matchesSource(meta,original), suffix + ' 원본 식별');
+    bytes = await store.chunk(0);
+    check(meta.checksum === crc32(bytes), suffix + ' 전체 CRC 식별');
+    const view = new DataView(bytes.buffer), frames = view.getUint32(12,true);
+    check(new TextDecoder().decode(bytes.subarray(0,4)) === 'NJV1' && frames >= 10, suffix+' → NJV1');
+    let at=16, first=0, last=0;
+    for (let i=0;i<frames;i++) {
+      const size=view.getUint32(at,true), checksum=view.getUint32(at+4,true);
+      check(size<=32768 && crc32(bytes.subarray(at+8,at+8+size))===checksum, suffix+' frame '+i+' CRC');
+      if (!i) first=checksum;
+      last=checksum;
+      at+=8+size;
+    }
+    check(at===meta.total && first!==last, suffix+' 시간에 따른 프레임 변경 / 전체 길이');
+    if (suffix==='gif') {
+      const gif=await gifFrames(original,signal);
+      check(gif.duration===1000, 'GIF 원본 프레임 지연 합계');
+    }
+  }
+  const cancelled=new AbortController();cancelled.abort(new Error('cancel-test'));
+  let rejected=false;
+  try { await convert(png,store,{path:'/media/test.nvi',signal:cancelled.signal,progress:()=>{}}); }
+  catch (e) { rejected=e.message==='cancel-test'; }
+  check(rejected,'변환 취소 전파');
+  output.textContent += '\nALL PASSED';
+  document.title='PASS · NOVA browser tests';
+} catch(error) {
+  output.textContent += '\nFAIL '+error.stack;
+  document.title='FAIL · NOVA browser tests';
+} finally {
+  // This server is a dedicated test origin. Remove only this test's transfer database.
+  store?.db.close();
+  indexedDB.deleteDatabase('nova-media-v1');
+}
+</script>
+</html>
