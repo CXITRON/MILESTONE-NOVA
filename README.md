@@ -64,8 +64,8 @@ ST7789V 2.0인치 SPI RGB565 패널은 MISO를 연결하지 않는다.
 | GPIO | 기능 |
 |---:|---|
 | 1 | RED status LED, 1 kΩ 직렬, active HIGH |
-| 2 | 외부 SK6812MINI-HS 5개, 74HCT125N + 510Ω |
-| 3 | 배터리 ADC, 100 kΩ / 100 kΩ divider |
+| 2 | 외부 SK6812 3535 RGB(MINI-HS) 5개, 74HCT125N + 510Ω |
+| 3 | 배터리 ADC, 보드 내장 100 kΩ / 100 kΩ divider (JP2 `BAT_AD` 연결 필요) |
 | 4 | RESERVED |
 | 5 | OK / Deep Sleep wake, INPUT_PULLUP |
 | 6 | LCD MOSI |
@@ -101,6 +101,32 @@ GPIO0/45 strapping 핀과 GPIO26–37 flash/PSRAM 영역은 사용하지 않는�
 공유 I2C **100 kHz**다. 긴 LCD 배선에서 검증 후에만 속도를 높인다.
 DS3231(0x68)/AHT10(0x38) 및 I2C pull-up은 3.3 V 기준이다.
 배터리 percentage는 부하/온도에 따라 달라지는 전압 기반 추정치이며 fuel gauge가 아니다.
+
+### 전원 및 외장 부품 배선
+
+LOLIN S3 Pro 공식 회로도 V1.0.0 기준이다. 펌웨어는 아래 구조를 전제로 하며
+배선이 달라지면 `src/board/Board.h`와 이 절을 함께 수정한다.
+
+| 부품 | 연결 |
+|---|---|
+| 배터리 | 1셀 Li-Po/Li-ion을 보드 PH2.0(P3)에 연결. 충전은 보드 TP4054가 담당 |
+| 배터리 측정 | 보드 내장 VBAT─100 kΩ─AD_BAT─100 kΩ─GND, 100 nF. AD_BAT는 솔더 점퍼 JP2(`BAT_AD`)를 거쳐 GPIO3에 연결된다. 외부 divider를 추가하지 않는다. 회로도 기호상 JP2는 open으로 보이므로 실물 패드가 떨어져 있으면 납땜으로 연결한다. 미연결 시 배터리 표시/경고가 동작하지 않는다 |
+| 5V_AUX | DM13B 자동 buck-boost 5 V 모듈. 입력 VI+ = 보드 `VIN`, VI− = GND, 입출력에 각각 100 µF. `VIN`은 USB 연결 시 VBUS(다이오드 경유), 배터리만 있을 때 VBAT(MOSFET 경유)이므로 3.0–5 V 입력을 모두 처리하는 buck-boost를 사용한다 |
+| 74HCT125N | VCC = 5V_AUX, GND, VCC–GND 100 nF. 4번 채널만 사용: 4A = GPIO2, 4Y → 510 Ω → LED1 DIN, 4OE = GND. 미사용 1A–3A는 GND, 1OE–3OE는 VCC(출력 high-Z) |
+| SK6812 3535 RGB ×5 | 3색 RGB(SZH-LD159, MINI-HS). VDD = 5V_AUX, LED마다 VDD–GND 100 nF, LED1 DOUT → LED2 DIN → … → LED5. 펌웨어는 `NEO_GRB + NEO_KHZ800`. RGBW 제품으로 바꾸면 `src/lighting/Lights.h`를 수정한다 |
+| LCD | 보드의 TFT 전용 SH1.0 커넥터(J2)는 사용하지 않고 헤더에 외부 배선한다. VCC = 3V3, GND, DIN→6, SCK→7, CS→15, RST→16, D/C→17, BL→18 |
+| 버튼 ×5 | P2285 tactile. 한쪽 = 해당 GPIO, 반대쪽 = GND 공통(INPUT_PULLUP, 눌림 LOW) |
+| DS3231 / AHT10 | VCC = 3V3, GND, SDA→9, SCL→10. 보드에 I2C pull-up이 없으므로 모듈 내장 pull-up을 사용한다 |
+| RED / GREEN LED | GPIO1 / GPIO8 → 1 kΩ → LED → GND. 미장착이어도 펌웨어 동작에 영향이 없다 |
+
+조립 순서: 74HCT125N과 DM13B를 LOLIN 장착 전에 먼저 납땜한다. 첫 전원 인가 전
+극성·단락을 확인하고, USB만 연결한 상태에서 74HCT125N 14번(VCC)–7번(GND)이 5 V인지
+측정한 뒤 LED와 보드를 연결한다.
+
+Deep Sleep(OFF)은 5V_AUX를 차단하지 않는다. DM13B는 `VIN`에 상시 연결되어 있어
+OFF 중에도 DM13B 대기 전류, SK6812 5개의 대기 전류(꺼진 상태에서도 소모),
+74HCT125N 전류가 배터리에서 흐른다. 차단이 필요하면 EN 핀이 있는 모듈과 RTC GPIO
+(예: GPIO4)를 사용하도록 회로와 `Board.h`·OFF 처리를 함께 변경해야 한다.
 
 ## 빌드 / 테스트 / 최초 업로드
 
@@ -383,4 +409,5 @@ python3 scripts/build/release.py --key /safe/nova-private.pem \
 - 글꼴 미수록 한글/기타 문자/emoji는 `?`로 대체한다.
 - RGB 음악 효과는 수신한 재생 상태 기반이며 오디오 분석이 아니다.
 - LCD MISO가 없어 초기 명령 전송 성공만으로 패널 연결을 증명하지 못한다.
-- Deep Sleep은 외부 5V_AUX와 SD/RTC 전원을 물리적으로 차단하지 않는다.
+- Deep Sleep은 외부 5V_AUX(DM13B)와 SD/RTC 전원을 물리적으로 차단하지 않는다.
+  OFF 중 소모 전류는 [전원 및 외장 부품 배선](#전원-및-외장-부품-배선)을 참고한다.
