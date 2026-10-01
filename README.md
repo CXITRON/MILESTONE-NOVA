@@ -125,7 +125,10 @@ PSRAM은 LOLIN S3 board profile의 OPI 설정을 사용한다. `build/`는 Git�
 `scripts/test/run.sh`는 ASan/UBSan을 사용한다. ptrace 기반 실행 환경에서는 LeakSanitizer가
 동작하지 않아 기본 `detect_leaks=0`이며 지원되는 호스트에서
 `ASAN_OPTIONS=detect_leaks=1 ./scripts/test/run.sh`로 추가 검사할 수 있다.
-`preview.sh`는 제품의 C++ renderer로 36개 장면을 그려 `build/preview/screens*.png`를 만든다.
+`preview.sh`는 제품의 C++ renderer로 화면·레이아웃·진단·대기/오류 상태 60개 장면을 그린다.
+`build/preview/index.md` 또는 `index.html`에서 이름과 분류별로 전체 화면을 볼 수 있다.
+개별 `screen-*.png`는 원본 240×320 픽셀이며, `screens*.png`는 9개씩 묶은 비교 이미지다.
+날짜·음악·센서·아트는 예시 데이터이며 실물 LCD나 동작 애니메이션의 캡처는 아니다.
 필요하면 `U8G2_CLIB=/path/to/U8g2/src/clib`를 지정한다.
 펌웨어 산출물과 Python `cryptography`가 있으면 호스트 검사에 RSA-2048/4096
 서명·변조 거절 검사도 포함된다. SDK 위치는 `NOVA_CORE`로 지정할 수 있다.
