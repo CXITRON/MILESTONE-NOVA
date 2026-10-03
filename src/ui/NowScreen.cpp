@@ -24,7 +24,7 @@ void nowScreen(Canvas &c, const View &v) {
   };
   const auto cover = [&](int x, int y, unsigned side) {
     if (v.artwork)
-      c.scaledImage(x, y, side, v.artwork, 160);
+      c.scaledImage(x, y, side, v.artwork, board::artSide);
     else {
       c.rect(x, y, side, side, color::panel);
       c.text(x + 4, y + int(side) / 2 - 8, side - 8, 20, "NO ART", s.mutedColor, 1, true);
@@ -45,16 +45,17 @@ void nowScreen(Canvas &c, const View &v) {
     c.text(18, 86, 204, 92, title, s.timeColor, 2, !s.alignLeft);
     label(198, artist, s.accentColor);
     label(237, album, s.mutedColor);
-  } else if (s.nowLayout == 3) {
-    cover(40, 68, 160);
-    label(238, title, s.timeColor);
-    label(264, album, s.mutedColor);
   } else {
-    cover(40, 68, 160);
-    label(232, artist, s.mutedColor);
-    label(258, title, s.timeColor);
-    if (s.nowLayout == 4 && (!v.lyrics || !v.lyrics->count))
-      c.text(44, 206, 152, 20, "No local lyrics", s.mutedColor, 1, true);
+    // Large cover: native 200x200 between the header row and one scrolling caption.
+    const int side = board::artSide, left = (board::width - side) / 2, top = 60;
+    cover(left, top, side);
+    char caption[sizeof(track.title) + sizeof(track.album) + 8];
+    snprintf(caption, sizeof(caption), "%s / %s", title, s.nowLayout == 3 ? album : artist);
+    label(top + side + 5, caption, s.timeColor);
+    if (s.nowLayout == 4 && (!v.lyrics || !v.lyrics->count)) {
+      c.rect(left + 20, top + side - 30, side - 40, 24, color::panel);
+      c.text(left + 24, top + side - 28, side - 48, 20, "No local lyrics", s.mutedColor, 1, true);
+    }
   }
   progressBar(c, 289, v.media->position(v.now), track.durationMs);
   if (!v.media->playing())

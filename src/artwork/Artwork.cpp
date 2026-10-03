@@ -1,5 +1,6 @@
 #include "Artwork.h"
 #include "../core/Text.h"
+#include "../media/JpegImage.h"
 #include "../network/Endpoints.h"
 #include "../network/Http.h"
 #include <cstring>
@@ -7,6 +8,9 @@
 #include <esp_timer.h>
 namespace nova {
 namespace {
+// Gateway JPEG bound, and the MAC1 packet (88x88 RGB565 within) served before the gateway update.
+constexpr size_t jpegBytes = 65536, legacyBytes = 22704, legacySide = 88, workBytes = 16384;
+constexpr size_t imageBytes = 16 + rawBytes(board::artSide);
 bool formPart(char *out, size_t capacity, size_t &at, const char *s) {
   constexpr char hex[] = "0123456789ABCDEF";
   for (const auto *p = reinterpret_cast<const uint8_t *>(s); *p; ++p) {
@@ -29,10 +33,12 @@ bool formPart(char *out, size_t capacity, size_t &at, const char *s) {
 bool Artwork::begin(Storage &s) {
   storage_ = &s;
   mutex_ = xSemaphoreCreateMutex();
-  packet_ = static_cast<uint8_t *>(heap_caps_malloc(22705, MALLOC_CAP_SPIRAM));
-  image_ = static_cast<uint8_t *>(heap_caps_malloc(51216, MALLOC_CAP_SPIRAM));
-  result_ = static_cast<uint16_t *>(heap_caps_malloc(51200, MALLOC_CAP_SPIRAM));
-  return mutex_ && packet_ && image_ && result_;
+  packet_ = static_cast<uint8_t *>(heap_caps_malloc(jpegBytes + 1, MALLOC_CAP_SPIRAM));
+  image_ = static_cast<uint8_t *>(heap_caps_malloc(imageBytes, MALLOC_CAP_SPIRAM));
+  result_ = static_cast<uint16_t *>(heap_caps_malloc(rawBytes(board::artSide), MALLOC_CAP_SPIRAM));
+  legacy_ = static_cast<uint16_t *>(heap_caps_malloc(rawBytes(legacySide), MALLOC_CAP_SPIRAM));
+  work_ = static_cast<uint8_t *>(heap_caps_malloc(workBytes, MALLOC_CAP_SPIRAM));
+  return mutex_ && packet_ && image_ && result_ && legacy_ && work_;
 }
 bool Artwork::request(const Track &t, uint32_t gen, const Settings &s) {
   if (!mutex_ || !packet_ || !image_ || !result_)
@@ -52,7 +58,7 @@ bool Artwork::receive(uint16_t *pixels, uint32_t gen, bool &ok) {
   if (available) {
     ok = ok_;
     if (ok)
-      memcpy(pixels, result_, 51200);
+      memcpy(pixels, result_, rawBytes(board::artSide));
   }
   ready_ = false;
   xSemaphoreGive(mutex_);
@@ -76,21 +82,30 @@ bool Artwork::fetch(const Track &query, uint16_t *pixels) {
     return false;
   const int64_t started = esp_timer_get_time();
   Http http;
-  if (!http.open(endpoints::artwork, form) || (http.length() >= 0 && http.length() != 22704))
+  if (!http.open(endpoints::artwork, form) || http.length() > int64_t(jpegBytes))
     return false;
   size_t received = 0;
-  while (received < 22705) {
+  while (received <= jpegBytes) {
     // A slow trickle must not keep the service worker (and OFF) occupied indefinitely.
     if (esp_timer_get_time() - started >= 15000000)
       return false;
-    const int n = http.read(packet_ + received, 22705 - received);
+    const int n = http.read(packet_ + received, jpegBytes + 1 - received);
     if (n < 0)
       return false;
     if (!n)
       break;
     received += n;
   }
-  return http.complete() && artworkPacket(packet_, received, pixels, 160);
+  if (received > jpegBytes || !http.complete())
+    return false;
+  // A gateway not yet updated still answers with 88x88 MAC1; enlarge it smoothly.
+  if (received == legacyBytes && !memcmp(packet_, "MAC1", 4)) {
+    if (!artworkPacket(packet_, received, legacy_, legacySide))
+      return false;
+    resample565(legacy_, legacySide, legacySide, pixels, board::artSide);
+    return true;
+  }
+  return decodeJpeg565(packet_, received, pixels, board::artSide, board::artSide, work_, workBytes);
 }
 void Artwork::remember(const Track &track) {
   FileJob job;
@@ -113,21 +128,21 @@ bool Artwork::save(const char *key, const uint16_t *pixels, bool custom, const S
     if (!quota.value)
       break;
   }
-  if (quota.capacity < uint64_t(s.artworkFreeMb) * 1048576 + 51216)
+  if (quota.capacity < uint64_t(s.artworkFreeMb) * 1048576 + imageBytes)
     return false;
   memset(image_, 0, 16);
   memcpy(image_, "NVI1", 4);
-  write16(image_ + 4, 160);
-  write16(image_ + 6, 160);
-  memmove(image_ + 16, pixels, 51200);
-  write32(image_ + 8, 51200);
-  write32(image_ + 12, crc32(image_ + 16, 51200));
+  write16(image_ + 4, board::artSide);
+  write16(image_ + 6, board::artSide);
+  memmove(image_ + 16, pixels, rawBytes(board::artSide));
+  write32(image_ + 8, rawBytes(board::artSide));
+  write32(image_ + 12, crc32(image_ + 16, rawBytes(board::artSide)));
   FileJob job;
   job.op = FileOp::ArtSave;
   job.enabled = custom;
   snprintf(job.path, sizeof(job.path), "/artwork/%s.nvi", key);
   job.data = image_;
-  job.length = 51216;
+  job.length = imageBytes;
   if (!storage_->execute(job))
     return false;
   char marker[128];
@@ -174,7 +189,7 @@ void Artwork::process() {
   const bool ok = allowed && fetch(track, pixels);
   if (ok) {
     xSemaphoreTake(mutex_, portMAX_DELAY);
-    memcpy(result_, pixels, 51200);
+    memcpy(result_, pixels, rawBytes(board::artSide));
     xSemaphoreGive(mutex_);
     save(track.key, pixels, false, settings);
   }

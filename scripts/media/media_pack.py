@@ -5,10 +5,12 @@ import pathlib
 import struct
 import zlib
 
-SIDE = 160
+# MEDIA uses the full 240 px width; NOW artwork caches use 200 px (--side 200).
+SIDE = 240
+SIDES = (160, 200, 240)
 
 
-def ppm(path):
+def ppm(path, side=SIDE):
     """Read binary PPM, including comments; useful without third-party modules."""
     raw = path.read_bytes()
     cursor = 0
@@ -45,21 +47,21 @@ def ppm(path):
     # Centre-crop to square, then bounded nearest-neighbour resize.
     size = min(width, height)
     left, top = (width - size) // 2, (height - size) // 2
-    return b"".join(pixels[(start := ((top+y*size//SIDE)*width+left+x*size//SIDE)*3):start+3]
-                    for y in range(SIDE) for x in range(SIDE))
+    return b"".join(pixels[(start := ((top+y*size//side)*width+left+x*size//side)*3):start+3]
+                    for y in range(side) for x in range(side))
 
 
-def pixels565(path):
+def pixels565(path, side=SIDE):
     path = pathlib.Path(path)
     if path.suffix.lower() == ".ppm":
-        raw = ppm(path)
+        raw = ppm(path, side)
     else:
         try:
             from PIL import Image, ImageOps
         except ImportError as error:
             raise RuntimeError("PNG/JPEG input requires Pillow; P6 PPM needs only Python") from error
         with Image.open(path) as image:
-            raw = ImageOps.fit(image.convert("RGB"), (SIDE, SIDE)).tobytes()
+            raw = ImageOps.fit(image.convert("RGB"), (side, side)).tobytes()
     data = bytearray()
     for i in range(0, len(raw), 3):
         r, g, b = raw[i:i+3]
@@ -67,13 +69,15 @@ def pixels565(path):
     return data
 
 
-def pack(inputs, output, fps=None):
+def pack(inputs, output, fps=None, side=SIDE):
     inputs = list(inputs)
+    if side not in SIDES:
+        raise ValueError(f"Side must be one of {SIDES}")
     if not inputs or len(inputs) > 36000 or (fps is not None and not 1 <= fps <= 10):
         raise ValueError("Use 1..36000 frames and 1..10 FPS")
     if fps is None and len(inputs) != 1:
         raise ValueError("Images take exactly one input")
-    if fps and 16 + len(inputs) * (SIDE * SIDE * 2 + 4) > 536870912:
+    if fps and 16 + len(inputs) * (side * side * 2 + 4) > 536870912:
         raise ValueError("Video exceeds the firmware's 512 MiB limit")
     output = pathlib.Path(output)
     if output.exists():
@@ -81,14 +85,14 @@ def pack(inputs, output, fps=None):
     with output.open("xb") as stream:
         try:
             if fps:
-                stream.write(struct.pack("<4sHHHHI", b"NVV1", SIDE, SIDE, fps, 0, len(inputs)))
+                stream.write(struct.pack("<4sHHHHI", b"NVV1", side, side, fps, 0, len(inputs)))
             for path in inputs:
-                data = pixels565(path)
+                data = pixels565(path, side)
                 crc = zlib.crc32(data)
                 if fps:
                     stream.write(struct.pack("<I", crc))
                 else:
-                    stream.write(struct.pack("<4sHHII", b"NVI1", SIDE, SIDE, len(data), crc))
+                    stream.write(struct.pack("<4sHHII", b"NVI1", side, side, len(data), crc))
                 stream.write(data)
         except BaseException:
             stream.close()
@@ -101,5 +105,7 @@ if __name__ == "__main__":
     parser.add_argument("inputs", nargs="+", type=pathlib.Path)
     parser.add_argument("--output", required=True, type=pathlib.Path)
     parser.add_argument("--fps", type=int, help="NVV1 video; omit for NVI1 image")
+    parser.add_argument("--side", type=int, default=SIDE, choices=SIDES,
+                        help="240 for MEDIA (default), 200 for /artwork covers")
     args = parser.parse_args()
-    pack(args.inputs, args.output, args.fps)
+    pack(args.inputs, args.output, args.fps, args.side)

@@ -7,7 +7,7 @@
 | title / artist / album | Track attributes 2/0/1 | snapshot 문자열 | key 계산에 사용 |
 | play / pause / rate / position | Player PlaybackInfo | state frame (rate 1.0) | 공급하지 않음 |
 | duration | Track Duration | state frame | video 자체 duration만 |
-| artwork | AMS에서 제공하지 않음 | metadata로 key 결정 | `/artwork/<key>.nvi`, miss 시 기존 Worker MAC1 |
+| artwork | AMS에서 제공하지 않음 | metadata로 key 결정 | `/artwork/<key>.nvi`(200×200), miss 시 Worker v3 JPEG 200(갱신 전 MAC1) |
 | lyrics | AMS에서 제공하지 않음 | metadata/position 제공 | `/lyrics/<key>.lrc` |
 
 ESP32-S3에서 Bluetooth Classic을 사용하지 않는다. firmware가 metadata를 만들거나
@@ -76,10 +76,13 @@ RGB565는 little endian이다. 전체 크기는 2 GiB 미만이다.
 
 | 형식 | header 및 payload | 검증/상한 |
 |---|---|---|
-| NVI1 | magic4 + width:u16=160 + height:u16=160 + payload:u32=51200 + CRC:u32, RGB565 | 정확히 51216 bytes |
-| NVV1 | magic4 + width/height:u16=160 + fps:u16 + reserved:u16=0 + frames:u32 | 매 frame CRC:u32 + RGB565 51200 bytes |
-| NJV1 | NVV1과 같은 16-byte header, 160×160 JPEG | 각 frame length:u32 + CRC:u32 + JPEG, JPEG 4..32768 bytes |
-| MVJ1 | NJV1과 같은 구조, 128×128 JPEG | 기존 SD 영상 호환, 표시 때 160px로 확대 |
+| NVI1 | magic4 + width:u16=S + height:u16=S + payload:u32=S×S×2 + CRC:u32, RGB565 | S ∈ {160, 200, 240}, 정확히 16+S×S×2 bytes |
+| NVV1 | magic4 + width/height:u16=S + fps:u16 + reserved:u16=0 + frames:u32 | 매 frame CRC:u32 + RGB565 S×S×2 bytes |
+| NJV1 | NVV1과 같은 16-byte header, S×S baseline JPEG | 각 frame length:u32 + CRC:u32 + JPEG, JPEG 4..49152 bytes |
+| MVJ1 | NJV1과 같은 구조, 128×128 JPEG | 기존 SD 영상 호환, 표시 때 240px로 확대 |
+
+S는 정사각형 한 변이다. 현재 생성 규격은 MEDIA **240**, NOW 아트 캐시 **200**이며,
+160은 이전 NOVA 파일 호환용으로 읽기만 한다.
 | MSM1 | magic4 + version:u8=1 + flags:u8 + width/height:u8=128 + frames:u16 + color:u16 + duration:u32 + payload:u32 + CRC:u32 | 최대 4 MiB/4096 frames, color 0 mono1bit/1 RGB332 |
 | BMP | Windows DIB header ≥40 bytes, 24bpp uncompressed | 가로/세로 1..320, 양/음 height와 4-byte row alignment |
 
@@ -121,7 +124,14 @@ UTF-8로 URL encode한다. **인코딩된 body 전체는 1400 bytes 이하**여�
 |---|---|---|
 | /v1/artwork | JPEG bytes / image/jpeg | 일반 앱·웹 백엔드에서 이미지 파일로 사용 |
 | /v2/artwork | MAB1, 1464 bytes / application/vnd.milestone.artwork-bitmap | 60×60 + 88×88 흑백 1-bit, 행 단위 LSB-first |
-| /v3/artwork | MAC1, 22704 bytes / application/vnd.milestone.artwork-color | 60×60 + 88×88 RGB565 big-endian, 현재 NOVA |
+| /v3/artwork | baseline JPEG 200×200 / image/jpeg | 현재 NOVA. 2026-10-03 갱신 전에는 MAC1 22704 bytes |
+
+2026-10-03 MILESTONE-Core `services/artwork-worker`의 v3를 NOVA용으로 교체했다.
+응답은 SOF0 baseline·200×200·3 components·64 KiB 이하 JPEG다. 카탈로그 CDN에 200×200을
+직접 요청해 baseline이면 그대로 전달하고, progressive나 다른 크기면 Wasm MozJPEG로
+다시 인코딩한다(`X-Milestone-Transcoded`). **MAC1을 기대하는 옛 MILESTONE 펌웨어는
+이 Worker 배포 후 v3 아트를 표시하지 못한다.** 아래 MAC1 설명은 갱신 전 형식이며,
+NOVA는 배포 전 응답 호환을 위해 MAC1도 계속 받는다.
 
 응답은 이미지 바이너리 자체다. JSON이나 이미지 URL을 반환하지 않는다.
 v1은 검색 공급자의 thumbnail을 전달하므로 해상도가 고정되어 있지 않다.
@@ -196,8 +206,11 @@ MAC1 응답은 다음과 같으며 multi-byte 정수는 big-endian이다.
 
 픽셀은 `word = (byte0 << 8) | byte1`, red=`(word >> 11) & 31`,
 green=`(word >> 5) & 63`, blue=`word & 31`이다. NOVA는 길이와 CRC가 맞아야
-88px 부분을 160px로 확대한다. HTTP 200 외 status/불완전 body/다른 format은
+88px 부분을 200px로 부드럽게(bilinear) 확대한다. HTTP 200 외 status/불완전 body/다른 format은
 성공으로 취급하지 않는다.
+
+JPEG 응답은 ESP32 JPEG decoder로 크기(200×200)를 다시 확인한 뒤 NVI1 200×200으로 캐시한다.
+디코딩 실패, 크기 불일치, 64 KiB 초과는 조회 실패로 처리한다.
 
 SD 아트는 `<key>.nvi`이며 `.nvi.pin`/`.nvi.custom` 보호 표시,
 `<key>.block`/`<key>.missing` 자동 조회 억제 표시, `<key>.meta` 곡 정보+CRC,

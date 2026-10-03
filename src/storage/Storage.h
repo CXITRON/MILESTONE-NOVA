@@ -23,7 +23,8 @@ struct AssetResult {
   uint32_t durationMs = 0, frame = 0;
   size_t lyricsBytes = 0;
   char lyrics[maxLyricsBytes + 1]{};
-  uint16_t pixels[board::artSize * board::artSize]{};
+  // Track results use artSide x artSide; media results use mediaSide x mediaSide.
+  uint16_t pixels[board::mediaSide * board::mediaSide]{};
 };
 class Storage final : public LyricsProvider {
 public:

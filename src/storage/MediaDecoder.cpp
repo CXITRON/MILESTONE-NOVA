@@ -1,18 +1,23 @@
 #include "MediaDecoder.h"
 #include "../core/Text.h"
+#include "../media/JpegImage.h"
 #include <SD.h>
 #include <algorithm>
 #include <cstring>
 #include <esp_heap_caps.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
-#include <jpeg_decoder.h>
 namespace nova {
+namespace {
+constexpr size_t encodedBytes = maxJpegFrame + 8, workBytes = 65536;
+} // namespace
 bool MediaDecoder::begin() {
-  encoded_ = static_cast<uint8_t *>(heap_caps_malloc(32776, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
+  encoded_ =
+      static_cast<uint8_t *>(heap_caps_malloc(encodedBytes, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
   mono_ = static_cast<uint8_t *>(heap_caps_malloc(16384, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
-  decoded_ = static_cast<uint16_t *>(heap_caps_malloc(51200, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
-  work_ = static_cast<uint8_t *>(heap_caps_malloc(65536, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
+  decoded_ = static_cast<uint16_t *>(
+      heap_caps_malloc(rawBytes(maxMediaSide), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
+  work_ = static_cast<uint8_t *>(heap_caps_malloc(workBytes, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
   return encoded_ && mono_ && decoded_ && work_;
 }
 void MediaDecoder::close() {
@@ -22,19 +27,8 @@ void MediaDecoder::close() {
   decodedFrame_ = UINT32_MAX;
 }
 bool MediaDecoder::jpeg(size_t bytes, unsigned w, unsigned h) {
-  esp_jpeg_image_cfg_t cfg{};
-  cfg.indata = encoded_;
-  cfg.indata_size = bytes;
-  cfg.outbuf = reinterpret_cast<uint8_t *>(decoded_);
-  cfg.outbuf_size = 51200;
-  cfg.out_format = JPEG_IMAGE_FORMAT_RGB565;
-  cfg.advanced.working_buffer = work_;
-  cfg.advanced.working_buffer_size = 65536;
-  esp_jpeg_image_output_t result{};
-  if (esp_jpeg_get_image_info(&cfg, &result) != ESP_OK || result.width != w || result.height != h ||
-      result.output_len > 51200)
-    return false;
-  return esp_jpeg_decode(&cfg, &result) == ESP_OK && result.width == w && result.height == h;
+  return w <= maxMediaSide && h <= maxMediaSide &&
+         decodeJpeg565(encoded_, bytes, decoded_, w, h, work_, workBytes);
 }
 bool MediaDecoder::validate(const char *path, std::atomic<uint32_t> &progress,
                             const std::atomic<bool> &cancel, uint32_t *contentCrc) {
@@ -103,18 +97,19 @@ bool MediaDecoder::validate(const char *path, std::atomic<uint32_t> &progress,
       uint8_t crc[4]{};
       const uint32_t expected =
           m.format == MediaFormat::Image ? m.checksum : (f.read(crc, 4) == 4 ? read32(crc) : 0);
-      ok = ok && f.read(reinterpret_cast<uint8_t *>(decoded_), 51200) == 51200 &&
-           crc32(decoded_, 51200) == expected;
+      const uint32_t payload = rawBytes(m.width);
+      ok = ok && f.read(reinterpret_cast<uint8_t *>(decoded_), payload) == payload &&
+           crc32(decoded_, payload) == expected;
       if (contentCrc && ok) {
         if (m.format == MediaFormat::RawVideo)
           content = crcUpdate(content, crc, sizeof(crc));
-        content = crcUpdate(content, reinterpret_cast<const uint8_t *>(decoded_), 51200);
+        content = crcUpdate(content, reinterpret_cast<const uint8_t *>(decoded_), payload);
       }
     } else if (m.format == MediaFormat::JpegVideo) {
       uint8_t h[8]{};
       ok = ok && f.read(h, 8) == 8;
       const uint32_t n = read32(h);
-      ok = ok && n >= 4 && n <= 32768 && n <= f.size() - f.position() && f.read(encoded_, n) == n &&
+      ok = ok && n >= 4 && n <= maxJpegFrame && n <= f.size() - f.position() && f.read(encoded_, n) == n &&
            crc32(encoded_, n) == read32(h + 4) && jpeg(n, m.width, m.height);
       if (contentCrc && ok) {
         content = crcUpdate(content, h, sizeof(h));
@@ -191,7 +186,7 @@ bool MediaDecoder::record(uint32_t n) {
     if (file_.read(h, 8) != 8)
       return false;
     const uint32_t bytes = read32(h);
-    return bytes >= 4 && bytes <= 32768 && file_.read(encoded_, bytes) == bytes &&
+    return bytes >= 4 && bytes <= maxJpegFrame && file_.read(encoded_, bytes) == bytes &&
            crc32(encoded_, bytes) == read32(h + 4) && jpeg(bytes, info_.width, info_.height);
   }
   if (file_.read(encoded_, 5) != 5)
@@ -200,60 +195,72 @@ bool MediaDecoder::record(uint32_t n) {
   return bytes <= 16640 && file_.read(encoded_ + 5, bytes) == bytes &&
          deltaFrame(encoded_, bytes + 5, mono_, info_.color ? 16384 : 2048, n == 0);
 }
-bool MediaDecoder::bitmap(uint16_t *out) {
-  for (unsigned y = 0; y < 160; ++y) {
-    unsigned sy = uint64_t(y) * info_.height / 160;
+bool MediaDecoder::bitmap(uint16_t *out, unsigned side) {
+  for (unsigned y = 0; y < side; ++y) {
+    unsigned sy = uint64_t(y) * info_.height / side;
     if (!info_.topDown)
       sy = info_.height - 1 - sy;
     if (!file_.seek(info_.dataOffset + sy * info_.rowBytes) ||
         file_.read(encoded_, info_.rowBytes) != info_.rowBytes)
       return false;
-    for (unsigned x = 0; x < 160; ++x) {
-      const auto *p = encoded_ + (uint64_t(x) * info_.width / 160) * 3;
-      out[y * 160 + x] = uint16_t(p[2] >> 3) << 11 | uint16_t(p[1] >> 2) << 5 | (p[0] >> 3);
+    for (unsigned x = 0; x < side; ++x) {
+      const auto *p = encoded_ + (uint64_t(x) * info_.width / side) * 3;
+      out[y * side + x] = uint16_t(p[2] >> 3) << 11 | uint16_t(p[1] >> 2) << 5 | (p[0] >> 3);
     }
   }
   return true;
 }
-void MediaDecoder::monoToPixels(uint16_t *out) {
-  for (unsigned y = 0; y < 160; ++y)
-    for (unsigned x = 0; x < 160; ++x) {
-      const unsigned at = (y * 128 / 160) * 128 + x * 128 / 160;
+void MediaDecoder::monoToPixels(uint16_t *out, unsigned side) {
+  for (unsigned y = 0; y < side; ++y)
+    for (unsigned x = 0; x < side; ++x) {
+      const unsigned at = (y * 128 / side) * 128 + x * 128 / side;
       if (info_.color) {
         const auto c = mono_[at];
         const unsigned r = (c >> 5) * 31 / 7, g = ((c >> 2) & 7) * 63 / 7, b = (c & 3) * 31 / 3;
-        out[y * 160 + x] = r << 11 | g << 5 | b;
+        out[y * side + x] = r << 11 | g << 5 | b;
       } else
-        out[y * 160 + x] = (mono_[at / 8] & (1U << (7 - at % 8))) ? 0xFFFF : 0;
+        out[y * side + x] = (mono_[at / 8] & (1U << (7 - at % 8))) ? 0xFFFF : 0;
     }
 }
-bool MediaDecoder::frame(const char *path, uint32_t pos, uint16_t *out, uint32_t &duration) {
-  if (!open(path))
+bool MediaDecoder::frame(const char *path, uint32_t pos, uint16_t *out, uint32_t &duration,
+                         unsigned side) {
+  if (!out || !side || side > maxMediaSide || !open(path))
     return false;
   duration = info_.frames > 1 ? info_.duration : 0;
   if (info_.format == MediaFormat::Bitmap)
-    return bitmap(out);
+    return bitmap(out, side);
   if (info_.format == MediaFormat::Image || info_.format == MediaFormat::RawVideo) {
     uint32_t frame =
         info_.fps ? std::min<uint64_t>(uint64_t(pos) * info_.fps / 1000, info_.frames - 1) : 0;
     uint32_t expected = info_.checksum;
     uint8_t crc[4];
-    if (!file_.seek(16 + uint64_t(frame) * (4 + 51200)))
+    const uint32_t payload = rawBytes(info_.width);
+    const bool raw = info_.format == MediaFormat::RawVideo;
+    if (!file_.seek(16 + (raw ? uint64_t(frame) * (4 + payload) : 0)))
       return false;
-    if (info_.format == MediaFormat::RawVideo) {
+    if (raw) {
       if (file_.read(crc, 4) != 4)
         return false;
       expected = read32(crc);
     }
-    return file_.read(reinterpret_cast<uint8_t *>(out), 51200) == 51200 &&
-           crc32(out, 51200) == expected;
+    decodedFrame_ = UINT32_MAX;
+    if (file_.read(reinterpret_cast<uint8_t *>(decoded_), payload) != payload ||
+        crc32(decoded_, payload) != expected)
+      return false;
+    if (info_.width == side)
+      memcpy(out, decoded_, payload);
+    else if (raw)
+      scale565(decoded_, info_.width, info_.height, out, side);
+    else
+      resample565(decoded_, info_.width, info_.height, out, side);
+    return true;
   }
   if (info_.format == MediaFormat::JpegVideo) {
     const uint32_t target = std::min<uint64_t>(uint64_t(pos) * info_.fps / 1000, info_.frames - 1);
     if (target != decodedFrame_ && !record(target))
       return false;
     decodedFrame_ = target;
-    scale565(decoded_, info_.width, info_.height, out, 160);
+    scale565(decoded_, info_.width, info_.height, out, side);
     return true;
   }
   uint32_t low = 0, high = info_.frames;
@@ -276,7 +283,7 @@ bool MediaDecoder::frame(const char *path, uint32_t pos, uint16_t *out, uint32_t
       vTaskDelay(1);
   }
   decodedFrame_ = target;
-  monoToPixels(out);
+  monoToPixels(out, side);
   return true;
 }
 } // namespace nova

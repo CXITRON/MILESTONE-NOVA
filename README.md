@@ -3,7 +3,7 @@
 LOLIN S3 Pro 한 대로 구동하는 탁상형 펌웨어, 버전 **0.1.0**.
 240×320 ST7789V, 5버튼, 시계/날짜/D-Day/문구/집중 타이머, AHT10 환경 정보,
 배터리 추정, NOW/앨범아트/동기 가사, SD 미디어, Wi-Fi/NTP, BLE, 서명 OTA,
-설정 AP/오프라인 포털, AP Sync, 기존 Artwork Worker 자동 조회, 환경 CSV,
+설정 AP/오프라인 포털, AP Sync, Artwork Worker 200×200 자동 조회, 환경 CSV,
 RGB 및 상태 LED, Deep Sleep OFF를 새 C++ 모듈로 구현한다.
 기능별 구현·검증 근거는 [기능 대조표](docs/design/feature-parity.md)에 기록한다.
 
@@ -23,11 +23,11 @@ src/
   settings/    schema/범위 검증, CRC/NVS 저장
   sensors/     DS3231, AHT10, battery ADC
   storage/     SD worker, 미디어 decoder, 업로드 checkpoint, catalog, 로그 journal
-  media/       AMS/helper parser, BLE, playback clock
+  media/       AMS/helper parser, BLE, playback clock, 파일 형식, JPEG decode
   lyrics/      provider/cache 계약, LRC parser/timeline/renderer
   ui/          공통 요소와 화면별 렌더링
   network/     Wi-Fi/AP/NTP, HTTPS, 로컬 서명 OTA와 부팅 확인
-  artwork/     기존 Artwork Worker 조회, 캐시 정책
+  artwork/     Artwork Worker 조회, 캐시 정책
   portal/      HTTP/DNS, 앱 명령 mailbox, offline 자산 제공
   update/      NOVA manifest, SD 후보 검증/설치/rollback
   lighting/    SK6812와 RED/GREEN manager
@@ -301,13 +301,17 @@ pause 고정, seek 즉시 보정, 곡 변경 시 reset, binary search로 줄을 
 
 ```sh
 # P6 PPM은 Python 표준 library만 필요. PNG/JPEG에는 Pillow가 필요하다.
-python3 scripts/media/media_pack.py cover.ppm --output <track-key>.nvi
-python3 scripts/media/media_pack.py frame-*.ppm --fps 5 --output clip.nvv
+python3 scripts/media/media_pack.py cover.ppm --side 200 --output <track-key>.nvi
+python3 scripts/media/media_pack.py frame-*.ppm --fps 5 --output clip.nvv   # 기본 240
 ```
 
-앨범아트는 SD 캐시를 우선하고, 없으면 기존 MILESTONE Artwork Worker의
-`/v3/artwork`에서 title/artist/album으로 MAC1을 받아 길이·CRC·RGB565를 검증한다.
-AMS가 이미지를 전송하는 것은 아니다. 기본 캐시 한도 2 GiB를 넘을 때만 오래된
+NOW 큰 아트 레이아웃은 **200×200** 원본을 그대로 표시하고, 작은 아트 레이아웃(88×88)은
+면적 평균으로 줄인다. 앨범아트는 SD 캐시(`/artwork/<key>.nvi`, NVI1 200×200)를 우선한다.
+없으면 MILESTONE Artwork Worker(MILESTONE-Core 저장소 `services/artwork-worker`)의
+`/v3/artwork`에서 baseline JPEG 200×200을 받아 기기에서 디코딩한다(요청 전체 15초 제한).
+Worker 갱신 배포 전에는 같은 경로가 88×88 MAC1을 돌려주므로, 길이·CRC를 검증한 뒤
+200×200으로 부드럽게 확대해 표시한다. 이전 펌웨어가 저장한 160×160 캐시도
+읽어서 200×200으로 확대해 표시한다. AMS가 이미지를 전송하는 것은 아니다. 기본 캐시 한도 2 GiB를 넘을 때만 오래된
 자동 이미지를 정리한다. 기본 여유 공간 1 GiB 미만에서는 추가 저장을 거절하며
 공간 확보를 위해 고정/사용자 이미지를 지우지 않는다.
 포털에서 검색·미리보기·사용자 이미지/LRC 업로드·고정·차단·재조회·삭제할 수 있다.
@@ -318,9 +322,11 @@ AMS가 이미지를 전송하는 것은 아니다. 기본 캐시 한도 2 GiB를
 
 ## 로컬 MEDIA와 AP Sync
 
-미디어 탭에서 사진/GIF/영상을 선택하면 브라우저가 가운데 정사각형을 160×160으로
-변환한다. 사진은 NVI1, 영상/GIF는 JPEG 프레임 NJV1이다. 원본이 NVI1/NVV1/NJV1,
+미디어 탭에서 사진/GIF/영상을 선택하면 브라우저가 가운데 정사각형을 **240×240**으로
+변환한다. MEDIA 화면은 이 프레임을 상태 표시줄 아래 화면 폭 전체에 표시한다.
+사진은 NVI1, 영상/GIF는 JPEG 프레임 NJV1이다. 원본이 NVI1/NVV1/NJV1(240 또는 이전 160),
 기존 MVJ1(128×128 JPEG)/MSM1(흑백 또는 RGB332)/24-bit BMP이면 직접 업로드할 수 있다.
+240이 아닌 파일은 표시 때 240으로 확대한다(사진은 bilinear, 영상은 nearest).
 목록은 최대 64개이며 이름·순서·사용 여부·표시 시간·삭제·전체 삭제·재스캔을 지원한다.
 개별 표시 시간 0은 화면 설정의 `media_seconds`를 따른다. 자동 전환은 설정 시간과
 애니메이션 종료/반복 경계를 함께 만족해야 하므로 영상 중간에 임의로 넘기지 않는다.
@@ -328,8 +334,8 @@ AMS가 이미지를 전송하는 것은 아니다. 기본 캐시 한도 2 GiB를
 브라우저는 최대 256 KiB 단위로 IndexedDB에 자료를 보관하고 SD 전송을 재개한다.
 각 chunk의 CRC와 체크포인트, 전체 파일 형식·프레임 검증이 끝나야 기존 파일을 교체한다.
 `*.nix`는 SD worker가 생성하는 탐색 인덱스다. `.part`/catalog/인덱스를 직접 편집하지 않는다.
-파일은 2 GiB 미만, NOVA/MVJ 영상은 최대 6시간·30 FPS, JPEG 프레임은 최대 32 KiB다.
-실물에서 가능한 FPS는 별도 측정 대상이다. CLI의 raw `media_pack.py`는 보수적인
+파일은 2 GiB 미만, NOVA/MVJ 영상은 최대 6시간·30 FPS, JPEG 프레임은 최대 48 KiB다.
+240×240 영상의 실제 FPS는 LCD 20 MHz에서 약 12~15로 추정하며 실물 측정 대상이다. CLI의 raw `media_pack.py`는 보수적인
 1~10 FPS/512 MiB 출력 한도를 그대로 사용한다.
 
 AP Sync 탭은 **기기의 SD 영상 + 브라우저의 원본 오디오**를 동기화한다.
@@ -404,7 +410,8 @@ python3 scripts/build/release.py --key /safe/nova-private.pem \
 - AP Sync의 오디오는 원본을 해석하는 브라우저에서 난다. 코덱/백그라운드 제한과
   실제 Wi-Fi 지연에 따른 동기 오차는 사용하는 iPhone/브라우저에서 측정해야 한다.
 - 온라인 가사 제공자는 아직 연결하지 않았다. 요구한 line-synced 가사는 로컬 LRC를 쓴다.
-  Artwork Worker는 실제 HTTP 200/MAC1 크기·CRC를 확인했으며 ESP32 TLS/RF 공존은 별도 검증한다.
+  v3 JPEG 200 응답은 로컬 Node에서 실제 Deezer/Apple 조회와 Wasm MozJPEG 변환을 확인했으나
+  Worker를 아직 배포하지 않았다. 배포 전에는 88×88 MAC1 확대본이 표시된다. ESP32 TLS/RF 공존은 별도 검증한다.
 - 배터리는 전압 추정이다. 충전 상태 입력이 없어 충전 여부를 표시하지 않는다.
 - 글꼴 미수록 한글/기타 문자/emoji는 `?`로 대체한다.
 - RGB 음악 효과는 수신한 재생 상태 기반이며 오디오 분석이 아니다.

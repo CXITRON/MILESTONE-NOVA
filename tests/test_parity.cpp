@@ -6,6 +6,7 @@
 #include "settings/Values.h"
 #include "storage/Journal.h"
 #include "ui/Navigation.h"
+#include <algorithm>
 #include <cassert>
 #include <cstring>
 #include <iostream>
@@ -87,6 +88,40 @@ int main() {
   assert(mediaHeader(image.data(), 16, image.size(), info) && info.format == MediaFormat::Image &&
          info.frames == 1);
   assert(!mediaHeader(image.data(), 16, image.size() - 1, info));
+  // NVI1/NJV1 accept only the NOVA square sides; payload length must match the side.
+  for (unsigned side : {200U, 240U}) {
+    write16(image.data() + 4, side);
+    write16(image.data() + 6, side);
+    write32(image.data() + 8, rawBytes(side));
+    assert(mediaHeader(image.data(), 16, 16 + rawBytes(side), info) && info.width == side);
+    assert(!mediaHeader(image.data(), 16, 51216, info));
+  }
+  write16(image.data() + 6, 200);
+  assert(!mediaHeader(image.data(), 16, 16 + rawBytes(240), info)); // Not square.
+  write16(image.data() + 4, 128);
+  write16(image.data() + 6, 128);
+  write32(image.data() + 8, rawBytes(128));
+  assert(!mediaHeader(image.data(), 16, 16 + rawBytes(128), info));
+  std::vector<uint8_t> jpegVideo(16);
+  memcpy(jpegVideo.data(), "NJV1", 4);
+  write16(jpegVideo.data() + 8, 20);
+  write32(jpegVideo.data() + 12, 10);
+  for (unsigned side : {160U, 240U}) {
+    write16(jpegVideo.data() + 4, side);
+    write16(jpegVideo.data() + 6, side);
+    assert(mediaHeader(jpegVideo.data(), 16, 4096, info) && info.width == side);
+  }
+  write16(jpegVideo.data() + 4, 320);
+  write16(jpegVideo.data() + 6, 320);
+  assert(!mediaHeader(jpegVideo.data(), 16, 4096, info));
+  // Smooth resize keeps solid colors exact and averages when reducing.
+  std::vector<uint16_t> solid(88 * 88, 0x07e0), large(rawBytes(200) / 2);
+  resample565(solid.data(), 88, 88, large.data(), 200);
+  assert(std::all_of(large.begin(), large.end(), [](uint16_t p) { return p == 0x07e0; }));
+  const uint16_t checker[]{0xffff, 0x0000, 0x0000, 0xffff};
+  uint16_t reduced = 0;
+  resample565(checker, 2, 2, &reduced, 1);
+  assert(reduced == 0x7bef); // Mid gray, not one sampled corner.
   std::vector<uint8_t> video(16);
   memcpy(video.data(), "MVJ1", 4);
   write16(video.data() + 4, 128);

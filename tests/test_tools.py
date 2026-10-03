@@ -33,7 +33,7 @@ class ToolsTests(unittest.TestCase):
             media.pack([source], image)
             data = image.read_bytes()
             magic, width, height, length, crc = struct.unpack("<4sHHII", data[:16])
-            self.assertEqual((magic, width, height, length), (b"NVI1", 160, 160, 51200))
+            self.assertEqual((magic, width, height, length), (b"NVI1", 240, 240, 115200))
             self.assertEqual(data[16:18], b"\x00\xf8")
             self.assertEqual(crc, zlib.crc32(data[16:]))
             with self.assertRaises(FileExistsError):
@@ -41,8 +41,13 @@ class ToolsTests(unittest.TestCase):
             video = base / "video.nvv"
             media.pack([source, source], video, 5)
             data = video.read_bytes()
-            self.assertEqual(struct.unpack("<4sHHHHI", data[:16]), (b"NVV1", 160, 160, 5, 0, 2))
-            self.assertEqual(len(data), 16 + 51204 * 2)
+            self.assertEqual(struct.unpack("<4sHHHHI", data[:16]), (b"NVV1", 240, 240, 5, 0, 2))
+            self.assertEqual(len(data), 16 + 115204 * 2)
+            cover = base / "cover.nvi"
+            media.pack([source], cover, side=200)
+            self.assertEqual(struct.unpack("<4sHHI", cover.read_bytes()[:12]), (b"NVI1", 200, 200, 80000))
+            with self.assertRaises(ValueError):
+                media.pack([source], base / "odd.nvi", side=128)
 
     def test_invalid_media(self):
         with self.assertRaises(ValueError):

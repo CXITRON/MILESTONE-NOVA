@@ -175,8 +175,28 @@ void Canvas::marquee(int x, int y, int w, std::string_view value, uint16_t color
 void Canvas::scaledImage(int x, int y, unsigned side, const uint16_t *data, unsigned inputSide) {
   if (!data || !side || !inputSide)
     return;
-  for (unsigned j = 0; j < side; ++j)
-    for (unsigned i = 0; i < side; ++i)
-      pixel(x + i, y + j, data[(j * inputSide / side) * inputSide + i * inputSide / side]);
+  if (side >= inputSide) {
+    for (unsigned j = 0; j < side; ++j)
+      for (unsigned i = 0; i < side; ++i)
+        pixel(x + i, y + j, data[(j * inputSide / side) * inputSide + i * inputSide / side]);
+    return;
+  }
+  // Reduction averages the covered source block so small covers stay legible.
+  for (unsigned j = 0; j < side; ++j) {
+    const unsigned y0 = j * inputSide / side, y1 = std::max(y0 + 1, (j + 1) * inputSide / side);
+    for (unsigned i = 0; i < side; ++i) {
+      const unsigned x0 = i * inputSide / side, x1 = std::max(x0 + 1, (i + 1) * inputSide / side);
+      unsigned r = 0, g = 0, b = 0;
+      for (unsigned sy = y0; sy < y1; ++sy)
+        for (unsigned sx = x0; sx < x1; ++sx) {
+          const uint16_t p = data[sy * inputSide + sx];
+          r += p >> 11;
+          g += (p >> 5) & 63;
+          b += p & 31;
+        }
+      const unsigned n = (x1 - x0) * (y1 - y0);
+      pixel(x + i, y + j, uint16_t((r + n / 2) / n << 11 | (g + n / 2) / n << 5 | (b + n / 2) / n));
+    }
+  }
 }
 } // namespace nova

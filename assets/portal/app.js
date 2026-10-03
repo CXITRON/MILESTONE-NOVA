@@ -1,4 +1,4 @@
-import {convert, drawNvi, imageBytes, loadImage} from './convert.js';
+import {ART_SIDE, convert, drawNvi, imageBytes, loadImage} from './convert.js';
 import {matchesSource, SyncClock, TransferStore, uploadPrepared} from './transfer.js';
 
 const $ = s => document.querySelector(s), all = s => [...document.querySelectorAll(s)];
@@ -395,7 +395,7 @@ async function blob(kind, file) {
 $('#art-upload').onclick = run(async () => {
   const file = $('#custom-art').files[0];
   if (!file) throw new Error('이미지를 선택하세요.');
-  await blob('image', new Blob([imageBytes(await loadImage(file), $('#art-preview'))]));
+  await blob('image', new Blob([imageBytes(await loadImage(file), $('#art-preview'), ART_SIDE)]));
   toast('사용자 이미지 저장됨');
 });
 $('#lyrics-upload').onclick = run(async () => {

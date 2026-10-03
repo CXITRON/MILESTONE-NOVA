@@ -8,7 +8,7 @@
 <p>실제 canvas, 이미지/영상 디코더, IndexedDB를 사용합니다. 장치 API는 호출하지 않습니다.</p>
 <pre id="results" role="status">검사 중</pre>
 <script type="module">
-import {convert, drawNvi} from '/convert.js';
+import {ART_SIDE, MEDIA_SIDE, convert, drawNvi, imageBytes} from '/convert.js';
 import {TransferStore, crc32, matchesSource} from '/transfer.js';
 import {gifFrames} from '/gif.js';
 const output = document.querySelector('#results');
@@ -22,14 +22,14 @@ let store;
 try {
   store = await new TransferStore().open();
   const canvas = document.createElement('canvas');
-  canvas.width = canvas.height = 160;
+  canvas.width = canvas.height = 320;
   const ctx = canvas.getContext('2d');
   ctx.fillStyle = '#ff0000';
-  ctx.fillRect(0, 0, 160, 160);
+  ctx.fillRect(0, 0, 320, 320);
   const png = new File([await new Promise(r => canvas.toBlob(r, 'image/png'))], 'red.png');
   let meta = await convert(png, store, {path:'/media/test.nvi', signal, progress:()=>{}});
   let bytes = await store.chunk(0);
-  check(meta.total === 51216, '사진 → NVI1 크기');
+  check(meta.total === 16 + MEDIA_SIDE * MEDIA_SIDE * 2, '사진 → 240 NVI1 크기');
   check(meta.checksum === crc32(bytes), '사진 전체 CRC 식별');
   check(new DataView(bytes.buffer).getUint16(16, true) === 0xf800, 'RGB565 색상 순서');
   drawNvi(bytes.buffer, canvas);
@@ -45,11 +45,12 @@ try {
     bytes = await store.chunk(0);
     check(meta.checksum === crc32(bytes), suffix + ' 전체 CRC 식별');
     const view = new DataView(bytes.buffer), frames = view.getUint32(12,true);
-    check(new TextDecoder().decode(bytes.subarray(0,4)) === 'NJV1' && frames >= 10, suffix+' → NJV1');
+    check(new TextDecoder().decode(bytes.subarray(0,4)) === 'NJV1' && frames >= 10 &&
+          view.getUint16(4,true) === MEDIA_SIDE, suffix+' → 240 NJV1');
     let at=16, first=0, last=0;
     for (let i=0;i<frames;i++) {
       const size=view.getUint32(at,true), checksum=view.getUint32(at+4,true);
-      check(size<=32768 && crc32(bytes.subarray(at+8,at+8+size))===checksum, suffix+' frame '+i+' CRC');
+      check(size<=49152 && crc32(bytes.subarray(at+8,at+8+size))===checksum, suffix+' frame '+i+' CRC');
       if (!i) first=checksum;
       last=checksum;
       at+=8+size;
@@ -60,6 +61,12 @@ try {
       check(gif.duration===1000, 'GIF 원본 프레임 지연 합계');
     }
   }
+  const art = imageBytes(canvas, document.createElement('canvas'), ART_SIDE);
+  check(art.length === 16 + ART_SIDE * ART_SIDE * 2 && new DataView(art.buffer).getUint16(4,true) === ART_SIDE,
+        '앨범아트 → 200 NVI1');
+  const preview = document.createElement('canvas');
+  drawNvi(art.buffer, preview);
+  check(preview.width === ART_SIDE, '200 NVI 미리보기');
   const cancelled=new AbortController();cancelled.abort(new Error('cancel-test'));
   let rejected=false;
   try { await convert(png,store,{path:'/media/test.nvi',signal:cancelled.signal,progress:()=>{}}); }

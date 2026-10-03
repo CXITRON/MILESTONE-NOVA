@@ -576,7 +576,8 @@ void Portal::chunk() {
     snapshot();
     const bool valid =
         validTrackKey(key.c_str()) && mediaHeader(bytes_, received_, received_, info) &&
-        info.format == MediaFormat::Image && crc32(bytes_ + 16, 51200) == info.checksum;
+        info.format == MediaFormat::Image && info.width == board::artSide &&
+        crc32(bytes_ + 16, rawBytes(info.width)) == info.checksum;
     if (valid && key == view_->track.key)
       artwork_->remember(view_->track);
     respond(valid && artwork_->save(key.c_str(), reinterpret_cast<uint16_t *>(bytes_ + 16), true,
@@ -653,13 +654,13 @@ void Portal::artwork() {
       return;
     }
     memcpy(bytes_, "NVI1", 4);
-    write16(bytes_ + 4, 160);
-    write16(bytes_ + 6, 160);
-    write32(bytes_ + 8, 51200);
-    write32(bytes_ + 12, crc32(bytes_ + 16, 51200));
-    server_.setContentLength(51216);
+    write16(bytes_ + 4, board::artSide);
+    write16(bytes_ + 6, board::artSide);
+    write32(bytes_ + 8, rawBytes(board::artSide));
+    write32(bytes_ + 12, crc32(bytes_ + 16, rawBytes(board::artSide)));
+    server_.setContentLength(16 + rawBytes(board::artSide));
     server_.send(200, "application/octet-stream", "");
-    server_.sendContent(reinterpret_cast<char *>(bytes_), 51216);
+    server_.sendContent(reinterpret_cast<char *>(bytes_), 16 + rawBytes(board::artSide));
     return;
   }
   if (!validTrackKey(key)) {

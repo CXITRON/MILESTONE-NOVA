@@ -255,21 +255,23 @@ int main(int argc, char **argv) {
   assert(!StorageTestAccess::run(resumed, job));
   replacement.back() ^= 1;
   assert(read("/media/a.nvi") == replacement);
-  // Validate both legacy 128px and NOVA 160px JPEG sequences and indexed seek.
+  // Validate legacy 128px, first NOVA 160px and full-width 240px JPEG sequences and indexed seek.
   auto &decoder = StorageTestAccess::decoder(resumed);
   std::atomic<uint32_t> progress{0};
   std::atomic<bool> cancel{false};
-  uint16_t pixels[25600];
+  constexpr unsigned side = board::mediaSide;
+  static uint16_t pixels[side * side];
   uint32_t duration = 0;
-  for (const auto &entry : {std::pair<const char *, unsigned>{"MVJ1", 128}, {"NJV1", 160}}) {
+  for (const auto &entry :
+       {std::pair<const char *, unsigned>{"MVJ1", 128}, {"NJV1", 160}, {"NJV1", 240}}) {
     auto bytes = video(entry.first, entry.second);
     write("/media/test.njv", bytes);
     uint32_t contentCrc = 0;
     assert(decoder.validate("/media/test.njv", progress, cancel, &contentCrc));
     assert(contentCrc == crc32(bytes.data(), bytes.size()));
-    assert(decoder.frame("/media/test.njv", 0, pixels, duration) && duration == 200 &&
-           (pixels[0] & 0xf800) > 0xd000);
-    assert(decoder.frame("/media/test.njv", 100, pixels, duration) && pixels[0] == 0);
+    assert(decoder.frame("/media/test.njv", 0, pixels, duration, side) && duration == 200 &&
+           (pixels[0] & 0xf800) > 0xd000 && (pixels[side * side - 1] & 0xf800) > 0xd000);
+    assert(decoder.frame("/media/test.njv", 100, pixels, duration, side) && pixels[0] == 0);
     decoder.close();
     bytes.back() ^= 1;
     write("/media/test.njv", bytes);
@@ -281,11 +283,11 @@ int main(int argc, char **argv) {
     uint32_t contentCrc = 0;
     assert(decoder.validate("/media/old.msm", progress, cancel, &contentCrc));
     assert(contentCrc == crc32(bytes.data(), bytes.size()));
-    assert(decoder.frame("/media/old.msm", 0, pixels, duration));
+    assert(decoder.frame("/media/old.msm", 0, pixels, duration, side));
     assert(pixels[0] == (color ? 0xf800 : 0));
     if (!color) {
-      assert(decoder.frame("/media/old.msm", 150, pixels, duration) && pixels[0] == 0xffff);
-      assert(decoder.frame("/media/old.msm", 0, pixels, duration) && pixels[0] == 0);
+      assert(decoder.frame("/media/old.msm", 150, pixels, duration, side) && pixels[0] == 0xffff);
+      assert(decoder.frame("/media/old.msm", 0, pixels, duration, side) && pixels[0] == 0);
     }
     decoder.close();
   }
@@ -305,9 +307,9 @@ int main(int argc, char **argv) {
     uint32_t contentCrc = 0;
     assert(decoder.validate("/media/old.bmp", progress, cancel, &contentCrc));
     assert(contentCrc == crc32(bitmap.data(), bitmap.size()));
-    assert(decoder.frame("/media/old.bmp", 0, pixels, duration));
+    assert(decoder.frame("/media/old.bmp", 0, pixels, duration, side));
     assert(pixels[0] == (height > 0 ? 0x001f : 0xf800));
-    assert(pixels[159 * 160] == (height > 0 ? 0xf800 : 0x001f));
+    assert(pixels[(side - 1) * side] == (height > 0 ? 0xf800 : 0x001f));
     decoder.close();
   }
   cancel = true;
@@ -315,6 +317,22 @@ int main(int argc, char **argv) {
   assert(!decoder.validate("/media/cancel.njv", progress, cancel));
   assert(!SD.exists("/media/cancel.njv.nix.tmp"));
   cancel = false;
+  // Full-width 240 NVI is copied exactly; first-generation 160 NVI is enlarged smoothly.
+  std::vector<uint8_t> wide(16 + rawBytes(side));
+  memcpy(wide.data(), "NVI1", 4);
+  write16(wide.data() + 4, side);
+  write16(wide.data() + 6, side);
+  write32(wide.data() + 8, rawBytes(side));
+  for (unsigned i = 0; i < side * side; ++i)
+    write16(wide.data() + 16 + i * 2, uint16_t(i));
+  write32(wide.data() + 12, crc32(wide.data() + 16, rawBytes(side)));
+  write("/media/wide.nvi", wide);
+  assert(decoder.validate("/media/wide.nvi", progress, cancel));
+  assert(decoder.frame("/media/wide.nvi", 0, pixels, duration, side) && pixels[1234] == 1234);
+  write("/media/old.nvi", original);
+  assert(decoder.frame("/media/old.nvi", 0, pixels, duration, side) && pixels[0] == 0xf800 &&
+         pixels[side * side - 1] == 0xf800);
+  decoder.close();
   std::vector<uint8_t> raw(16 + 4 + 51200);
   memcpy(raw.data(), "NVV1", 4);
   write16(raw.data() + 4, 160);
@@ -465,6 +483,22 @@ int main(int argc, char **argv) {
   assert(artwork.fetch(limitQuery, pixels) && httpForm.size() == 1400);
   strcpy(limitQuery.album, "AAA");
   assert(!artwork.fetch(limitQuery, pixels) && httpRequests == 1);
+  // The MAC1 answer above (gateway before its update) is enlarged smoothly to the cover side.
+  assert(pixels[0] == 0x07e0 && pixels[board::artSide * board::artSide - 1] == 0x07e0);
+  // The updated gateway answers with a baseline JPEG at the cover side; other sizes are rejected.
+  const auto mac1 = httpPacket;
+  Track jpegQuery;
+  strcpy(jpegQuery.title, "Title");
+  strcpy(jpegQuery.artist, "Artist");
+  httpPacket = jpeg(board::artSide, 255);
+  assert(artwork.fetch(jpegQuery, pixels));
+  assert((pixels[0] & 0xf800) > 0xd000 &&
+         (pixels[board::artSide * board::artSide - 1] & 0xf800) > 0xd000);
+  httpPacket = jpeg(160, 255);
+  assert(!artwork.fetch(jpegQuery, pixels));
+  httpPacket.assign(65537, 0); // Over the JPEG bound.
+  assert(!artwork.fetch(jpegQuery, pixels));
+  httpPacket = mac1;
   httpRequests = 0;
   strcpy(track.key, "ffffffffffffffff");
   Settings settings;
@@ -474,7 +508,7 @@ int main(int argc, char **argv) {
   std::fill(std::begin(pixels), std::end(pixels), 0xf800);
   bool artworkOk = false;
   assert(!artwork.receive(pixels, 71, artworkOk));
-  assert(pixels[0] == 0xf800 && pixels[25599] == 0xf800);
+  assert(pixels[0] == 0xf800 && pixels[board::artSide * board::artSide - 1] == 0xf800);
   assert(!artwork.receive(pixels, 70, artworkOk)); // Stale completion was consumed.
   assert(artwork.request(track, 71, settings));
   artwork.process();

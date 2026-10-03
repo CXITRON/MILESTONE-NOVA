@@ -81,9 +81,9 @@ void App::begin() {
   if (memory)
     lyrics_ = new (memory) Lyrics{};
   cover_ = static_cast<uint16_t *>(
-      heap_caps_malloc(board::artSize * board::artSize * 2, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
+      heap_caps_malloc(rawBytes(board::artSide), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
   mediaPixels_ = static_cast<uint16_t *>(
-      heap_caps_malloc(board::artSize * board::artSize * 2, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
+      heap_caps_malloc(rawBytes(board::mediaSide), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
   log("LYRICS", lyrics_ ? "bounded parser ready" : "PSRAM unavailable; lyrics disabled");
   network_.begin(secrets_, settings_);
   log("OTA", ota_.begin(secrets_) ? "RSA/SHA256 verifier provisioned; window closed"
@@ -466,7 +466,7 @@ void App::assets(uint32_t now) {
       if (lyrics_ && result->lyricsPresent)
         LrcParser{}.parse({result->lyrics, result->lyricsBytes}, *lyrics_);
       if (cover_ && result->artPresent) {
-        memcpy(cover_, result->pixels, board::artSize * board::artSize * 2);
+        memcpy(cover_, result->pixels, rawBytes(board::artSide));
         coverValid_ = true;
       }
       artBlocked_ = result->blocked;
@@ -474,7 +474,7 @@ void App::assets(uint32_t now) {
                result->request.generation == mediaGeneration_) {
       const bool first = !mediaValid_;
       if (mediaPixels_ && result->artPresent) {
-        memcpy(mediaPixels_, result->pixels, board::artSize * board::artSize * 2);
+        memcpy(mediaPixels_, result->pixels, rawBytes(board::mediaSide));
         mediaValid_ = true;
         if (first && !playback_.synchronized()) {
           playback_.load(result->durationMs, now);

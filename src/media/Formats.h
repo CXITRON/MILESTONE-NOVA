@@ -9,6 +9,11 @@ struct MediaInfo {
   uint32_t frames = 0, duration = 0, payload = 0, checksum = 0, dataOffset = 0, rowBytes = 0;
   bool color = false, topDown = false, loop = false;
 };
+// NOVA square formats: 160 (first NOVA files), 200 (artwork cache), 240 (full-width MEDIA).
+inline constexpr unsigned maxMediaSide = 240;
+inline constexpr uint32_t maxJpegFrame = 49152;
+inline constexpr bool novaSide(unsigned side) { return side == 160 || side == 200 || side == 240; }
+inline constexpr uint32_t rawBytes(unsigned side) { return uint32_t(side) * side * 2; }
 uint16_t read16(const uint8_t *p);
 uint32_t read32(const uint8_t *p);
 void write16(uint8_t *p, uint16_t n);
@@ -18,6 +23,9 @@ bool deltaFrame(const uint8_t *data, size_t size, uint8_t *frame, size_t capacit
 bool artworkPacket(const uint8_t *data, size_t size, uint16_t *pixels, unsigned side);
 void scale565(const uint16_t *input, unsigned width, unsigned height, uint16_t *output,
               unsigned side);
+// Smooth one-shot resize for still artwork: bilinear when enlarging, box average when reducing.
+void resample565(const uint16_t *input, unsigned width, unsigned height, uint16_t *output,
+                 unsigned side);
 uint32_t crcUpdate(uint32_t state, const uint8_t *data, size_t size);
 bool safeStoragePath(const char *path);
 bool mediaExtension(const char *name);

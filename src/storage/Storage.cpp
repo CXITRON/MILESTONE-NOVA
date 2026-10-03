@@ -223,12 +223,12 @@ void Storage::readTrack(AssetResult &r) {
   snprintf(path, sizeof(path), "/artwork/%.16s.nvi", r.request.name);
   if (SD.exists(path)) {
     uint32_t duration = 0;
-    r.artPresent = decoder_.frame(path, 0, r.pixels, duration);
+    r.artPresent = decoder_.frame(path, 0, r.pixels, duration, board::artSide);
     if (!r.artPresent) {
       char backup[144];
       snprintf(backup, sizeof(backup), "%s.bak", path);
       if (SD.exists(backup))
-        r.artPresent = decoder_.frame(backup, 0, r.pixels, duration);
+        r.artPresent = decoder_.frame(backup, 0, r.pixels, duration, board::artSide);
     }
     r.error = !r.artPresent;
     if (r.artPresent) {
@@ -244,9 +244,10 @@ void Storage::readTrack(AssetResult &r) {
 }
 void Storage::readMedia(AssetResult &r) {
   const char *path = r.request.name;
-  if (!decoder_.frame(path, r.request.position, r.pixels, r.durationMs)) {
+  if (!decoder_.frame(path, r.request.position, r.pixels, r.durationMs, board::mediaSide)) {
     if (decoder_.validate(path, progress_, validationCancelled_))
-      r.artPresent = decoder_.frame(path, r.request.position, r.pixels, r.durationMs);
+      r.artPresent =
+          decoder_.frame(path, r.request.position, r.pixels, r.durationMs, board::mediaSide);
   } else
     r.artPresent = true;
   r.error = !r.artPresent;

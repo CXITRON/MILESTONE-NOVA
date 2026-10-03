@@ -10,7 +10,9 @@ inline constexpr int sdMosi = 11, sdSck = 12, sdMiso = 13;
 inline constexpr int lcdCs = 15, lcdReset = 16, lcdDc = 17, backlight = 18;
 inline constexpr int onboardRgb = 38, back = 39, prev = 40, next = 41, menu = 42;
 inline constexpr int uartTx = 43, uartRx = 44, sdCs = 46;
-inline constexpr int width = 240, height = 320, artSize = 160, rgbCount = 5;
+inline constexpr int width = 240, height = 320, rgbCount = 5;
+// Square pixel sides: NOW artwork and full-width local MEDIA.
+inline constexpr unsigned artSide = 200, mediaSide = 240;
 inline constexpr uint32_t lcdHz = 20000000, sdHz = 10000000, i2cHz = 100000;
 inline constexpr std::array<int, 5> buttons{back, prev, ok, next, menu};
 inline constexpr std::array<int, 23> used{red,   rgb,      battery, ok,        lcdMosi,    lcdSck,

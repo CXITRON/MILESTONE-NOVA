@@ -17,8 +17,8 @@ private:
   SemaphoreHandle_t mutex_ = nullptr;
   Track track_{};
   Settings settings_{};
-  uint8_t *packet_ = nullptr, *image_ = nullptr;
-  uint16_t *result_ = nullptr;
+  uint8_t *packet_ = nullptr, *image_ = nullptr, *work_ = nullptr;
+  uint16_t *result_ = nullptr, *legacy_ = nullptr;
   uint32_t requested_ = 0, delivered_ = 0;
   bool pending_ = false, ready_ = false, ok_ = false;
 };

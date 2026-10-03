@@ -142,13 +142,15 @@ void Ui::render(Canvas &c, const View &v) {
   }
 }
 void mediaScreen(Canvas &c, const View &v) {
+  // Full-width 240x240 frame below the status bar; it covers the screen title row.
+  constexpr int side = board::mediaSide, top = 30;
   if (v.mediaPixels)
-    c.image(40, 70, 160, 160, v.mediaPixels, v.settings->mediaMonochrome);
+    c.image(0, top, side, side, v.mediaPixels, v.settings->mediaMonochrome);
   else {
-    c.rect(40, 70, 160, 160, color::panel);
-    c.text(48, 134, 144, 60, "미디어 없음", c.muted(), 1, true);
+    c.rect(0, top, side, side, color::panel);
+    c.text(48, top + side / 2 - 20, 144, 60, "미디어 없음", c.muted(), 1, true);
   }
-  c.text(16, 236, 208, 20, v.mediaName, color::white, 1, true);
-  progressBar(c, 280, v.mediaPosition, v.mediaDuration);
+  c.text(16, top + side + 2, 208, 18, v.mediaName, color::white, 1, true);
+  progressBar(c, 291, v.mediaPosition, v.mediaDuration);
 }
 } // namespace nova

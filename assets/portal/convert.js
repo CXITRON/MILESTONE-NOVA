@@ -1,8 +1,10 @@
 import {gifFrames} from './gif.js';
 import {crc32} from './transfer.js';
 
-const SIDE = 160;
-export function imageBytes(image, canvas = document.createElement('canvas')) {
+// Device pixel sides: full-width local media and the NOW artwork cache.
+export const MEDIA_SIDE = 240, ART_SIDE = 200;
+const MAX_FRAME = 49152;
+export function imageBytes(image, canvas = document.createElement('canvas'), SIDE = MEDIA_SIDE) {
   canvas.width = canvas.height = SIDE;
   const ctx = canvas.getContext('2d', {willReadFrequently: true});
   const w = image.videoWidth || image.naturalWidth || image.width,
@@ -11,12 +13,12 @@ export function imageBytes(image, canvas = document.createElement('canvas')) {
   ctx.fillStyle = '#000';
   ctx.fillRect(0, 0, SIDE, SIDE);
   ctx.drawImage(image, (SIDE - w * scale) / 2, (SIDE - h * scale) / 2, w * scale, h * scale);
-  const rgba = ctx.getImageData(0, 0, SIDE, SIDE).data, out = new Uint8Array(51216),
-        view = new DataView(out.buffer);
+  const payload = SIDE * SIDE * 2, rgba = ctx.getImageData(0, 0, SIDE, SIDE).data,
+        out = new Uint8Array(16 + payload), view = new DataView(out.buffer);
   out.set(new TextEncoder().encode('NVI1'));
   view.setUint16(4, SIDE, true);
   view.setUint16(6, SIDE, true);
-  view.setUint32(8, 51200, true);
+  view.setUint32(8, payload, true);
   for (let i = 0; i < SIDE * SIDE; i++)
     view.setUint16(
         16 + i * 2,
@@ -57,17 +59,17 @@ export async function loadImage(file, signal) {
 function header(frames, fps) {
   const b = new Uint8Array(16), v = new DataView(b.buffer);
   b.set(new TextEncoder().encode('NJV1'));
-  v.setUint16(4, SIDE, true);
-  v.setUint16(6, SIDE, true);
+  v.setUint16(4, MEDIA_SIDE, true);
+  v.setUint16(6, MEDIA_SIDE, true);
   v.setUint16(8, fps, true);
   v.setUint32(12, frames, true);
   return b;
 }
 async function jpeg(canvas) {
   let blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg', .8));
-  if (!blob || blob.size > 32768)
+  if (!blob || blob.size > MAX_FRAME)
     blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg', .55));
-  if (!blob || blob.size > 32768) throw new Error('JPEG 프레임이 허용 크기를 초과했습니다.');
+  if (!blob || blob.size > MAX_FRAME) throw new Error('JPEG 프레임이 허용 크기를 초과했습니다.');
   const pixels = new Uint8Array(await blob.arrayBuffer()), out = new Uint8Array(pixels.length + 8),
         v = new DataView(out.buffer);
   v.setUint32(0, pixels.length, true);
@@ -80,7 +82,7 @@ export async function convert(file, store, {path, fps = 20, signal, progress}) {
   if (/\.(nvi|nvv|njv|mvj|msm|bmp)$/i.test(file.name))
     return store.fromFile(file, path, signal, progress);
   const canvas = document.createElement('canvas');
-  canvas.width = canvas.height = SIDE;
+  canvas.width = canvas.height = MEDIA_SIDE;
   if (file.type === 'image/gif' || /\.gif$/i.test(file.name)) {
     const gif = await gifFrames(file, signal);
     fps = 20;
@@ -140,8 +142,11 @@ export async function convert(file, store, {path, fps = 20, signal, progress}) {
   }
 }
 export function drawNvi(data, canvas) {
-  if (data.byteLength !== 51216) throw new Error('잘못된 NVI 이미지');
-  const v = new DataView(data), b = new Uint8Array(data);
+  const v = new DataView(data), b = new Uint8Array(data),
+        SIDE = data.byteLength >= 16 ? v.getUint16(4, true) : 0;
+  if (![160, ART_SIDE, MEDIA_SIDE].includes(SIDE) || v.getUint16(6, true) !== SIDE ||
+      data.byteLength !== 16 + SIDE * SIDE * 2)
+    throw new Error('잘못된 NVI 이미지');
   if (String.fromCharCode(...b.subarray(0, 4)) !== 'NVI1' ||
       crc32(b.subarray(16)) !== v.getUint32(12, true))
     throw new Error('이미지 CRC 오류');

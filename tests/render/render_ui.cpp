@@ -53,12 +53,18 @@ int main(int argc, char **argv) {
   v.loopMaxUs = 3400;
   v.uptime = 86400;
   v.chipTemperature = 46.2f;
-  uint16_t artwork[160 * 160];
-  for (unsigned y = 0; y < 160; ++y)
-    for (unsigned x = 0; x < 160; ++x)
-      artwork[y * 160 + x] = ((x / 6) << 11) | ((y / 3) << 5) | 14;
+  // Same sample gradient at the device's artwork (200) and full-width media (240) sides.
+  static uint16_t artwork[board::artSide * board::artSide], mediaFrame[board::mediaSide * board::mediaSide];
+  for (unsigned y = 0; y < board::artSide; ++y)
+    for (unsigned x = 0; x < board::artSide; ++x)
+      artwork[y * board::artSide + x] = ((x * 32 / board::artSide) << 11) |
+                                        ((y * 64 / board::artSide) << 5) | 14;
+  for (unsigned y = 0; y < board::mediaSide; ++y)
+    for (unsigned x = 0; x < board::mediaSide; ++x)
+      mediaFrame[y * board::mediaSide + x] = ((x * 32 / board::mediaSide) << 11) |
+                                        ((y * 64 / board::mediaSide) << 5) | 14;
   v.artwork = artwork;
-  v.mediaPixels = artwork;
+  v.mediaPixels = mediaFrame;
   v.mediaName = "로컬 영상 테스트";
   v.mediaDuration = 60000;
   v.mediaPosition = 24000;
@@ -261,16 +267,16 @@ int main(int argc, char **argv) {
 
   // Theme changes must not recolor matching pixels in artwork or local media.
   reset(Screen::Media);
-  artwork[0] = color::accent;
+  mediaFrame[0] = color::accent;
   settings.accentColor = 0xf800;
   settings.mediaMonochrome = false;
   settings.burnin = false;
   v.screen = Screen::Media;
   ui.render(c, v);
-  assert(c.pixels()[70 * board::width + 40] == color::accent);
-  assert(c.pixels()[280 * board::width + 16] == settings.accentColor);
+  assert(c.pixels()[30 * board::width] == color::accent);
+  assert(c.pixels()[291 * board::width + 16] == settings.accentColor);
   settings.mediaMonochrome = true;
   ui.render(c, v);
-  assert(c.pixels()[70 * board::width + 40] != color::accent);
-  assert(c.pixels()[280 * board::width + 16] == settings.accentColor);
+  assert(c.pixels()[30 * board::width] != color::accent);
+  assert(c.pixels()[291 * board::width + 16] == settings.accentColor);
 }
