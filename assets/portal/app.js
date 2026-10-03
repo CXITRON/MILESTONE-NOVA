@@ -172,7 +172,7 @@ const labels = {
   log_seconds: '환경 기록 주기 (초)',
   media_seconds: '미디어 기본 표시 시간 (초)',
   media_sort: '미디어 정렬 (0 수동 / 1 이름 / 2 역순)',
-  now_layout: 'NOW 레이아웃 (0~3, 4 가사)',
+  now_layout: 'NOW 레이아웃 (0~3 아트/텍스트, 4 가사, 5 아트+가사)',
   core_order: 'CORE 순서 (0~8 쉼표)',
   core_mask: 'CORE 사용 화면 비트 마스크 (1~511)',
   dday: 'D-Day 날짜',

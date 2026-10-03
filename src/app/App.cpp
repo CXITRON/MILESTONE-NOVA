@@ -99,8 +99,9 @@ void App::begin() {
            board::version);
   diagnostics_.record(reason);
   artwork_.begin(storage_);
+  onlineLyrics_.begin(storage_);
   firmware_.begin(storage_, secrets_.otaPublicKey);
-  serviceReady_ = portal_.begin(storage_, artwork_, firmware_);
+  serviceReady_ = portal_.begin(storage_, artwork_, onlineLyrics_, firmware_);
   navigation_.core(settings_.coreStart);
   navigation_.select(static_cast<Profile>(settings_.profile));
   screen_ = navigation_.screen();
@@ -302,7 +303,7 @@ void App::input(const InputEvent &e, uint32_t now) {
         if (!ble_.control(direction > 0 ? 3 : 4))
           notice("iPhone이 이 명령을 지원하지 않음", now);
       } else if (e.press == Press::Short) {
-        settings_.nowLayout = (int(settings_.nowLayout) + 5 + direction) % 5;
+        settings_.nowLayout = (int(settings_.nowLayout) + nowLayouts + direction) % nowLayouts;
         settingsDirty_ = true;
         savedAt_ = now;
       }
@@ -326,7 +327,7 @@ void App::input(const InputEvent &e, uint32_t now) {
       timer_.toggle(now);
   } else if (screen_ == Screen::Now) {
     if (e.press == Press::Long) {
-      settings_.nowLayout = (settings_.nowLayout + 1) % 5;
+      settings_.nowLayout = (settings_.nowLayout + 1) % nowLayouts;
       settingsDirty_ = true;
       savedAt_ = now;
     } else if (e.press == Press::Short && !ble_.control(2))
@@ -424,6 +425,7 @@ void App::invalidateTrackAssets(uint32_t now) {
   ++assetGeneration_;
   assetsNeeded_ = true;
   coverValid_ = artBlocked_ = artPending_ = false;
+  lyricsLocal_ = lyricsRequested_ = false;
   artRetry_ = now - 60000;
   if (lyrics_) {
     lyrics_->count = lyrics_->used = 0;
@@ -463,6 +465,7 @@ void App::assets(uint32_t now) {
     assetError_ = result->error;
     if (result->request.kind == AssetKind::Track &&
         result->request.generation == assetGeneration_) {
+      lyricsLocal_ = result->lyricsPresent;
       if (lyrics_ && result->lyricsPresent)
         LrcParser{}.parse({result->lyrics, result->lyricsBytes}, *lyrics_);
       if (cover_ && result->artPresent) {
@@ -505,6 +508,17 @@ void App::assets(uint32_t now) {
       now - artRetry_ >= 60000) {
     artPending_ = serviceReady_ && artwork_.request(session_.track(), assetGeneration_, settings_);
     artRetry_ = now;
+  }
+  bool lyricsFound = false;
+  // A stale completion is consumed without touching the current track's lyrics.
+  if (lyrics_ && onlineLyrics_.receive(*lyrics_, assetGeneration_, lyricsFound))
+    log("LYRICS", lyricsFound ? "online lyrics loaded" : "no online lyrics");
+  // One online lookup per track load; the gateway's edge cache absorbs repeated misses.
+  if (lyrics_ && !lyricsLocal_ && !lyricsRequested_ && !assetsNeeded_ && !assetPending_ &&
+      settings_.lyricsView && !power_.pending() && !shutdownStarted_ && network_.connected() &&
+      !network_.ap() && session_.track().key[0] && session_.track().title[0] &&
+      session_.track().artist[0]) {
+    lyricsRequested_ = serviceReady_ && onlineLyrics_.request(session_.track(), assetGeneration_);
   }
   if (thermalState_ < 3 && screen_ == Screen::Media && settings_.mediaAutoplay &&
       !playback_.synchronized() && catalog_ && mediaValid_ && storage_.mounted()) {

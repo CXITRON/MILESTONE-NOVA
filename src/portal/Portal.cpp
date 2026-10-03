@@ -56,9 +56,10 @@ bool decimal(const String &text, uint32_t &out) {
   return true;
 }
 } // namespace
-bool Portal::begin(Storage &s, Artwork &a, Firmware &f) {
+bool Portal::begin(Storage &s, Artwork &a, OnlineLyrics &l, Firmware &f) {
   storage_ = &s;
   artwork_ = &a;
+  lyrics_ = &l;
   firmware_ = &f;
   const auto alloc = [](size_t n) {
     return heap_caps_malloc(n, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
@@ -574,10 +575,10 @@ void Portal::chunk() {
     MediaInfo info;
     const String key = server_.arg("key");
     snapshot();
-    const bool valid =
-        validTrackKey(key.c_str()) && mediaHeader(bytes_, received_, received_, info) &&
-        info.format == MediaFormat::Image && info.width == board::artSide &&
-        crc32(bytes_ + 16, rawBytes(info.width)) == info.checksum;
+    const bool valid = validTrackKey(key.c_str()) &&
+                       mediaHeader(bytes_, received_, received_, info) &&
+                       info.format == MediaFormat::Image && info.width == board::artSide &&
+                       crc32(bytes_ + 16, rawBytes(info.width)) == info.checksum;
     if (valid && key == view_->track.key)
       artwork_->remember(view_->track);
     respond(valid && artwork_->save(key.c_str(), reinterpret_cast<uint16_t *>(bytes_ + 16), true,
@@ -775,8 +776,12 @@ void Portal::run() {
     if (running) {
       dns_.processNextRequest();
       server_.handleClient();
-    } else
+    } else {
       artwork_->process();
+      // AP/OFF may have been requested while the preceding HTTPS lookup was in progress.
+      if (!requested_ && !suspendRequested_)
+        lyrics_->process();
+    }
     firmware_->process();
     vTaskDelay(pdMS_TO_TICKS(5));
   }

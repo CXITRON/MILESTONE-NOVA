@@ -57,6 +57,7 @@ private:
   Navigation navigation_;
   Playback playback_;
   Artwork artwork_;
+  OnlineLyrics onlineLyrics_;
   Firmware firmware_;
   Portal portal_;
   Diagnostics diagnostics_;
@@ -72,7 +73,7 @@ private:
   int lastControlResult_ = 0, thermalState_ = 0;
   float chipTemperature_ = 0;
   bool serviceReady_ = false, screenOff_ = false, rebootRequested_ = false, apClosing_ = false,
-       artBlocked_ = false, artPending_ = false;
+       artBlocked_ = false, artPending_ = false, lyricsLocal_ = false, lyricsRequested_ = false;
   uint32_t boot_ = 0, rendered_ = 0, lastLog_ = 0, lastRtc_ = 0, lastLoop_ = 0, loopMax_ = 0;
   uint32_t savedAt_ = 0, lastGeneration_ = 0, mediaGeneration_ = 1, mediaRequested_ = 0;
   uint32_t assetGeneration_ = 1, lastAssetRevision_ = 0;

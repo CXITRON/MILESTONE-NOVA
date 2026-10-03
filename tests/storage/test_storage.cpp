@@ -1,5 +1,6 @@
 #include "artwork/Artwork.h"
 #include "core/Text.h"
+#include "lyrics/OnlineLyrics.h"
 #include "media/Session.h"
 #include "network/Http.h"
 #include "storage/Journal.h"
@@ -8,6 +9,7 @@
 #include <cstring>
 #include <esp_timer.h>
 #include <fstream>
+#include <functional>
 #include <iostream>
 #include <jpeglib.h>
 TestSD SD;
@@ -17,6 +19,11 @@ unsigned httpRequests = 0;
 std::string httpForm;
 size_t httpReadChunk = SIZE_MAX;
 int64_t httpReadUs = 0;
+int httpStatus = 200;
+unsigned httpTimeout = 0;
+int64_t httpDeclaredLength = -2;
+bool httpComplete = true;
+std::function<void()> httpBeforeRead;
 namespace nova {
 void log(const char *, const char *, ...) {}
 struct StorageTestAccess {
@@ -35,6 +42,7 @@ struct StorageTestAccess {
   static bool journal(Storage &s) { return s.recoverLog(); }
   static MediaCatalog catalog(Storage &s) { return *s.published_; }
   static MediaDecoder &decoder(Storage &s) { return s.decoder_; }
+  static void mounted(Storage &s, bool value) { s.mounted_ = value; }
 };
 // These virtual/unused members are not part of the tested worker operation surface.
 bool Storage::request(const char *, uint32_t) { return false; }
@@ -44,14 +52,20 @@ bool Storage::execute(FileJob &j) {
   return j.ok;
 }
 Http::~Http() = default;
-bool Http::open(const char *, const char *form) {
+bool Http::open(const char *, const char *form, unsigned timeoutMs) {
   ++httpRequests;
   httpForm = form ? form : "";
   httpAt = 0;
-  length_ = httpPacket.size();
-  return true;
+  length_ = httpDeclaredLength == -2 ? int64_t(httpPacket.size()) : httpDeclaredLength;
+  status_ = httpStatus;
+  httpTimeout = timeoutMs;
+  return status_ == 200;
 }
 int Http::read(uint8_t *bytes, size_t n) {
+  if (httpBeforeRead) {
+    auto callback = std::move(httpBeforeRead);
+    callback();
+  }
   n = std::min(n, httpPacket.size() - httpAt);
   n = std::min(n, httpReadChunk);
   testTimeUs += httpReadUs;
@@ -59,7 +73,7 @@ int Http::read(uint8_t *bytes, size_t n) {
   httpAt += n;
   return n;
 }
-bool Http::complete() const { return httpAt == httpPacket.size(); }
+bool Http::complete() const { return httpComplete && httpAt == httpPacket.size(); }
 } // namespace nova
 using namespace nova;
 std::vector<uint8_t> read(const char *path) {
@@ -552,9 +566,150 @@ int main(int argc, char **argv) {
   httpReadUs = 4000000;
   assert(!artwork.fetch(track, pixels));
   assert(httpAt == 4); // Deadline bounds a peer that keeps returning small chunks.
+  httpReadChunk = SIZE_MAX;
+  httpReadUs = 0;
+
+  // Online lyrics: the gateway LRC is cached on SD and parsed for the requesting generation.
+  OnlineLyrics online;
+  assert(online.begin(resumed));
+  Track song;
+  strcpy(song.key, "abcdefabcdef0123");
+  strcpy(song.title, "곡 & Title");
+  strcpy(song.artist, "Artist");
+  song.durationMs = 231400;
+  const std::string lrc = "[00:01.00]첫 줄\n[00:04.50]Second line\n";
+  httpPacket.assign(lrc.begin(), lrc.end());
+  httpRequests = 0;
+  const auto lyricsRevision = resumed.assetRevision();
+  assert(online.request(song, 90));
+  online.process();
+  assert(httpRequests == 1 && httpForm.find("&album=&duration=231") != std::string::npos &&
+         httpForm.find("%EA%B3%A1%20%26%20Title") != std::string::npos);
+  const char *lrcPath = "/lyrics/abcdefabcdef0123.lrc";
+  {
+    const auto cached = read(lrcPath);
+    assert(std::string(cached.begin(), cached.end()) == lrc);
+  }
+  assert(resumed.assetRevision() == lyricsRevision + 1); // App reloads the track from SD.
+  Lyrics parsed;
+  bool lyricsFound = false;
+  assert(!online.receive(parsed, 91, lyricsFound)); // Stale generation is consumed unparsed.
+  assert(parsed.count == 0);
+  assert(online.request(song, 92));
+  online.process(); // The cached file now exists, so no second lookup is made.
+  assert(httpRequests == 1);
+  assert(online.receive(parsed, 92, lyricsFound) && !lyricsFound);
+  // Without a local file the found result is also handed to the requesting generation.
+  job = {};
+  job.op = FileOp::Remove;
+  strcpy(job.path, lrcPath);
+  assert(StorageTestAccess::run(resumed, job));
+  assert(online.request(song, 93));
+  online.process();
+  assert(online.receive(parsed, 93, lyricsFound) && lyricsFound && parsed.synced &&
+         parsed.count == 2 && parsed.line(1) == "Second line");
+  // A user-provided LRC is never replaced by an online result.
+  write(lrcPath, std::vector<uint8_t>{'u', 's', 'e', 'r'});
+  assert(online.request(song, 94));
+  online.process();
+  assert(read(lrcPath).size() == 4 && httpRequests == 2);
+  // Oversized, empty and malformed UTF-8 answers are rejected.
+  SD.remove(lrcPath);
+  size_t lyricBytes = 0;
+  httpPacket.assign(maxLyricsBytes + 1, 'a');
+  assert(!online.fetch(song, lyricBytes));
+  httpPacket.clear();
+  assert(!online.fetch(song, lyricBytes));
+  httpPacket = {'[', '0', '0', ':', '0', '1', ']', 0xff};
+  assert(!online.fetch(song, lyricBytes));
+  Track nameless = song;
+  nameless.artist[0] = 0;
+  const auto before = httpRequests;
+  assert(!online.fetch(nameless, lyricBytes) && httpRequests == before);
+  assert(httpTimeout == 8000);
+
+  // Invalid successful responses must never become a persistent cache entry.
+  for (const std::string &invalid :
+       {std::string("<html>gateway error</html>"), std::string("[00:01]ok\n[99:99]bad\n"),
+        std::string("[00:01]") + std::string(1025, 'x'), std::string("[00:01]bad\0text", 16)}) {
+    httpPacket.assign(invalid.begin(), invalid.end());
+    assert(online.request(song, 95));
+    online.process();
+    assert(online.receive(parsed, 95, lyricsFound) && !lyricsFound);
+    assert(!SD.exists(lrcPath));
+  }
+  httpDeclaredLength = -1;
+  httpPacket.assign(maxLyricsBytes + 1, 'a');
+  assert(!online.fetch(song, lyricBytes));
+  httpDeclaredLength = -2;
+  httpPacket.assign(lrc.begin(), lrc.end());
+  httpComplete = false;
+  assert(!online.fetch(song, lyricBytes));
+  httpComplete = true;
+  for (int status : {204, 404, 503}) {
+    httpStatus = status;
+    assert(online.request(song, 96));
+    online.process();
+    assert(online.receive(parsed, 96, lyricsFound) && !lyricsFound);
+    assert(!SD.exists(lrcPath));
+  }
+  httpStatus = 200;
+  httpReadChunk = 1;
+  httpReadUs = 4000000;
+  assert(!online.fetch(song, lyricBytes) && httpAt == 4);
+  httpReadChunk = SIZE_MAX;
+  httpReadUs = 0;
+
+  // Save failure and an absent card still allow this track's validated RAM result.
+  failWriteAfter = 0;
+  assert(online.request(song, 97));
+  online.process();
+  failWriteAfter = -1;
+  assert(online.receive(parsed, 97, lyricsFound) && lyricsFound && parsed.count == 2);
+  assert(!SD.exists(lrcPath));
+  StorageTestAccess::mounted(resumed, false);
+  assert(online.request(song, 98));
+  online.process();
+  assert(online.receive(parsed, 98, lyricsFound) && lyricsFound);
+  assert(!SD.exists(lrcPath));
+  StorageTestAccess::mounted(resumed, true);
+
+  // A local file arriving after HTTP starts wins at the final SD commit and RAM delivery.
+  const std::vector<uint8_t> userLyrics{'u', 's', 'e', 'r'};
+  httpBeforeRead = [&] { write(lrcPath, userLyrics); };
+  assert(online.request(song, 99));
+  online.process();
+  assert(online.receive(parsed, 99, lyricsFound) && !lyricsFound);
+  assert(read(lrcPath) == userLyrics);
+  job = {};
+  job.op = FileOp::LyricsSave;
+  strcpy(job.path, lrcPath);
+  job.data = reinterpret_cast<uint8_t *>(const_cast<char *>(lrc.data()));
+  job.length = lrc.size();
+  assert(!StorageTestAccess::run(resumed, job) && job.value == 1);
+  strcpy(job.path, "/media/abcdefabcdef0123.lrc");
+  assert(!StorageTestAccess::run(resumed, job));
+
+  // A new track request made during a fetch survives delivery of the previous completion.
+  SD.remove(lrcPath);
+  Track nextSong = song;
+  strcpy(nextSong.key, "012301230123abcd");
+  httpBeforeRead = [&] { assert(online.request(nextSong, 101)); };
+  assert(online.request(song, 100));
+  online.process();
+  const auto oldCount = parsed.count;
+  assert(!online.receive(parsed, 101, lyricsFound) && parsed.count == oldCount);
+  online.process();
+  assert(online.receive(parsed, 101, lyricsFound) && lyricsFound);
+  assert(SD.exists("/lyrics/012301230123abcd.lrc"));
+
+  Track longSong = song;
+  longSong.durationMs = UINT32_MAX;
+  const auto priorRequests = httpRequests;
+  assert(!online.fetch(longSong, lyricBytes) && httpRequests == priorRequests);
   std::cout
       << "Storage real worker handlers: checkpoint reboot, conflicting retry, atomic rollback, CRC "
          "rejection, JPEG/MSM seek, BMP orientation, Sync content identity, catalog, artwork "
-         "pagination/protection/stale delivery, asset revision, cancellation, partial journal and "
-         "write failure passed\n";
+         "pagination/protection/stale delivery, online lyrics cache/precedence, asset revision, "
+         "cancellation, partial journal and write failure passed\n";
 }

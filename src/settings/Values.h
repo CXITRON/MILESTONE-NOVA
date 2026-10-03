@@ -1,6 +1,8 @@
 #pragma once
 #include <cstdint>
 namespace nova {
+// NOW layouts 0..nowLayouts-1 (4 = lyrics, 5 = cover + lyrics).
+inline constexpr uint8_t nowLayouts = 6;
 struct Settings {
   uint32_t schema = 2;
   uint32_t lcdHz = 20000000;

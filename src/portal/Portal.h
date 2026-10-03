@@ -1,5 +1,6 @@
 #pragma once
 #include "../artwork/Artwork.h"
+#include "../lyrics/OnlineLyrics.h"
 #include "../network/Network.h"
 #include "../ui/Navigation.h"
 #include "../update/Firmware.h"
@@ -55,7 +56,7 @@ struct PortalSnapshot {
 // HTTP/DNS and outbound I/O have one worker; hardware/NVS/UI remain on App's loop.
 class Portal {
 public:
-  bool begin(Storage &storage, Artwork &artwork, Firmware &firmware);
+  bool begin(Storage &storage, Artwork &artwork, OnlineLyrics &lyrics, Firmware &firmware);
   void open(bool enabled);
   void suspend(bool enabled);
   bool suspended() const { return !ready_ || (suspendRequested_ && suspended_); }
@@ -92,6 +93,7 @@ private:
   };
   Storage *storage_ = nullptr;
   Artwork *artwork_ = nullptr;
+  OnlineLyrics *lyrics_ = nullptr;
   Firmware *firmware_ = nullptr;
   WebServer server_{80};
   DNSServer dns_;

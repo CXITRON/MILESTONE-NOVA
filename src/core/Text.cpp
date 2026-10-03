@@ -112,4 +112,22 @@ uint32_t crc32(const void *data, size_t n) {
   }
   return ~crc;
 }
+bool appendFormValue(char *out, size_t capacity, size_t &at, const char *s) {
+  constexpr char hex[] = "0123456789ABCDEF";
+  for (const auto *p = reinterpret_cast<const uint8_t *>(s); *p; ++p) {
+    const bool plain =
+        (*p >= 'a' && *p <= 'z') || (*p >= 'A' && *p <= 'Z') || (*p >= '0' && *p <= '9');
+    if (at + (plain ? 1 : 3) >= capacity)
+      return false;
+    if (plain)
+      out[at++] = *p;
+    else {
+      out[at++] = '%';
+      out[at++] = hex[*p >> 4];
+      out[at++] = hex[*p & 15];
+    }
+  }
+  out[at] = 0;
+  return true;
+}
 } // namespace nova

@@ -46,7 +46,8 @@ enum class FileOp : uint8_t {
   ArtFlags,
   ArtCleanup,
   ArtAllowed,
-  ArtSave
+  ArtSave,
+  LyricsSave
 };
 struct FileJob {
   FileOp op = FileOp::Info;

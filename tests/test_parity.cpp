@@ -177,6 +177,10 @@ int main() {
   wifi.auth = 2;
   assert(!rememberWifiProfile(saved, wifi));
   Settings settings;
+  assert(applySetting(settings, "now_layout", "5") && settings.nowLayout == 5);
+  assert(validSettings(settings));
+  assert(!applySetting(settings, "now_layout", "6") && settings.nowLayout == 5);
+  assert(!applySetting(settings, "now_layout", "-1") && settings.nowLayout == 5);
   assert(applySetting(settings, "core_order", "8,7,6,5,4,3,2,1,0"));
   assert(!applySetting(settings, "core_order", "8,7,6,5,4,3,2,1,1"));
   assert(!applySetting(settings, "thermal_stop", "60"));

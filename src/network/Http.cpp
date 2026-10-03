@@ -8,12 +8,12 @@ Http::~Http() {
     esp_http_client_cleanup(client_);
   }
 }
-bool Http::open(const char *url, const char *form) {
+bool Http::open(const char *url, const char *form, unsigned timeoutMs) {
   if (client_ || !url || strncmp(url, "https://", 8))
     return false;
   esp_http_client_config_t config{};
   config.url = url;
-  config.timeout_ms = 4000;
+  config.timeout_ms = timeoutMs;
   config.crt_bundle_attach = esp_crt_bundle_attach;
   config.disable_auto_redirect = true;
   config.buffer_size = 4096;

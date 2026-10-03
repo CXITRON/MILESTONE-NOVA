@@ -7,7 +7,7 @@ namespace nova {
 class Http {
 public:
   ~Http();
-  bool open(const char *url, const char *form = nullptr);
+  bool open(const char *url, const char *form = nullptr, unsigned timeoutMs = 4000);
   int read(uint8_t *bytes, size_t capacity);
   int status() const { return status_; }
   int64_t length() const { return length_; }

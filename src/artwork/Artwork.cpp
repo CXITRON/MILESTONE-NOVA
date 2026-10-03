@@ -11,24 +11,6 @@ namespace {
 // Gateway JPEG bound, and the MAC1 packet (88x88 RGB565 within) served before the gateway update.
 constexpr size_t jpegBytes = 65536, legacyBytes = 22704, legacySide = 88, workBytes = 16384;
 constexpr size_t imageBytes = 16 + rawBytes(board::artSide);
-bool formPart(char *out, size_t capacity, size_t &at, const char *s) {
-  constexpr char hex[] = "0123456789ABCDEF";
-  for (const auto *p = reinterpret_cast<const uint8_t *>(s); *p; ++p) {
-    const bool plain =
-        (*p >= 'a' && *p <= 'z') || (*p >= 'A' && *p <= 'Z') || (*p >= '0' && *p <= '9');
-    if (at + (plain ? 1 : 3) >= capacity)
-      return false;
-    if (plain)
-      out[at++] = *p;
-    else {
-      out[at++] = '%';
-      out[at++] = hex[*p >> 4];
-      out[at++] = hex[*p & 15];
-    }
-  }
-  out[at] = 0;
-  return true;
-}
 } // namespace
 bool Artwork::begin(Storage &s) {
   storage_ = &s;
@@ -70,15 +52,15 @@ bool Artwork::fetch(const Track &query, uint16_t *pixels) {
   // Existing Worker accepts at most 1400 encoded bytes, including field separators.
   char form[1401] = "title=";
   size_t at = 6;
-  if (!formPart(form, sizeof(form) - 15, at, query.title))
+  if (!appendFormValue(form, sizeof(form) - 15, at, query.title))
     return false;
   strcpy(form + at, "&artist=");
   at += 8;
-  if (!formPart(form, sizeof(form) - 7, at, query.artist))
+  if (!appendFormValue(form, sizeof(form) - 7, at, query.artist))
     return false;
   strcpy(form + at, "&album=");
   at += 7;
-  if (!formPart(form, sizeof(form), at, query.album))
+  if (!appendFormValue(form, sizeof(form), at, query.album))
     return false;
   const int64_t started = esp_timer_get_time();
   Http http;

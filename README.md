@@ -151,7 +151,7 @@ PSRAM은 LOLIN S3 board profile의 OPI 설정을 사용한다. `build/`는 Git�
 `scripts/test/run.sh`는 ASan/UBSan을 사용한다. ptrace 기반 실행 환경에서는 LeakSanitizer가
 동작하지 않아 기본 `detect_leaks=0`이며 지원되는 호스트에서
 `ASAN_OPTIONS=detect_leaks=1 ./scripts/test/run.sh`로 추가 검사할 수 있다.
-`preview.sh`는 제품의 C++ renderer로 화면·레이아웃·진단·대기/오류 상태 60개 장면을 그린다.
+`preview.sh`는 제품의 C++ renderer로 화면·레이아웃·진단·대기/오류 상태 63개 장면을 그린다.
 `build/preview/index.md` 또는 `index.html`에서 이름과 분류별로 전체 화면을 볼 수 있다.
 개별 `screen-*.png`는 원본 240×320 픽셀이며, `screens*.png`는 9개씩 묶은 비교 이미지다.
 날짜·음악·센서·아트는 예시 데이터이며 실물 LCD나 동작 애니메이션의 캡처는 아니다.
@@ -295,9 +295,28 @@ python3 scripts/media/track_key.py --artist '아티스트' --title '곡 제목' 
 초 단위/소수 1~3자리, 여러 timestamp, 파일 전체 offset, CRLF/LF, metadata,
 잘못된 줄, 중복 timestamp를 처리한다. 같은 시각은 마지막 entry를 선택한다.
 빈 timed entry는 instrumental로 표시한다. timestamp 없는 파일은 **UNSYNCED**로
-표시한다. 현재 구현의 unsynced 화면은 첫 4줄을 보여 준다.
+표시한다. 비동기 가사는 가사 전용 화면에서 첫 4줄, 통합 화면에서 첫 3줄을 보여 준다.
 재생 위치가 없으면 가사를 임의로 진행시키지 않는다. play 중 monotonic 추정,
 pause 고정, seek 즉시 보정, 곡 변경 시 reset, binary search로 줄을 선택한다.
+
+로컬 LRC가 없고 `lyrics_view`가 켜져 있으면 Wi-Fi 연결 후 기존 Worker의
+`POST /v1/lyrics`로 온라인 동기화 가사를 조회한다. Worker는 LRCLIB 공식 API에서
+곡 제목·아티스트·앨범·재생 길이를 조회하고 유효한 LRC만 반환한다.
+받은 가사는 SD `/lyrics/<key>.lrc`에 저장해 다음부터 오프라인으로 사용한다.
+기존 파일은 빈 파일이라도 자동으로 덮어쓰지 않는다. SD 없음/저장 실패 시에는
+현재 곡의 RAM 결과를 표시한다. 곡이 바뀐 뒤 도착한 결과는 화면에 적용하지 않는다.
+온라인 조회는 곡 자산을 읽을 때 한 번 시도한다. 실패한 곡의 재시도는 곡 재선택이나
+포털의 현재 곡 재읽기(`artRefresh`)로 할 수 있다. AP 사용/OFF 중에는 새 조회를 시작하지 않는다.
+`artwork_auto`와 가사 조회는 독립이며, 자동 가사 조회는 `lyrics_view`를 따른다.
+서버 배포 전에는 가사 경로가 없을 수 있다. [API와 제한](docs/guides/protocol.md#온라인-가사-worker)을 참고한다.
+
+NOW 레이아웃은 0~5번이다. 0은 큰 아트+제목/아티스트, 1은 작은 아트+상세,
+2는 텍스트, 3은 큰 아트+제목/앨범, 4는 가사, **5는 아트+곡 정보+가사+진행 바**다.
+0/3의 제목과 아티스트/앨범은 각각 한 줄을 쓴다. 5의 아트는 88×88이고 아래에 가사 3줄이 있다.
+짧은 PREV/NEXT 또는 길게 OK로 전환한다. 포털 `now_layout`에서도 고를 수 있다.
+`scroll`이 켜져 있고 글자가 영역보다 길면 제목·아티스트·앨범 marquee는 양 끝에서
+2초씩 멈추며 가로로 왕복한다(`scroll_speed`, 기본 24 px/s). 모든 텍스트에 적용되는 것은
+아니다. 2번의 큰 제목과 가사는 줄바꿈/영역 자르기를 사용한다.
 
 ```sh
 # P6 PPM은 Python 표준 library만 필요. PNG/JPEG에는 Pillow가 필요하다.
@@ -305,13 +324,14 @@ python3 scripts/media/media_pack.py cover.ppm --side 200 --output <track-key>.nv
 python3 scripts/media/media_pack.py frame-*.ppm --fps 5 --output clip.nvv   # 기본 240
 ```
 
-NOW 큰 아트 레이아웃은 **200×200** 원본을 그대로 표시하고, 작은 아트 레이아웃(88×88)은
-면적 평균으로 줄인다. 앨범아트는 SD 캐시(`/artwork/<key>.nvi`, NVI1 200×200)를 우선한다.
+NOW 큰 아트 레이아웃은 **200×200 원본을 172×172로 면적 평균 축소**해 텍스트 두 줄의
+공간을 확보한다. 작은 아트 레이아웃(88×88)도 면적 평균으로 줄인다.
+앨범아트는 SD 캐시(`/artwork/<key>.nvi`, NVI1 200×200)를 우선한다.
 없으면 MILESTONE Artwork Worker(MILESTONE-Core 저장소 `services/artwork-worker`)의
 `/v3/artwork`에서 baseline JPEG 200×200을 받아 기기에서 디코딩한다(요청 전체 15초 제한).
 Worker 갱신 배포 전에는 같은 경로가 88×88 MAC1을 돌려주므로, 길이·CRC를 검증한 뒤
-200×200으로 부드럽게 확대해 표시한다. 이전 펌웨어가 저장한 160×160 캐시도
-읽어서 200×200으로 확대해 표시한다. AMS가 이미지를 전송하는 것은 아니다. 기본 캐시 한도 2 GiB를 넘을 때만 오래된
+200×200 버퍼로 부드럽게 확대한다. 이전 펌웨어가 저장한 160×160 캐시도
+읽어서 200×200 버퍼로 확대한 뒤 레이아웃 크기로 축소해 표시한다. AMS가 이미지를 전송하는 것은 아니다. 기본 캐시 한도 2 GiB를 넘을 때만 오래된
 자동 이미지를 정리한다. 기본 여유 공간 1 GiB 미만에서는 추가 저장을 거절하며
 공간 확보를 위해 고정/사용자 이미지를 지우지 않는다.
 포털에서 검색·미리보기·사용자 이미지/LRC 업로드·고정·차단·재조회·삭제할 수 있다.
@@ -409,7 +429,8 @@ python3 scripts/build/release.py --key /safe/nova-private.pem \
   스케줄링 또는 ESP JPEG decoder의 실물 동작을 대신하지 않는다.
 - AP Sync의 오디오는 원본을 해석하는 브라우저에서 난다. 코덱/백그라운드 제한과
   실제 Wi-Fi 지연에 따른 동기 오차는 사용하는 iPhone/브라우저에서 측정해야 한다.
-- 온라인 가사 제공자는 아직 연결하지 않았다. 요구한 line-synced 가사는 로컬 LRC를 쓴다.
+- 온라인 가사는 Worker 배포와 인터넷 연결이 필요하며 공급원에 없는 곡은 표시하지 못한다.
+  동기화 정보 없는 온라인 가사는 내려받지 않는다. 로컬 LRC는 그대로 사용할 수 있다.
   v3 JPEG 200 응답은 로컬 Node에서 실제 Deezer/Apple 조회와 Wasm MozJPEG 변환을 확인했으나
   Worker를 아직 배포하지 않았다. 배포 전에는 88×88 MAC1 확대본이 표시된다. ESP32 TLS/RF 공존은 별도 검증한다.
 - 배터리는 전압 추정이다. 충전 상태 입력이 없어 충전 여부를 표시하지 않는다.

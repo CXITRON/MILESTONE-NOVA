@@ -331,7 +331,25 @@ void Storage::fileJob(FileJob &j) {
     j.ok = artworkPath(j.path) && automaticArtworkAllowed(j.path);
     return;
   }
-  if (j.op == FileOp::Write || j.op == FileOp::ArtSave) {
+  if (j.op == FileOp::Write || j.op == FileOp::ArtSave || j.op == FileOp::LyricsSave) {
+    if (j.op == FileOp::LyricsSave) {
+      j.value = 0;
+      char key[17]{};
+      if (strlen(j.path) != 28 || strncmp(j.path, "/lyrics/", 8) || strcmp(j.path + 24, ".lrc")) {
+        fail("Invalid lyrics cache path");
+        return;
+      }
+      memcpy(key, j.path + 8, 16);
+      if (!validTrackKey(key)) {
+        fail("Invalid lyrics track key");
+        return;
+      }
+      if (SD.exists(j.path)) {
+        j.value = 1;
+        fail("Local lyrics already exist");
+        return;
+      }
+    }
     if (j.op == FileOp::ArtSave &&
         (!artworkPath(j.path) || (!j.enabled && !automaticArtworkAllowed(j.path)))) {
       fail("Automatic artwork is protected or blocked");

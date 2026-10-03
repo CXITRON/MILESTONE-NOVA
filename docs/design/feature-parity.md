@@ -12,6 +12,10 @@ C0001의 완료 판정은 철회 상태로 유지한다. 이 표의 **구현됨*
 drain을 기다린다. 자세한 변경과 09-29 빌드 입력 대조 결과는
 [C0003](../codex/reports/report_C0003_2026_09_29.md)에 기록한다.
 
+2026-10-03 추가: 사용자 추가 지시로 NOW 통합 레이아웃(5), 172px 아트와 텍스트 두 줄,
+Worker 경유 온라인 동기 가사를 연결했다. Claude Code의 초기 구현과 Codex의 서버 완성·
+보완·통합 검증 범위는 [C0008](../codex/reports/report_C0008_2026_10_03.md)에 기록한다.
+
 기존 코드 표의 경로는 `MILESTONE_Legacy/MILESTONE_Core/` 기준이다.
 `core` 검사는 tests/test_core.cpp, `parity`는 tests/test_parity.cpp,
 `storage`는 실제 StorageFiles/MediaDecoder/Journal을 실행하는 tests/storage/test_storage.cpp,
@@ -22,7 +26,8 @@ drain을 기다린다. 자세한 변경과 09-29 빌드 입력 대조 결과는
 | MENU → CORE/MEDIA/NOW, OK 적용/BACK 취소, 재부팅 없는 전환 | V5_PARITY_CHECKLIST checkpoint 1, v5 Main 입력 | src/ui/Navigation.*, src/app/App.cpp::input/selectMode | 구현됨. parity 메뉴/순서/mask, C++ 화면 렌더 |
 | 기존 CORE 7개 조합, Focus/환경 추가, 3초 splash | v5/.../V5CoreViews.h, CoreDisplay.inc | src/ui/CoreScreens.cpp, Ui.cpp, App.cpp | 구현됨. 날짜/focus core 검사, 36장 UI 렌더 |
 | 색/12·24시간/초/이름/문구/정렬·스크롤/순서·mask/자동 순환/번인/화면 끄기 | V5CoreViews.h, V5Portal.h, legacy settings | src/settings/Values.*, src/ui/*, src/display/Canvas.*, AppServices.cpp | 구현됨. 범위/UTF-8 검사, 실제 renderer. 아트 픽셀과 UI 색 설정을 분리 |
-| NOW 4개 레이아웃 + LRC, player/queue/긴 metadata, iPhone 지원 명령 | CoreBluetooth.inc, V5AmsRuntime.inc, MilestoneV5Now.cpp | src/media/BleMedia.*, AmsDecoder.*, Session.*, src/ui/NowScreen.cpp | 구현됨. AMS parser/seek/track 검사. GATT 지원 목록 없으면 제어 거절. iPhone 실물 미검증 |
+| NOW 6개 레이아웃(아트+가사 포함), player/queue/긴 metadata, iPhone 지원 명령 | CoreBluetooth.inc, V5AmsRuntime.inc, MilestoneV5Now.cpp 및 10-03 추가 지시 | src/media/BleMedia.*, AmsDecoder.*, Session.*, src/ui/NowScreen.cpp | 구현됨. 63장 UI 렌더/레이아웃 범위 검사. AMS 지원 목록 없으면 제어 거절. iPhone 실물 미검증 |
+| 로컬 LRC 우선, Worker 온라인 동기 가사와 SD 캐시 | U0001 LRC 및 10-03 추가 지시 | src/lyrics/OnlineLyrics.*, src/storage/StorageFiles.cpp, MILESTONE_Core/services/artwork-worker/src/lyrics.js | 구현됨. 오류/크기/로컬 파일 보호/늦은 결과, Worker 및 실 LRCLIB 응답 확인. Worker 미배포/실물 미검증 |
 | 설정 AP, 임의 8자리/고정/확인한 open, 화면에만 암호, captive portal/BACK 종료 | V5Portal.h, V5Radio.h | src/network/Network.*, src/portal/*, assets/portal/*, App.cpp | 구현됨. ESP32 build, offline 초기 DOM. 실제 AP/WebServer 조작 미검증 |
 | 비동기 검색/Personal·Open·PEAP/15초 시험/2초 성공 후 저장/최대 8개/재사용·삭제 | V5Network.h, MilestoneV5Legacy.h | Network.*, settings/Values.*·Store.*, AppServices.cpp | 구현됨. 프로필 validation/성공 순서/상한 host 검사. RF/NVS 실물 미검증 |
 | NTP/브라우저 시간/UTC RTC/TZ/기본값/초기화/schema 1~12 import | V5Rtc, V5Portal, MilestoneV5Legacy.h | sensors/Sensors.*, settings/Store.*·LegacyImport.*, AppServices.cpp | 구현됨. 날짜/TZ/범위 core 검사. namespace 실제 import/전원 차단 미검증 |
@@ -43,8 +48,8 @@ drain을 기다린다. 자세한 변경과 09-29 빌드 입력 대조 결과는
   frame streaming을 넣지 않았다. 그 구조가 제공하던 모드/미디어/설정/업데이트 사용자
   기능은 위 모듈로 재구현했다. legacy 파일/키/빌드 스크립트에 의존하지 않는다.
 - AMS는 아트/LRC를 전송하지 않는다. 아트는 기존 Worker 또는 사용자 업로드,
-  가사는 요청 범위의 local LRC다. 온라인 가사 서비스/native companion player는
-  U0001에서 향후 확장 경로이며 구현된 것처럼 표시하지 않는다.
+  가사는 local LRC 우선이며 10-03 추가 지시로 Worker 경유 LRCLIB 조회를 구현했다.
+  서버 배포와 실물 동작 확인은 별도다. native companion player는 여전히 향후 확장 경로다.
 - helper metadata 연결은 지원 명령을 증명하지 않으므로 AMS 제어 UI를 활성화하지 않는다.
   실제 GATT write 응답도 iPhone 플레이어 상태 변경을 대신하지 않는다.
 - 공개 NOVA 릴리스 파일은 이번 작업에서 게시하지 않았다. 인터넷 업데이트 운영에는

@@ -135,8 +135,10 @@ int main(int argc, char **argv) {
   }
   static constexpr const char *layouts[]{"아트 + 아티스트 / 제목 · 제어 불가",
                                          "작은 아트 + 상세 · 제어 가능", "텍스트 중심 · 제어 불가",
-                                         "큰 아트 + 앨범 · 제어 가능", "동기화 가사 · 제어 불가"};
-  for (unsigned layout = 0; layout < 5; ++layout) {
+                                         "큰 아트 + 앨범 · 제어 가능", "동기화 가사 · 제어 불가",
+                                         "아트 + 가사 · 제어 가능"};
+  static_assert(sizeof(layouts) / sizeof(*layouts) == nowLayouts);
+  for (unsigned layout = 0; layout < nowLayouts; ++layout) {
     reset(Screen::Now);
     settings.nowLayout = layout;
     v.canPlay = layout % 2;
@@ -203,6 +205,14 @@ int main(int argc, char **argv) {
   reset(Screen::Now);
   v.lyrics = &instrumental;
   save("NOW", "간주 · 빈 가사 구간");
+  reset(Screen::Now);
+  settings.nowLayout = 5;
+  v.lyrics = nullptr;
+  save("NOW", "아트 + 가사 · 가사 없음");
+  reset(Screen::Now);
+  settings.nowLayout = 5;
+  v.lyrics = &unsynced;
+  save("NOW", "아트 + 가사 · 시간 정보 없음");
 
   reset(Screen::Media);
   v.mediaPixels = nullptr;

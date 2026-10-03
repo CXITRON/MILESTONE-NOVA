@@ -8,7 +8,7 @@
 | play / pause / rate / position | Player PlaybackInfo | state frame (rate 1.0) | 공급하지 않음 |
 | duration | Track Duration | state frame | video 자체 duration만 |
 | artwork | AMS에서 제공하지 않음 | metadata로 key 결정 | `/artwork/<key>.nvi`(200×200), miss 시 Worker v3 JPEG 200(갱신 전 MAC1) |
-| lyrics | AMS에서 제공하지 않음 | metadata/position 제공 | `/lyrics/<key>.lrc` |
+| lyrics | AMS에서 제공하지 않음 | metadata/position 제공 | `/lyrics/<key>.lrc`, 없으면 Worker `/v1/lyrics` |
 
 ESP32-S3에서 Bluetooth Classic을 사용하지 않는다. firmware가 metadata를 만들거나
 네트워크 성공을 가정하지 않는다. AMS 속성은 독립 알림이므로 400 ms quiet burst를
@@ -66,8 +66,57 @@ artist/title/album을 각각 `UTF-8 byte length:LE uint32 + 원래 UTF-8 bytes`�
 LRC는 파일 전체 32 KiB, 최대 512개 timestamp entry, 한 줄 1024 bytes 제한이다.
 한 줄 복수 timestamp는 최대 16개이며 한도를 넘으면 truncated flag를 기록한다.
 상한 초과 파일은 SD worker가 거절한다. 매 프레임 파일을 다시 열거나 전체 cache를
-순회하지 않는다. 온라인 provider를 추가할 때는 local hit를 우선하고 실패 시 현재
-MediaSession과 timeline을 유지해야 한다. endpoint/credentials는 provider 내부 한 곳에 둔다.
+순회하지 않는다. 온라인 provider는 local hit를 우선하고 실패 시 현재 MediaSession을 유지한다.
+endpoint는 `src/network/Endpoints.h` 한 곳에 둔다.
+
+## 온라인 가사 Worker
+
+같은 MILESTONE Worker의 `POST /v1/lyrics`는
+`Content-Type: application/x-www-form-urlencoded`로 `title`, `artist`(필수),
+`album`(선택), `duration`(선택, 초 단위 1~3600)을 받는다.
+인코딩된 요청 본문은 최대 1400 bytes, 정규화한 각 문자열은 최대 192 codepoints다.
+빈 필수 필드, 중복 필드, 제어 문자는 거절한다. 알 수 없는 재생 길이는 생략한다.
+펌웨어는 ms를 초로 반올림하며 1시간을 초과하는 곡의 온라인 조회는 하지 않는다.
+
+```sh
+curl --fail-with-body -X POST \
+  -H 'Content-Type: application/x-www-form-urlencoded' \
+  --data-urlencode 'title=I Want to Live' \
+  --data-urlencode 'artist=Borislav Slavov' \
+  --data-urlencode "album=Baldur's Gate 3 (Original Game Soundtrack)" \
+  --data 'duration=233' \
+  https://milestone-artwork.typhoon-individual.workers.dev/v1/lyrics \
+  -o lyrics.lrc
+```
+
+| 상태 | 의미 |
+|---|---|
+| 200 | `text/plain; charset=utf-8`, `X-Milestone-Lyrics: 1`, 검증된 동기화 LRC |
+| 204 | 일치하는 동기화 가사 없음. 무가사 곡/일반 텍스트만 있는 곡도 포함 |
+| 400 / 413 / 415 | 입력 오류 / 본문 상한 초과 / 다른 Content-Type |
+| 502 / 504 | 제공자 오류·잘못된 응답 / 조회 제한 시간 초과 |
+| 503 | 제공자 요청 제한 또는 대기열 포화. `Retry-After`초 이후 다시 시도 |
+
+Worker는 [LRCLIB 공식 API](https://lrclib.net/docs)의 `/api/get`에 명시적인 User-Agent를
+붙인다. 제목·아티스트가 정규화 후 같아야 하고, 알려진 길이는 응답과 ±2초 이내여야 한다.
+추측 검색 결과나 `plainLyrics`를 동기화 가사로 바꾸지 않는다. JSON은 최대 256 KiB,
+최종 LRC는 위 기기 parser 한도를 따른다. 제공자 조회는 대기 시간을 포함해 6초로 제한한다.
+isolate 안에서는 요청을 직렬 처리하고 250ms 간격을 두며 진행·대기 합계 최대 4개만 받는다.
+429의 Retry-After는 isolate와 edge cache에 반영한다. 전 세계 모든 edge를 하나의
+전역 요청 제한 장치로 묶는 구조는 아니다.
+
+양성 결과는 30일, 204는 1시간 edge cache에 보관한다. 정규화한 제목·아티스트·앨범과
+재생 길이가 cache key에 포함된다. 502/504는 가사 없음으로 캐시하지 않는다.
+기기는 응답 수신 후 UTF-8·LRC 구조·한도를 다시 검증하고, 단일 SD worker에서
+기존 `/lyrics/<key>.lrc`가 없는지 재검사한 뒤 원자 저장한다. 기존 사용자 파일이
+생겼으면 온라인 결과의 저장과 화면 적용을 모두 포기한다. 일반 SD 쓰기 실패는 RAM
+표시를 허용한다. 네트워크·파싱은 service worker에서 실행하며 화면에는 맞는 generation만 전달한다.
+기기 HTTP timeout은 이 경로만 8초이고 읽기 반복 사이에서 전체 경과 15초를 검사한다.
+따라서 제한 시간이 지난 시점의 blocking read까지 즉시 중단하는 hard deadline은 아니다.
+
+로컬 파일이 없고 `lyrics_view`가 켜진 곡의 자산 읽기당 한 번 조회한다. 실패를 반복
+조회하지 않으며 곡 재선택/명시적 자산 재읽기에서 다시 시도한다. SD 부재에서도 RAM 표시가 가능하다.
+API 구현과 배포 상태는 구분한다. 이 경로는 Worker의 새 코드를 배포한 뒤 외부에서 사용할 수 있다.
 
 ## 미디어 형식
 

@@ -29,14 +29,14 @@ PSRAM), U8g2 2.36.19, Adafruit NeoPixel 1.15.5를 사용한다. staging sketch�
 - `core`: UTF-8, 날짜, battery LUT, focus timer. 설정 검증과 버튼 상태기계는
   각각 `settings`, `input`에 둔다.
 - `display`: ST7789 SPI와 RGB565 canvas. U8g2 글꼴 decoder로 한/영 혼합 렌더링.
-- `ui`: 모드/메뉴 탐색, CORE 9종·NOW 5개 레이아웃·MEDIA·설정·AP·업데이트·복구·진단.
+- `ui`: 모드/메뉴 탐색, CORE 9종·NOW 6개 레이아웃·MEDIA·설정·AP·업데이트·복구·진단.
 - `media`: metadata, authoritative position anchor, pause/seek/resume/disconnect.
-- `lyrics`: parser, binary-search timeline, provider/cache 경로, renderer 분리.
+- `lyrics`: parser, binary-search timeline, Worker 온라인 조회/local cache, renderer 분리.
 - `storage`: SD owner, 원자 교체·A/B catalog·재개 checkpoint·로그 journal,
   JPEG/BMP/MSM/RGB565 decoder와 시간 기준 frame 선택. UI 스레드는 SD를 열지 않는다.
 - `sensors`: DS3231과 AHT10, I2C timeout, 비동기 AHT conversion, battery filtering.
 - `network`: AP+STA, Wi-Fi 8 프로필/시험/NTP, 인증서 검증 HTTPS, 로컬 OTA.
-- `artwork`: 기존 Worker MAC1 조회, 곡별 캐시/사용자 보호/한도 초과 시 LRU.
+- `artwork`: Worker JPEG 200/MAC1 호환 조회, 곡별 캐시/사용자 보호/한도 초과 시 LRU.
 - `portal`: offline 자산과 API. 부팅 시 한 번 만든 worker에서 모든 HTTP 요청을 직렬 처리.
 - `update`: NOVA manifest와 서명 후보/물리 확인 설치/이전 검증 partition 복구.
   ArduinoOTA와 SD 설치가 동시에 flash하지 않도록 App에서 상호 배제한다.
@@ -52,7 +52,8 @@ LrcParser → LyricsTimeline → NowPlayingScreen/LyricsRenderer.
 hash한다. helper의 명시적인 track key도 허용한다. 파일명은 고정 16진 key여서
 경로 삽입이 불가능하다. `scripts/media/track_key.py`에서 동일 key를 계산한다.
 AMS에는 artwork/lyrics 전송이 없다. 아트는 SD 우선 → 기존 Worker 자동 조회,
-가사는 local LRC/포털 업로드 경로로 공급한다. 잘린 Track 속성은 Entity Attribute로
+가사는 local LRC/포털 업로드를 우선하며 파일이 없으면 Worker를 통해 LRCLIB을 조회한다.
+잘린 Track 속성은 Entity Attribute로
 읽고, Remote Command notification의 지원 목록으로 기기 제어 UI/실행을 제한한다.
 Android 등은 helper가 metadata/position을 전달해야 하며 OS 전체 플레이어
 통합 앱이 이미 존재하는 것처럼 표시하지 않는다.
@@ -61,8 +62,11 @@ Android 등은 helper가 metadata/position을 전달해야 하며 OS 전체 플�
 anchor를 교체한다. 곡 변경은 가사/아트/위치 초기화, 연결 단절은 추정 정지.
 타임라인은 이진 검색한다. LRC는 bounded line/text pool, 복수 timestamp,
 offset, 중복 timestamp, UTF-8 오류, 빈 가사, 순수 텍스트를 처리한다.
-온라인 provider 인터페이스는 SD와 분리하되 실제 서비스/credentials 없는
-가짜 온라인 응답을 만들지 않는다.
+온라인 가사는 service worker에서 bounded HTTPS와 parser를 실행한다. PSRAM의
+raw 입력 32 KiB와 parsed 결과를 사용하고, UI는 generation이 일치하는 결과만 받는다.
+SD 저장은 `LyricsSave`에서 기존 파일 부재를 다시 확인한다. 기존 파일은 보호하고
+단순 쓰기 실패 시에는 RAM 가사를 표시한다. 가사 표시를 끄면 새 온라인 조회도 중단한다.
+AP/OFF 요청이 앞선 아트 HTTPS 처리 중 들어와도 그 뒤 새 가사 조회를 시작하지 않는다.
 
 ## 화면과 메모리
 
@@ -75,7 +79,7 @@ LCD 전체 clear를 반복하지 않는다. PSRAM 할당 실패는 로그/LED로
 
 ## AP Sync와 파일 교체
 
-브라우저에서 원본을 160px JPEG sequence로 변환 → IndexedDB 256 KiB chunk →
+브라우저에서 원본을 240px JPEG sequence로 변환 → IndexedDB 256 KiB chunk →
 AP HTTP CRC upload → SD `.part`/durable checkpoint → 전체 검증 → 원자 rename.
 전송 재시도는 저장된 범위의 CRC를 다시 확인한다. 체크포인트 저장 실패 시 RAM offset도
 이전 durable 값으로 되돌린다. 기존 정상 파일은 새 후보의 검증 전에 교체하지 않는다.
