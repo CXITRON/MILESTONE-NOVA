@@ -2,6 +2,22 @@ import {ART_SIDE, convert, drawNvi, imageBytes, loadImage} from './convert.js';
 import {matchesSource, SyncClock, TransferStore, uploadPrepared} from './transfer.js';
 
 const $ = s => document.querySelector(s), all = s => [...document.querySelectorAll(s)];
+// Theme: follow the system until the user picks one; the choice is remembered when storage allows.
+const root = document.documentElement;
+try {
+  const saved = localStorage.getItem('nova-theme');
+  if (saved === 'light' || saved === 'dark') root.dataset.theme = saved;
+} catch (error) {
+}
+$('#theme').onclick = () => {
+  const dark = root.dataset.theme ? root.dataset.theme === 'dark' :
+                                    matchMedia('(prefers-color-scheme: dark)').matches;
+  root.dataset.theme = dark ? 'light' : 'dark';
+  try {
+    localStorage.setItem('nova-theme', root.dataset.theme);
+  } catch (error) {
+  }
+};
 let token = '', latest = null, busy = false, controller = null, toastTimer, previewUrl = '',
     syncUrl = '';
 let store;
@@ -57,14 +73,21 @@ function element(tag, text, className) {
   if (className) e.className = className;
   return e;
 }
-function button(text, fn) {
-  const b = element('button', text);
+function button(text, fn, className) {
+  const b = element('button', text, className);
   b.onclick = run(fn);
   return b;
+}
+function field(caption, input, className = 'mini', inline = false) {
+  const label = element('label', undefined, className), text = element('span', caption);
+  label.append(...(inline ? [input, text] : [text, input]));
+  return label;
 }
 all('nav button').forEach(b => b.onclick = run(async () => {
                             all('.page').forEach(p => p.hidden = p.id !== b.dataset.page);
                             all('nav button').forEach(n => n.classList.toggle('active', n === b));
+                            b.scrollIntoView({inline: 'center', block: 'nearest', behavior: 'smooth'});
+                            scrollTo({top: 0});
                             if (b.dataset.page === 'media') await mediaList();
                             // children ignores the whitespace text node left in the HTML.
                             if (b.dataset.page === 'settings' &&
@@ -91,34 +114,44 @@ async function poll() {
     token = s.token;
     $('#connection').textContent =
         `${s.network.connected ? 'Wi-Fi 연결됨' : '설정 AP'} · ${s.sd ? 'SD 준비됨' : 'SD 없음'}`;
+    $('#connection').dataset.state = s.network.connected ? 'ok' : 'ap';
     $('#device-message').textContent = s.message;
     $('#diagnostics').textContent = s.diagnostics;
     $('#auto-update-state').textContent = s.autoUpdate ?
-        '자동 업데이트 켜짐 · 부팅 2분 후 확인, 이후 15분 간격 · 설치 후 자동 재시작' :
-        '자동 업데이트 꺼짐 · 수동 확인과 설치 가능';
+        '자동 업데이트 켜짐 · 부팅 30초 후와 하루 한 번 확인 · 새 버전은 자동 설치 후 재시작' :
+        '자동 업데이트 꺼짐 · 새 버전은 알림만 표시하고 기기에서 길게 OK로 설치';
     $('#wifi-test').textContent = s.network.test;
     const overview = $('#overview');
     overview.replaceChildren();
     for (const [name, value] of [
              ['모드', ['CORE', 'MEDIA', 'NOW'][s.mode]],
-             [
-               '환경',
-               s.sensor ? `${s.temperature.toFixed(1)} °C / ${s.humidity.toFixed(1)} %` :
-                          '센서 대기'
-             ],
+             ['온도', s.sensor ? `${s.temperature.toFixed(1)} °C` : '센서 대기'],
+             ['습도', s.sensor ? `${s.humidity.toFixed(1)} %` : '센서 대기'],
              ['배터리', s.volts.toFixed(2) + ' V'], ['가동 시간', Math.floor(s.uptime / 60) + '분'],
              ['BLE', s.ble]])
-      overview.append(element('dt', name), element('dd', value));
+    {
+      const stat = element('div', undefined, 'stat');
+      stat.append(element('dt', name), element('dd', value));
+      overview.append(stat);
+    }
+    all('[data-mode]').forEach(b => b.classList.toggle('active', Number(b.dataset.mode) === s.mode));
     if (!$('#art-query [name=key]').value && s.track.key)
       for (const key of ['key', 'title', 'artist', 'album'])
         $('#art-query [name=' + key + ']').value = s.track[key];
     const scan = $('#scan-list');
     scan.replaceChildren();
     for (const item of s.network.scan) {
-      const b = button(
-          `${item.ssid} · ${item.rssi} dBm${item.supported ? '' : ' · 지원되지 않는 보안'}`, () => {
-            $('#wifi-form [name=ssid]').value = item.ssid;
-          });
+      const b = button('', () => {
+        $('#wifi-form [name=ssid]').value = item.ssid;
+        $('#wifi-form [name=password]').focus();
+      }, item.supported ? 'net' : 'net unsupported');
+      b.dataset.level = item.rssi >= -55 ? 4 : item.rssi >= -67 ? 3 : item.rssi >= -78 ? 2 : 1;
+      const bars = element('span', undefined, 'bars');
+      bars.append(...[1, 2, 3, 4].map(() => element('i')));
+      b.append(
+          element('span', item.ssid, 'ssid'),
+          element('span', `${item.rssi} dBm${item.supported ? '' : ' · 미지원'}`, 'meta'),
+          bars);
       b.disabled = !item.supported;
       scan.append(b);
     }
@@ -141,6 +174,7 @@ async function poll() {
     }
   } catch (error) {
     $('#connection').textContent = '기기 연결 확인 필요';
+    $('#connection').dataset.state = 'err';
   }
   setTimeout(poll, busy ? 1500 : 2500);
 }
@@ -265,6 +299,8 @@ const choices = {
   media_sort: ['수동', '이름순', '이름 역순']
 };
 const bits = {core_mask: corePages, environment_mask: ['온도', '습도']};
+const sliders = new Set(
+    ['lcd_brightness', 'rgb_brightness', 'night_brightness', 'luminance', 'contrast', 'scroll_speed']);
 const hex = n => n.toString(16).padStart(2, '0');
 const toHex = v => '#' + hex(Math.round((v >> 11) * 255 / 31)) +
     hex(Math.round(((v >> 5) & 63) * 255 / 63)) + hex(Math.round((v & 31) * 255 / 31));
@@ -273,18 +309,39 @@ const fromHex = h => {
   return ((n >> 19) & 31) << 11 | ((n >> 10) & 63) << 5 | ((n >> 3) & 31);
 };
 // Builds the input for one setting and returns [element, read()] where read() gives the API value.
+// Returns [node, read, field]: `field` is the input that the row label points at.
 function control(spec, value) {
   const name = spec.name;
-  if (choices[name] || spec.type === 5) {
+  if (spec.type === 5 && !choices[name]) {
+    const input = element('input');
+    input.type = 'checkbox';
+    input.className = 'switch';
+    input.setAttribute('role', 'switch');
+    input.checked = String(value) === '1';
+    return [input, () => input.checked ? '1' : '0'];
+  }
+  if (choices[name]) {
     const input = element('select');
-    const items = choices[name] || ['OFF', 'ON'];
-    items.forEach((text, index) => {
-      const option = element('option', choices[name] ? `${index} · ${text}` : text);
+    choices[name].forEach((text, index) => {
+      const option = element('option', `${index} · ${text}`);
       option.value = String(index);
       input.append(option);
     });
     input.value = String(value);
     return [input, () => input.value];
+  }
+  if (sliders.has(name) && Number.isFinite(spec.min) && Number.isFinite(spec.max)) {
+    const wrap = element('div', undefined, 'slider'), range = element('input'),
+          out = element('output');
+    range.type = 'range';
+    range.min = spec.min;
+    range.max = spec.max;
+    range.step = 1;
+    range.value = value;
+    out.textContent = range.value;
+    range.addEventListener('input', () => out.textContent = range.value);
+    wrap.append(range, out);
+    return [wrap, () => range.value, range];
   }
   if (bits[name]) {
     const box = element('div', undefined, 'bits'), checks = [];
@@ -337,24 +394,32 @@ async function settingsList() {
   [...groups, ...(rest.length ? [['기타', rest]] : [])].forEach(([title, names], index) => {
     const group = element('details', undefined, 'setting-group');
     group.open = index === 0;
-    group.append(element('summary', title));
+    const summary = element('summary', title);
+    group.append(summary);
     for (const name of names) {
       const spec = specs.get(name);
       if (!spec) continue;
       const row = element('div', undefined, 'setting'),
             label = element('label', labels[name] || name);
       label.append(element('small', name));
-      const [input, read] = control(spec, data.values[name]);
-      input.id = 'set-' + name;
-      label.htmlFor = input.id;
+      const [input, read, target = input] = control(spec, data.values[name]);
+      target.id = 'set-' + name;
+      label.htmlFor = target.id;
+      row.addEventListener('input', () => row.classList.add('dirty'));
+      row.addEventListener('change', () => row.classList.add('dirty'));
       row.append(label, input, button('저장', async () => {
                    await api('/api/settings', {[name]: read()});
+                   row.classList.remove('dirty');
                    toast((labels[name] || name) + ' 저장됨');
                  }));
       row.dataset.search = (title + ' ' + (labels[name] || '') + ' ' + name).toLowerCase();
       group.append(row);
     }
-    if (group.querySelector('.setting')) list.append(group);
+    const count = group.querySelectorAll('.setting').length;
+    if (count) {
+      summary.append(element('span', String(count), 'count'));
+      list.append(group);
+    }
   });
 }
 $('#settings-filter').oninput = e => {
@@ -373,7 +438,7 @@ async function mediaList() {
   const entries = await api('/api/media'), list = $('#media-list');
   list.replaceChildren();
   for (const e of entries) {
-    const row = element('div', undefined, 'card'), name = element('input'),
+    const row = element('div', undefined, 'card media'), name = element('input'),
           seconds = element('input'), order = element('input'), enabled = element('input');
     name.value = e.title;
     name.maxLength = 96;
@@ -390,24 +455,28 @@ async function mediaList() {
     enabled.type = 'checkbox';
     enabled.checked = e.enabled;
     enabled.setAttribute('aria-label', '재생 사용');
+    const buttons = element('div', undefined, 'btns');
+    buttons.append(button('저장', async () => {
+      await api('/api/media', {
+        op: 'edit',
+        id: e.id,
+        title: name.value,
+        seconds: Number(seconds.value),
+        order: Number(order.value),
+        enabled: enabled.checked
+      });
+      await mediaList();
+    }, 'sm primary'), button('삭제', async () => {
+      if (confirm(e.title + ' 파일을 삭제할까요?')) {
+        await api('/api/media', {op: 'delete', id: e.id});
+        await mediaList();
+      }
+    }, 'sm danger'));
+    const info = element('span', e.title, 'name');
+    info.append(element('small', e.path + ' · ' + Math.round(e.bytes / 1024) + ' KiB'));
     row.append(
-        element('span', e.path + ' · ' + Math.round(e.bytes / 1024) + ' KiB', 'name'), name,
-        seconds, order, enabled, button('저장', async () => {
-          await api('/api/media', {
-            op: 'edit',
-            id: e.id,
-            title: name.value,
-            seconds: Number(seconds.value),
-            order: Number(order.value),
-            enabled: enabled.checked
-          });
-          await mediaList();
-        }), button('삭제', async () => {
-          if (confirm(e.title + ' 파일을 삭제할까요?')) {
-            await api('/api/media', {op: 'delete', id: e.id});
-            await mediaList();
-          }
-        }));
+        info, field('이름', name, 'mini wide'), field('표시 시간 (초, 0은 기본)', seconds),
+        field('순서', order), field('재생 사용', enabled, 'mini check', true), buttons);
     list.append(row);
   }
 }
@@ -564,7 +633,7 @@ async function listArt(reset = false) {
   artOffset += files.length;
   $('#more-art').disabled = files.length < 32;
   for (const f of files) {
-    const key = f.path.split('/').pop().slice(0, 16), row = element('div', undefined, 'card');
+    const key = f.path.split('/').pop().slice(0, 16), row = element('div', undefined, 'card art');
     row.append(
         element(
             'span',
@@ -619,7 +688,7 @@ $('#logs').onclick = run(async () => {
       const a = element('a', f.path);
       a.href = '/api/file?path=' + encodeURIComponent(f.path);
       a.download = f.path.split('/').pop();
-      list.append(a, element('br'));
+      list.append(a);
     }
     offset += files.length;
     if (files.length < 32) break;
@@ -634,16 +703,19 @@ $('#diag-export').onclick = () => {
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 };
 for (
-    const [id, op, text] of [
-        ['diag-clear', 'logsClear', '오류 이력을 지울까요?'],
-        ['defaults', 'defaults', '기기 설정을 기본값으로 되돌릴까요?'],
+    const [id, op, text, done] of [
+        ['diag-clear', 'logsClear', '오류 이력을 지울까요?', '오류 이력을 지웠습니다.'],
+        ['defaults', 'defaults', '기기 설정을 기본값으로 되돌릴까요?', '설정을 기본값으로 되돌렸습니다.'],
         [
           'factory', 'factory',
-          'NOVA NVS 설정과 자격증명을 초기화할까요? SD 파일은 보존되며 남아 있는 SD 프로비저닝 파일은 재부팅 때 다시 적용됩니다.'
+          'NOVA NVS 설정과 자격증명을 초기화할까요? SD 파일은 보존되며 남아 있는 SD 프로비저닝 파일은 재부팅 때 다시 적용됩니다.',
+          '설정과 자격증명을 초기화했습니다.'
         ],
-        ['restart', 'restart', '기기를 재시작할까요?']])
+        ['restart', 'restart', '기기를 재시작할까요?', '재시작 요청을 보냈습니다. 잠시 후 다시 연결하세요.']])
   $('#' + id).onclick = run(async () => {
-    if (confirm(text)) await action({op, confirmed: true});
+    if (!confirm(text)) return;
+    await action({op, confirmed: true});
+    toast(done);
   });
 $('#firmware-upload').onclick =
     run(() => operation(async signal => {
@@ -659,5 +731,13 @@ try {
   if (meta?.ready) $('#transfer-state').textContent = '재개 가능한 자료: ' + meta.name;
 } catch (error) {
   toast(error.message);
+}
+// Empty art preview: a hint instead of a blank box (re-drawn by drawNvi once a search runs).
+{
+  const canvas = $('#art-preview'), ctx = canvas.getContext('2d');
+  ctx.fillStyle = getComputedStyle(root).getPropertyValue('--muted') || '#888';
+  ctx.font = '600 15px system-ui, sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillText('검색하면 여기에 표시됩니다', canvas.width / 2, canvas.height / 2);
 }
 poll();

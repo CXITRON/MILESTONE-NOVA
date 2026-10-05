@@ -1,389 +1,381 @@
 <!doctype html>
 <html lang="ko">
+<head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>
-    NOVA · MILESTONE
-  </title>
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#f3f6f8" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#081015" media="(prefers-color-scheme: dark)">
+  <title>NOVA 설정</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%23081015'/%3E%3Cpath d='M9 23V9l14 14V9' fill='none' stroke='%2358d3c4' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
   <link rel="stylesheet" href="/style.css">
-  <header>
-    <span class="eyebrow">
-      MILESTONE
-    </span>
-    <h1>
-      NOVA
-    </h1>
-    <p id="connection">
-      기기에 연결하는 중
-    </p>
+</head>
+<body>
+  <svg width="0" height="0" style="position:absolute" aria-hidden="true">
+    <defs>
+      <symbol id="i-device" viewBox="0 0 24 24"><rect x="6" y="2.5" width="12" height="19" rx="3"/><path d="M10 18h4"/></symbol>
+      <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/></symbol>
+      <symbol id="i-film" viewBox="0 0 24 24"><rect x="3" y="4.5" width="18" height="15" rx="3"/><path d="M8 4.5v15M16 4.5v15M3 9.5h5M3 14.5h5M16 9.5h5M16 14.5h5"/></symbol>
+      <symbol id="i-wave" viewBox="0 0 24 24"><path d="M3 12h2.5l2-6 3 12 3-9 2 5 1.5-2H21"/></symbol>
+      <symbol id="i-music" viewBox="0 0 24 24"><path d="M9 18V6l10-2v12"/><circle cx="6.5" cy="18" r="2.5"/><circle cx="16.5" cy="16" r="2.5"/></symbol>
+      <symbol id="i-wifi" viewBox="0 0 24 24"><path d="M3 9.5a14 14 0 0 1 18 0M6 13a9.5 9.5 0 0 1 12 0M9.2 16.4a5 5 0 0 1 5.6 0"/><circle cx="12" cy="19.5" r=".8" fill="currentColor"/></symbol>
+      <symbol id="i-sliders" viewBox="0 0 24 24"><path d="M4 7h9M17 7h3M4 17h3M11 17h9"/><circle cx="15" cy="7" r="2"/><circle cx="9" cy="17" r="2"/></symbol>
+      <symbol id="i-tool" viewBox="0 0 24 24"><path d="M14.5 6a4.5 4.5 0 0 0-5.7 5.7L3.5 17l3.5 3.5 5.3-5.3a4.5 4.5 0 0 0 5.7-5.7l-3 3-2.5-.7-.7-2.5z"/></symbol>
+      <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="6.5"/><path d="m16 16 4.5 4.5"/></symbol>
+      <symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 3v2M12 19v2M3 12h2M19 12h2M5.6 5.6 7 7M17 17l1.4 1.4M18.4 5.6 17 7M7 17l-1.4 1.4"/></symbol>
+      <symbol id="i-moon" viewBox="0 0 24 24"><path d="M20 14.5A8 8 0 0 1 9.5 4 8 8 0 1 0 20 14.5z"/></symbol>
+      <symbol id="i-chevron" viewBox="0 0 24 24"><path d="m7 10 5 5 5-5"/></symbol>
+      <symbol id="i-download" viewBox="0 0 24 24"><path d="M12 4v11m0 0-4-4m4 4 4-4M5 19h14"/></symbol>
+    </defs>
+  </svg>
+
+  <header class="top">
+    <div class="top-inner">
+      <div class="brand">
+        <span class="eyebrow">MILESTONE</span>
+        <h1>NOVA</h1>
+      </div>
+      <p id="connection" class="chip" data-state="wait">기기에 연결하는 중</p>
+      <button id="theme" class="icon-btn" type="button" aria-label="화면 테마 전환" title="화면 테마 전환">
+        <svg class="ic ic-moon"><use href="#i-moon"/></svg>
+        <svg class="ic ic-sun"><use href="#i-sun"/></svg>
+      </button>
+    </div>
+    <nav aria-label="설정 페이지">
+      <button data-page="home" class="active"><svg class="ic"><use href="#i-device"/></svg><span>기기</span></button>
+      <button data-page="media"><svg class="ic"><use href="#i-film"/></svg><span>미디어</span></button>
+      <button data-page="sync"><svg class="ic"><use href="#i-wave"/></svg><span>AP Sync</span></button>
+      <button data-page="now"><svg class="ic"><use href="#i-music"/></svg><span>NOW / 아트</span></button>
+      <button data-page="network"><svg class="ic"><use href="#i-wifi"/></svg><span>연결</span></button>
+      <button data-page="settings"><svg class="ic"><use href="#i-sliders"/></svg><span>화면·환경</span></button>
+      <button data-page="maintenance"><svg class="ic"><use href="#i-tool"/></svg><span>관리</span></button>
+    </nav>
   </header>
-  <nav aria-label="설정 페이지">
-    <button data-page="home">
-      기기
-    </button>
-    <button data-page="media">
-      미디어
-    </button>
-    <button data-page="sync">
-      AP Sync
-    </button>
-    <button data-page="now">
-      NOW / 아트
-    </button>
-    <button data-page="network">
-      연결
-    </button>
-    <button data-page="settings">
-      화면·환경
-    </button>
-    <button data-page="maintenance">
-      관리
-    </button>
-  </nav>
+
   <main>
+    <!-- 기기 -->
     <section id="home" class="page">
-      <h2>
-        나의 MILESTONE
-      </h2>
-      <div class="modes">
-        <button data-mode="0">
-          CORE
-        </button>
-        <button data-mode="1">
-          MEDIA
-        </button>
-        <button data-mode="2">
-          NOW
-        </button>
+      <div class="page-head">
+        <h2>나의 MILESTONE</h2>
+        <p class="lead">기기 MENU에서 모드를 선택하고 OK로 적용합니다. AP를 닫으면 선택한 모드로 돌아갑니다. NOW의 iPhone 연결은 AP 종료 후 시작됩니다.</p>
       </div>
-      <p>
-        기기 MENU에서 모드를 선택하고 OK로 적용합니다. AP를 닫으면 선택한 모드로 돌아갑니다. NOW의 iPhone 연결은 AP 종료 후 시작됩니다.
-      </p>
-      <dl id="overview">
+
+      <dl id="overview" class="stats">
       </dl>
-      <button data-action="apClose">
-        설정 AP 닫기
-      </button>
-      <button id="set-time">
-        브라우저 시간 적용
-      </button>
-      <button data-action="ntp">
-        NTP 동기화
-      </button>
-      <pre id="device-message" role="status">
-      </pre>
+
+      <div class="panel">
+        <h3 class="panel-title">모드</h3>
+        <div class="modes">
+          <button data-mode="0" type="button"><svg class="ic"><use href="#i-clock"/></svg><b>CORE</b><small>시계 · D-Day</small></button>
+          <button data-mode="1" type="button"><svg class="ic"><use href="#i-film"/></svg><b>MEDIA</b><small>사진 · 영상</small></button>
+          <button data-mode="2" type="button"><svg class="ic"><use href="#i-music"/></svg><b>NOW</b><small>음악 · 가사</small></button>
+        </div>
+      </div>
+
+      <div class="panel">
+        <h3 class="panel-title">빠른 작업</h3>
+        <div class="actions">
+          <button data-action="apClose" class="primary">설정 AP 닫기</button>
+          <button id="set-time">브라우저 시간 적용</button>
+          <button data-action="ntp">NTP 동기화</button>
+        </div>
+        <pre id="device-message" role="status"></pre>
+      </div>
     </section>
+
+    <!-- 미디어 -->
     <section id="media" class="page" hidden>
-      <h2>
-        로컬 미디어
-      </h2>
-      <p>
-        사진·GIF·영상은 이 브라우저에서 변환한 후 SD에 저장합니다. 변환 완료 자료는 브라우저에 남아 업로드 중단 후 재개할 수 있습니다.
-      </p>
-      <label>
-        파일
-        <input id="media-file" type="file" accept="image/*,video/*,.nvi,.nvv,.njv,.mvj,.msm,.bmp">
-      </label>
-      <label>
-        영상 FPS
-        <select id="fps">
-          <option>
-            10
-          </option>
-          <option selected>
-            20
-          </option>
-          <option>
-            30
-          </option>
-        </select>
-      </label>
-      <video id="preview" controls playsinline hidden>
-      </video>
-      <canvas id="preview-image" width="240" height="240" hidden>
-      </canvas>
-      <div>
-        <button id="convert">
-          변환 / 업로드 준비
-        </button>
-        <button id="upload">
-          준비된 파일 업로드·재개
-        </button>
-        <button id="cancel-transfer">
-          현재 작업 중단
-        </button>
+      <div class="page-head">
+        <h2>로컬 미디어</h2>
+        <p class="lead">사진·GIF·영상은 이 브라우저에서 변환한 후 SD에 저장합니다. 변환 완료 자료는 브라우저에 남아 업로드 중단 후 재개할 수 있습니다.</p>
       </div>
-      <progress id="progress" max="1" value="0">
-      </progress>
-      <p id="transfer-state" role="status">
-      </p>
-      <div>
-        <button id="refresh-media">
-          목록 새로고침
-        </button>
-        <button id="repair-media">
-          목록·중단 저장 복구
-        </button>
-        <button id="clear-media" class="danger">
-          전체 미디어 삭제
-        </button>
+
+      <div class="panel">
+        <h3 class="panel-title">파일 올리기</h3>
+        <label>
+          파일
+          <input id="media-file" type="file" accept="image/*,video/*,.nvi,.nvv,.njv,.mvj,.msm,.bmp">
+        </label>
+        <label>
+          영상 FPS
+          <select id="fps">
+            <option>10</option>
+            <option selected>20</option>
+            <option>30</option>
+          </select>
+        </label>
+        <video id="preview" controls playsinline hidden></video>
+        <canvas id="preview-image" width="240" height="240" hidden></canvas>
+        <div class="actions">
+          <button id="convert" class="primary">변환 / 업로드 준비</button>
+          <button id="upload">준비된 파일 업로드·재개</button>
+          <button id="cancel-transfer">현재 작업 중단</button>
+        </div>
+        <progress id="progress" max="1" value="0"></progress>
+        <p id="transfer-state" class="state" role="status"></p>
       </div>
-      <div id="media-list">
+
+      <div class="panel">
+        <div class="panel-bar">
+          <h3 class="panel-title">저장된 미디어</h3>
+          <div class="actions">
+            <button id="refresh-media" class="sm">목록 새로고침</button>
+            <button id="repair-media" class="sm">목록·중단 저장 복구</button>
+            <button id="clear-media" class="sm danger">전체 미디어 삭제</button>
+          </div>
+        </div>
+        <div id="media-list"></div>
       </div>
     </section>
+
+    <!-- AP Sync -->
     <section id="sync" class="page" hidden>
-      <h2>
-        AP Sync
-      </h2>
-      <p>
-        영상은 기기의 SD에서 재생하고, 소리는 브라우저에서 재생합니다. 같은 원본 영상을 선택해 변환·전송을 완료한 뒤 시작하세요. 동기 종료 후에는 같은 영상으로 다시 연결할 수 있습니다. 기기에서 BACK으로 AP를 닫거나 모드를 바꾸면 임시 영상을 정리합니다.
-      </p>
-      <label>
-        소리와 영상의 원본
-        <input id="sync-file" type="file" accept="video/*">
-      </label>
-      <button id="prepare-sync">
-        SD 동기 영상 준비·업로드
-      </button>
-      <button id="start-sync">
-        동기 재생 연결
-      </button>
-      <button id="stop-sync">
-        동기 종료
-      </button>
-      <audio id="audio" controls>
-      </audio>
-      <p id="sync-state" role="status">
-      </p>
+      <div class="page-head">
+        <h2>AP Sync</h2>
+        <p class="lead">영상은 기기의 SD에서 재생하고, 소리는 브라우저에서 재생합니다. 같은 원본 영상을 선택해 변환·전송을 완료한 뒤 시작하세요. 동기 종료 후에는 같은 영상으로 다시 연결할 수 있습니다. 기기에서 BACK으로 AP를 닫거나 모드를 바꾸면 임시 영상을 정리합니다.</p>
+      </div>
+
+      <div class="panel">
+        <h3 class="panel-title">동기 재생</h3>
+        <label>
+          소리와 영상의 원본
+          <input id="sync-file" type="file" accept="video/*">
+        </label>
+        <div class="actions">
+          <button id="prepare-sync">SD 동기 영상 준비·업로드</button>
+          <button id="start-sync" class="primary">동기 재생 연결</button>
+          <button id="stop-sync">동기 종료</button>
+        </div>
+        <audio id="audio" controls></audio>
+        <p id="sync-state" class="state" role="status"></p>
+      </div>
     </section>
+
+    <!-- NOW / 아트 -->
     <section id="now" class="page" hidden>
-      <h2>
-        NOW / 앨범아트
-      </h2>
-      <p>
-        AMS는 iPhone의 곡 정보와 지원 재생 명령을 제공합니다. 아트는 기존 MILESTONE Artwork 서비스에서 조회합니다. 기기의 OK 조작은 iPhone이 해당 명령을 지원할 때 표시됩니다.
-      </p>
-      <form id="art-query">
+      <div class="page-head">
+        <h2>NOW / 앨범아트</h2>
+        <p class="lead">AMS는 iPhone의 곡 정보와 지원 재생 명령을 제공합니다. 아트는 기존 MILESTONE Artwork 서비스에서 조회합니다. 기기의 OK 조작은 iPhone이 해당 명령을 지원할 때 표시됩니다.</p>
+      </div>
+
+      <div class="panel">
+        <h3 class="panel-title">아트 검색과 저장</h3>
+        <div class="split">
+          <form id="art-query" class="fields">
+            <label>
+              곡 제목
+              <input name="title" required maxlength="240">
+            </label>
+            <label>
+              아티스트
+              <input name="artist" maxlength="240">
+            </label>
+            <label>
+              앨범
+              <input name="album" maxlength="240">
+            </label>
+            <label>
+              저장할 곡 키
+              <input name="key" pattern="[0-9a-f]{16}" maxlength="16" class="mono">
+            </label>
+            <div class="actions">
+              <button type="submit" class="primary">검색 미리보기</button>
+              <button type="button" id="art-use">선택 곡에 저장</button>
+              <button type="button" data-action="artRefresh">현재 곡 캐시 다시 읽기·조회</button>
+            </div>
+          </form>
+          <div class="art-frame">
+            <canvas id="art-preview" width="200" height="200"></canvas>
+            <small>미리보기 (200 × 200)</small>
+          </div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <h3 class="panel-title">내 파일 올리기</h3>
+        <div class="pair">
+          <div>
+            <label>
+              사용자 이미지
+              <input id="custom-art" type="file" accept="image/*">
+            </label>
+            <button id="art-upload">사용자 이미지 저장</button>
+          </div>
+          <div>
+            <label>
+              가사 파일 (UTF-8 LRC)
+              <input id="lyrics-file" type="file" accept=".lrc,text/plain">
+            </label>
+            <button id="lyrics-upload">가사 저장</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <h3 class="panel-title">저장된 아트</h3>
         <label>
-          곡 제목
-          <input name="title" required maxlength="240">
+          저장된 아트 검색
+          <input id="art-filter" type="search" placeholder="곡 / 아티스트 / 키">
         </label>
-        <label>
-          아티스트
-          <input name="artist" maxlength="240">
-        </label>
-        <label>
-          앨범
-          <input name="album" maxlength="240">
-        </label>
-        <label>
-          저장할 곡 키
-          <input name="key" pattern="[0-9a-f]{16}" maxlength="16">
-        </label>
-        <button type="submit">
-          검색 미리보기
-        </button>
-        <button type="button" id="art-use">
-          선택 곡에 저장
-        </button>
-        <button type="button" data-action="artRefresh">
-          현재 곡 캐시 다시 읽기·조회
-        </button>
-      </form>
-      <canvas id="art-preview" width="200" height="200">
-      </canvas>
-      <label>
-        사용자 이미지
-        <input id="custom-art" type="file" accept="image/*">
-      </label>
-      <button id="art-upload">
-        사용자 이미지 저장
-      </button>
-      <label>
-        가사 파일 (UTF-8 LRC)
-        <input id="lyrics-file" type="file" accept=".lrc,text/plain">
-      </label>
-      <button id="lyrics-upload">
-        가사 저장
-      </button>
-      <label>
-        저장된 아트 검색
-        <input id="art-filter" type="search" placeholder="곡 / 아티스트 / 키">
-      </label>
-      <button id="refresh-art">
-        아트 목록 / 검색
-      </button>
-      <button id="more-art">
-        더 보기
-      </button>
-      <div id="art-list">
+        <div class="actions">
+          <button id="refresh-art" class="primary">아트 목록 / 검색</button>
+          <button id="more-art">더 보기</button>
+        </div>
+        <div id="art-list"></div>
       </div>
     </section>
+
+    <!-- 연결 -->
     <section id="network" class="page" hidden>
-      <h2>
-        Wi-Fi 연결
-      </h2>
-      <p>
-        2.4 GHz Personal/Open 또는 PEAP를 시험 연결합니다. 성공 상태가 2초 이상 유지된 프로필만 저장됩니다. WPA3 전용 및 서버 CA 검증을 요구하는 Enterprise 구성은 지원 대상에서 제외되어 표시됩니다.
-      </p>
-      <button data-action="scan">
-        네트워크 검색
-      </button>
-      <div id="scan-list">
+      <div class="page-head">
+        <h2>Wi-Fi 연결</h2>
+        <p class="lead">2.4 GHz Personal/Open 또는 PEAP를 시험 연결합니다. 성공 상태가 2초 이상 유지된 프로필만 저장됩니다. WPA3 전용 및 서버 CA 검증을 요구하는 Enterprise 구성은 지원 대상에서 제외되어 표시됩니다.</p>
       </div>
-      <form id="wifi-form">
-        <label>
-          SSID
-          <input name="ssid" maxlength="32" required>
-        </label>
-        <label>
-          방식
-          <select name="auth">
-            <option value="0">
-              Personal / Open
-            </option>
-            <option value="1">
-              PEAP (서버 CA 없음)
-            </option>
-          </select>
-        </label>
-        <label>
-          비밀번호
-          <input name="password" type="password" maxlength="64" autocomplete="new-password">
-        </label>
-        <label>
-          PEAP 사용자 이름
-          <input name="username" maxlength="64">
-        </label>
-        <label>
-          PEAP 외부 identity
-          <input name="identity" maxlength="64">
-        </label>
-        <button>
-          시험 연결 후 저장
-        </button>
-      </form>
-      <p id="wifi-test">
-      </p>
-      <div id="saved-networks">
+
+      <div class="panel">
+        <div class="panel-bar">
+          <h3 class="panel-title">주변 네트워크</h3>
+          <button data-action="scan" class="sm primary">네트워크 검색</button>
+        </div>
+        <div id="scan-list" class="nets"></div>
       </div>
-      <h3>
-        설정 AP
-      </h3>
-      <form id="ap-form">
-        <label>
-          보안
-          <select name="mode">
-            <option value="0">
-              매번 임의 암호
-            </option>
-            <option value="1">
-              고정 암호
-            </option>
-            <option value="2">
-              개방형
-            </option>
-          </select>
-        </label>
-        <label>
-          고정 암호 (8~63자)
-          <input name="password" type="password" maxlength="63">
-        </label>
-        <button>
-          다음 AP부터 적용
-        </button>
-      </form>
+
+      <div class="panel">
+        <h3 class="panel-title">새 네트워크 연결</h3>
+        <form id="wifi-form" class="fields">
+          <label>
+            SSID
+            <input name="ssid" maxlength="32" required>
+          </label>
+          <label>
+            방식
+            <select name="auth">
+              <option value="0">Personal / Open</option>
+              <option value="1">PEAP (서버 CA 없음)</option>
+            </select>
+          </label>
+          <label>
+            비밀번호
+            <input name="password" type="password" maxlength="64" autocomplete="new-password">
+          </label>
+          <label>
+            PEAP 사용자 이름
+            <input name="username" maxlength="64">
+          </label>
+          <label>
+            PEAP 외부 identity
+            <input name="identity" maxlength="64">
+          </label>
+          <div class="actions">
+            <button class="primary">시험 연결 후 저장</button>
+          </div>
+        </form>
+        <p id="wifi-test" class="state"></p>
+      </div>
+
+      <div class="panel">
+        <h3 class="panel-title">저장된 네트워크</h3>
+        <div id="saved-networks"></div>
+      </div>
+
+      <div class="panel">
+        <h3 class="panel-title">설정 AP</h3>
+        <form id="ap-form" class="fields">
+          <label>
+            보안
+            <select name="mode">
+              <option value="0">매번 임의 암호</option>
+              <option value="1">고정 암호</option>
+              <option value="2">개방형</option>
+            </select>
+          </label>
+          <label>
+            고정 암호 (8~63자)
+            <input name="password" type="password" maxlength="63">
+          </label>
+          <div class="actions">
+            <button class="primary">다음 AP부터 적용</button>
+          </div>
+        </form>
+      </div>
     </section>
+
+    <!-- 화면·환경 -->
     <section id="settings" class="page" hidden>
-      <h2>
-        화면과 환경
-      </h2>
-      <p>
-        분류를 펼쳐 값을 바꾸고 항목마다 저장합니다. 환경 임계값은 낮음 &lt; 높음 ≤ 위험 순서로
-        설정합니다. 검색하면 일치하는 항목이 있는 분류만 펼쳐집니다.
-      </p>
-      <label>
-        설정 검색
-        <input id="settings-filter" type="search" placeholder="예: 밝기, 온도, media">
-      </label>
-      <div id="setting-list">
+      <div class="page-head">
+        <h2>화면과 환경</h2>
+        <p class="lead">분류를 펼쳐 값을 바꾸고 항목마다 저장합니다. 환경 임계값은 낮음 &lt; 높음 ≤ 위험 순서로 설정합니다. 검색하면 일치하는 항목이 있는 분류만 펼쳐집니다.</p>
       </div>
+
+      <label class="search">
+        <span class="sr">설정 검색</span>
+        <svg class="ic"><use href="#i-search"/></svg>
+        <input id="settings-filter" type="search" placeholder="설정 검색  예: 밝기, 온도, media">
+      </label>
+      <div id="setting-list"></div>
     </section>
+
+    <!-- 관리 -->
     <section id="maintenance" class="page" hidden>
-      <h2>
-        관리와 복구
-      </h2>
-      <div>
-        <button data-action="sensor">
-          환경 센서 재검색
-        </button>
-        <button id="logs">
-          환경 기록 목록
-        </button>
-        <button id="diag-export">
-          진단 내보내기
-        </button>
-        <button id="diag-clear">
-          오류 이력 지우기
-        </button>
+      <div class="page-head">
+        <h2>관리와 복구</h2>
       </div>
-      <div id="log-list">
+
+      <div class="panel">
+        <h3 class="panel-title">진단</h3>
+        <div class="actions">
+          <button data-action="sensor">환경 센서 재검색</button>
+          <button id="logs">환경 기록 목록</button>
+          <button id="diag-export">진단 내보내기</button>
+          <button id="diag-clear">오류 이력 지우기</button>
+        </div>
+        <div id="log-list" class="loglist"></div>
+        <pre id="diagnostics"></pre>
       </div>
-      <pre id="diagnostics">
-      </pre>
-      <h3>
-        서명 업데이트
-      </h3>
-      <p>
-        기기는 부팅 후와 하루 한 번 GitHub Releases의 새 정식 버전을 확인해 알려 줍니다. 내려받은 파일은 펌웨어에 내장된 NOVA 공개키로 서명을 검증합니다. 자동 업데이트를 켜면 새 버전을 찾았을 때 기기 버튼 없이 설치 후 재시작하고, 꺼 두면 기기에서 OK를 길게 눌러 설치합니다.
-      </p>
-      <p id="auto-update-state">자동 업데이트 상태 확인 중</p>
-      <button id="auto-update-on">자동 업데이트 켜기</button>
-      <button id="auto-update-off">자동 업데이트 끄기</button>
-      <button data-action="updateCheck">
-        인터넷 버전 확인
-      </button>
-      <button data-action="updateDownload">
-        후보 다운로드
-      </button>
-      <label>
-        서명된 펌웨어 (.bin)
-        <input id="firmware" type="file" accept=".bin">
-      </label>
-      <button id="firmware-upload">
-        SD에 후보 저장
-      </button>
-      <button data-action="updatePrepare">
-        SD 후보 설치 준비
-      </button>
-      <h3>
-        이전 설정
-      </h3>
-      <p>
-        이 기기의 NVS에 남아 있는 MILESTONE schema 1~12 설정을 읽어 NOVA 형식으로 가져옵니다. 원본 namespace는 보존됩니다.
-      </p>
-      <button data-action="legacyImport">
-        이전 설정 가져오기
-      </button>
-      <h3>
-        초기화
-      </h3>
-      <button id="defaults">
-        설정 기본값
-      </button>
-      <button id="factory" class="danger">
-        기기 설정·자격증명 초기화
-      </button>
-      <button id="restart">
-        재시작
-      </button>
+
+      <div class="panel">
+        <h3 class="panel-title"><svg class="ic"><use href="#i-download"/></svg>서명 업데이트</h3>
+        <p class="lead">기기는 부팅 후와 하루 한 번 GitHub Releases의 새 정식 버전을 확인해 알려 줍니다. 내려받은 파일은 펌웨어에 내장된 NOVA 공개키로 서명을 검증합니다. 자동 업데이트를 켜면 새 버전을 찾았을 때 기기 버튼 없이 설치 후 재시작하고, 꺼 두면 기기에서 OK를 길게 눌러 설치합니다.</p>
+        <p id="auto-update-state" class="state">자동 업데이트 상태 확인 중</p>
+        <div class="actions">
+          <button id="auto-update-on" class="primary">자동 업데이트 켜기</button>
+          <button id="auto-update-off">자동 업데이트 끄기</button>
+          <button data-action="updateCheck">인터넷 버전 확인</button>
+          <button data-action="updateDownload">후보 다운로드</button>
+        </div>
+        <details class="more">
+          <summary>SD로 직접 설치 (고급)</summary>
+          <label>
+            서명된 펌웨어 (.bin)
+            <input id="firmware" type="file" accept=".bin">
+          </label>
+          <div class="actions">
+            <button id="firmware-upload">SD에 후보 저장</button>
+            <button data-action="updatePrepare">SD 후보 설치 준비</button>
+          </div>
+        </details>
+      </div>
+
+      <div class="panel">
+        <h3 class="panel-title">이전 설정</h3>
+        <p class="lead">이 기기의 NVS에 남아 있는 MILESTONE schema 1~12 설정을 읽어 NOVA 형식으로 가져옵니다. 원본 namespace는 보존됩니다.</p>
+        <div class="actions">
+          <button data-action="legacyImport">이전 설정 가져오기</button>
+        </div>
+      </div>
+
+      <div class="panel danger-zone">
+        <h3 class="panel-title">초기화와 재시작</h3>
+        <div class="actions">
+          <button id="defaults">설정 기본값</button>
+          <button id="restart">재시작</button>
+          <button id="factory" class="danger">기기 설정·자격증명 초기화</button>
+        </div>
+      </div>
     </section>
   </main>
-  <div id="toast" role="status" aria-live="polite">
-  </div>
-  <footer>
-    기기의 BACK 버튼으로 AP를 종료할 수 있습니다.
-  </footer>
-  <script type="module" src="/app.js">
-  </script>
+
+  <div id="toast" role="status" aria-live="polite"></div>
+  <footer>기기의 BACK 버튼으로 AP를 종료할 수 있습니다.</footer>
+  <script type="module" src="/app.js"></script>
+</body>
 </html>
