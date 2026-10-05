@@ -108,6 +108,7 @@ for (const [id, enabled] of [['auto-update-on', true], ['auto-update-off', false
     toast(enabled ? 'AP 종료 후 새 정식 릴리스를 자동 설치합니다.' : '자동 업데이트를 껐습니다.');
   });
 async function poll() {
+  const polledSession = clock.session;
   try {
     const s = await api('/api/status');
     latest = s;
@@ -168,7 +169,8 @@ async function poll() {
           }));
       saved.append(row);
     });
-    if (clock.session && (s.syncStale || s.syncSession !== clock.session)) {
+    if (polledSession && clock.session === polledSession &&
+        (s.syncStale || s.syncSession !== polledSession)) {
       $('#audio').pause();
       $('#sync-state').textContent = '기기에서 동기가 중지되었습니다. 다시 연결하세요.';
     }
@@ -608,7 +610,16 @@ $('#start-sync').onclick = run(async () => {
   const meta = await store.get();
   if (meta?.path !== '/media/sync.njv' || !await matchesSource(meta, $('#sync-file').files[0]))
     throw new Error('선택한 원본과 준비된 동기 영상이 다릅니다.');
-  await clock.start(crypto.getRandomValues(new Uint32Array(1))[0] || 1, meta);
+  $('#start-sync').disabled = true;
+  $('#audio').pause();
+  $('#audio').controls = false;
+  try {
+    await clock.start(crypto.getRandomValues(new Uint32Array(1))[0] || 1, meta);
+    $('#sync-state').textContent = '연결 완료 · 아래 오디오 재생 버튼을 누르세요. AP 연결을 유지하세요.';
+  } finally {
+    $('#start-sync').disabled = false;
+    $('#audio').controls = true;
+  }
 });
 $('#stop-sync').onclick = run(() => clock.stop());
 for (const name of ['play', 'pause', 'seeked', 'ended'])

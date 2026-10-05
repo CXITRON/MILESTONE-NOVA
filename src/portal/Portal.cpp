@@ -81,7 +81,7 @@ bool Portal::begin(Storage &s, Artwork &a, OnlineLyrics &l, Firmware &f) {
 }
 void Portal::open(bool enabled) {
   if (!enabled && requested_)
-    cleanupSync_ = true;
+    cleanupSync();
   requested_ = ready_ && enabled && !suspendRequested_;
 }
 void Portal::suspend(bool enabled) {
@@ -259,6 +259,24 @@ void Portal::action() {
   }
   command_ = PortalCommand{};
   const char *op = str(root.get(), "op");
+  if (!strcmp(op, "syncCancel")) {
+    uint32_t id = 0;
+    if (!num(root.get(), "session", id) || id != syncId_) {
+      respond(false, "Unknown Sync preparation");
+      return;
+    }
+    syncAbandoned_ = true;
+    if (syncCheck_ == Commit::Running)
+      storage_->cancelValidation(true);
+    else
+      syncCheck_ = Commit::Idle;
+    respond(true);
+    return;
+  }
+  if (syncCheck_ == Commit::Running && strcmp(op, "syncStart")) {
+    respond(false, "동기 영상 검증 중입니다. 완료하거나 취소하세요.");
+    return;
+  }
   bool valid = true;
   if (!strcmp(op, "mode")) {
     command_.kind = CommandKind::Mode;
@@ -306,16 +324,46 @@ void Portal::action() {
   } else if (!strcmp(op, "syncStart")) {
     command_.kind = CommandKind::SyncStart;
     valid = num(root.get(), "session", command_.id) && command_.id;
-    FileJob check;
-    check.op = FileOp::SyncValidate;
-    strcpy(check.path, "/media/sync.njv");
-    valid = valid && num(root.get(), "size", check.offset, 0x7fffffff) && check.offset &&
-            num(root.get(), "crc", check.checksum);
-    if (valid && !storage_->execute(check)) {
-      respond(false, check.error);
+    uint32_t size = 0, crc = 0;
+    valid = valid && num(root.get(), "size", size, 0x7fffffff) && size && num(root.get(), "crc", crc);
+    if (!valid) {
+      respond(false, "Invalid Sync identity");
       return;
     }
-    command_.duration = check.total;
+    const Commit state = syncCheck_;
+    const bool same = syncId_ == command_.id && syncSize_ == size && syncCrc_ == crc;
+    if (state == Commit::Running) {
+      if (same) syncStatus();
+      else respond(false, "Another Sync preparation is running");
+      return;
+    }
+    if (same && state == Commit::Failed) {
+      syncStatus();
+      return;
+    }
+    if (!same || state != Commit::Done || syncAbandoned_) {
+      if (commit_ == Commit::Running) {
+        respond(false, "업로드 검증을 먼저 완료하세요.");
+        return;
+      }
+      syncId_ = command_.id;
+      syncSize_ = size;
+      syncCrc_ = crc;
+      syncDuration_ = 0;
+      syncMessage_[0] = 0;
+      syncAbandoned_ = false;
+      storage_->cancelValidation(false);
+      syncCheck_ = Commit::Running;
+      if (xTaskCreate(syncTask, "nova-sync-check", 4096, this, 1, nullptr) != pdPASS) {
+        snprintf(syncMessage_, sizeof(syncMessage_), "Out of memory");
+        syncCheck_ = Commit::Failed;
+      }
+      syncStatus();
+      return;
+    }
+    // Only a live follow-up request can activate playback. Finishing validation alone cannot.
+    command_.duration = syncDuration_;
+    syncCheck_ = Commit::Idle;
   } else if (!strcmp(op, "sync")) {
     command_.kind = CommandKind::SyncTick;
     valid = num(root.get(), "session", command_.id) &&
@@ -472,6 +520,38 @@ void Portal::file() {
       break;
     vTaskDelay(1);
   }
+}
+void Portal::syncTask(void *self) {
+  auto &p = *static_cast<Portal *>(self);
+  auto job = std::unique_ptr<FileJob>(new (std::nothrow) FileJob);
+  bool ok = false;
+  if (job) {
+    job->op = FileOp::SyncValidate;
+    strcpy(job->path, "/media/sync.njv");
+    job->offset = p.syncSize_;
+    job->checksum = p.syncCrc_;
+    ok = p.storage_->execute(*job);
+    p.syncDuration_ = job->total;
+    snprintf(p.syncMessage_, sizeof(p.syncMessage_), "%s", job->error);
+  } else
+    snprintf(p.syncMessage_, sizeof(p.syncMessage_), "Out of memory");
+  job.reset();
+  if (p.syncAbandoned_ || !p.requested_) {
+    ok = false;
+    snprintf(p.syncMessage_, sizeof(p.syncMessage_), "Sync preparation cancelled");
+  }
+  p.syncCheck_ = ok ? Commit::Done : Commit::Failed;
+  vTaskDelete(nullptr);
+}
+void Portal::syncStatus() {
+  const Commit state = syncCheck_;
+  auto *out = cJSON_CreateObject();
+  cJSON_AddBoolToObject(out, "ok", state != Commit::Failed);
+  // Even Done needs a follow-up request to dispatch SyncStart on the main loop.
+  cJSON_AddStringToObject(out, "state", state == Commit::Failed ? "failed" : "running");
+  cJSON_AddNumberToObject(out, "progress", state == Commit::Done ? 100 : storage_->progress());
+  cJSON_AddStringToObject(out, "message", state == Commit::Failed ? syncMessage_ : "");
+  json(out, state == Commit::Failed ? 400 : 200);
 }
 void Portal::commitTask(void *self) {
   auto &p = *static_cast<Portal *>(self);
@@ -759,6 +839,15 @@ void Portal::routes() {
       server.send(403, "text/plain", "Connect to the device setup AP");
       return true;
     }
+    const bool action = server.uri() == "/api/action";
+    if (syncCheck_ == Commit::Running && server.uri().startsWith("/api/") &&
+        server.uri() != "/api/status" && !action) {
+      server.send(409, "application/json", "{\"ok\":false,\"message\":\"Sync validation in progress\"}");
+      return true;
+    }
+    // Any other write can replace/remove the validated file before activation.
+    if (server.method() != HTTP_GET && !action && syncCheck_ == Commit::Done)
+      syncCheck_ = Commit::Idle;
     return next();
   });
   const char *headers[]{"X-NOVA", "Content-Type"};
@@ -813,7 +902,7 @@ void Portal::run() {
       quiescent_ = true;
     }
     LogLine entry;
-    const bool hadLog = xQueueReceive(logs_, &entry, 0) == pdTRUE;
+    const bool hadLog = syncCheck_ != Commit::Running && xQueueReceive(logs_, &entry, 0) == pdTRUE;
     if (hadLog) {
       FileJob job;
       job.op = FileOp::Log;

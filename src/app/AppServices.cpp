@@ -160,6 +160,8 @@ void App::portalCommands(uint32_t now) {
     break;
   case CommandKind::SyncStart:
     if (thermalState_ < 3 && network_.ap() && c->id && c->duration && storage_.mounted()) {
+      log("SYNC", "start session=%lu duration=%lu", static_cast<unsigned long>(c->id),
+          static_cast<unsigned long>(c->duration));
       playback_.startSync(c->id, c->duration, now);
       ++mediaGeneration_;
       mediaValid_ = mediaFailed_ = false;

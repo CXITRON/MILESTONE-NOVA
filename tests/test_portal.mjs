@@ -184,6 +184,55 @@ assert.deepEqual(
 assert.equal(clock.session, 0);
 await assert.rejects(clock.start(42, {ready: true}), /검증 정보/);
 
+// Long SD validation is polled without sending clock ticks or starting audio early.
+const preparationCalls = [], progressMessages = [];
+let validations = 0;
+const preparing = new SyncClock(audio, async c => {
+  preparationCalls.push(c);
+  if (c.op === 'syncStart' && ++validations < 3)
+    return {ok: true, state: 'running', progress: validations * 30};
+  return {ok: true};
+}, text => progressMessages.push(text));
+await preparing.start(51, syncMedia);
+assert.deepEqual(preparationCalls.slice(0, 3).map(c => c.op), ['syncStart', 'syncStart', 'syncStart']);
+assert.equal(preparationCalls[3].op, 'sync');
+assert(progressMessages.some(s => s.includes('30%')));
+assert(audio.paused);
+await preparing.stop();
+// Stop while validation is pending must cancel it and never activate a local session.
+let resolvePreparation;
+const cancelledCalls = [];
+const cancelling = new SyncClock(audio, async c => {
+  cancelledCalls.push(c);
+  if (c.op === 'syncStart') return new Promise(resolve => resolvePreparation = resolve);
+  return {ok: true};
+}, () => {});
+const pendingStart = cancelling.start(52, syncMedia);
+const rejectedStart = assert.rejects(pendingStart, /취소/);
+await new Promise(resolve => setImmediate(resolve));
+const cancel = cancelling.stop();
+resolvePreparation({ok: true, state: 'running', progress: 5});
+await Promise.all([rejectedStart, cancel]);
+assert.equal(cancelling.session, 0);
+assert(cancelledCalls.some(c => c.op === 'syncCancel' && c.session === 52));
+assert(!cancelledCalls.some(c => c.op === 'sync'));
+// If the final activation response arrives after Stop, explicitly stop the accepted session.
+let resolveActivation;
+const lateCalls = [];
+const late = new SyncClock(audio, async c => {
+  lateCalls.push(c);
+  if (c.op === 'syncStart') return new Promise(resolve => resolveActivation = resolve);
+  return {ok: true};
+}, () => {});
+const lateStart = late.start(53, syncMedia);
+const lateRejected = assert.rejects(lateStart, /취소/);
+await new Promise(resolve => setImmediate(resolve));
+const lateStop = late.stop();
+resolveActivation({ok: true});
+await Promise.all([lateRejected, lateStop]);
+assert(lateCalls.some(c => c.op === 'syncStop' && c.session === 53));
+assert.equal(late.session, 0);
+
 const original = new File([new Uint8Array([1, 2, 3])], 'movie.mp4', {lastModified: 123});
 const prepared = {
   name: original.name,

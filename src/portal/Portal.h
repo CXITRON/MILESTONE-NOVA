@@ -60,7 +60,7 @@ public:
   void open(bool enabled);
   void suspend(bool enabled);
   bool suspended() const { return !ready_ || (suspendRequested_ && suspended_); }
-  void cleanupSync() { cleanupSync_ = true; }
+  void cleanupSync() { syncAbandoned_ = true; cleanupSync_ = true; }
   bool quiescent() const { return !requested_ && quiescent_; }
   void publish(const PortalSnapshot &snapshot);
   PortalCommand *receive();
@@ -70,6 +70,8 @@ public:
 private:
   static void task(void *self);
   static void commitTask(void *self);
+  static void syncTask(void *self);
+  void syncStatus();
   void run();
   void routes();
   bool authorized();
@@ -113,6 +115,10 @@ private:
   // Validating a large upload takes minutes; it runs outside the HTTP task so progress can be polled.
   enum class Commit : uint8_t { Idle, Running, Done, Failed };
   std::atomic<Commit> commit_{Commit::Idle};
+  std::atomic<Commit> syncCheck_{Commit::Idle};
+  std::atomic<bool> syncAbandoned_{false};
+  uint32_t syncId_ = 0, syncSize_ = 0, syncCrc_ = 0, syncDuration_ = 0;
+  char syncMessage_[96]{};
   uint32_t commitId_ = 0;
   char commitPath_[128]{}, commitMessage_[96]{};
 };

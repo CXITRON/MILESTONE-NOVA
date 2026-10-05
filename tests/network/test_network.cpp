@@ -57,5 +57,24 @@ int main() {
   testMillis += 15000;
   network.tick(testMillis, false);
   assert(WiFi.disconnects == disconnects + 1 && network.settled(testMillis));
+  // Setup AP must remain on a stable channel; background STA reconnects are deferred.
+  testMillis += 30000;
+  network.begin(secrets, settings);
+  const auto startsBeforeAp = WiFi.starts;
+  assert(network.openAp(secrets, settings));
+  testMillis += 600000;
+  network.tick(testMillis, false);
+  assert(WiFi.starts == startsBeforeAp);
+  // Explicit AP Wi-Fi configuration tests remain available.
+  assert(network.test(secrets.networks[0]));
+  assert(WiFi.starts == startsBeforeAp + 1);
+  testMillis += 30000;
+  network.tick(testMillis, false);
+  testMillis += 600000;
+  network.tick(testMillis, false);
+  assert(WiFi.starts == startsBeforeAp + 1);
+  network.closeAp();
+  network.tick(testMillis, false);
+  assert(WiFi.starts == startsBeforeAp + 2);
   std::cout << "Network lifecycle checks passed\n";
 }

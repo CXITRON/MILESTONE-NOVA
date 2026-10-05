@@ -172,6 +172,8 @@ export class SyncClock {
     this.latency = 0;
     this.timer = 0;
     this.lifecycle = Promise.resolve();
+    this.generation = 0;
+    this.preparing = false;
   }
   transition(fn) {
     const next = this.lifecycle.then(fn);
@@ -180,10 +182,36 @@ export class SyncClock {
   }
   start(session, media) {
     return this.transition(async () => {
+      const generation = this.generation;
       if (!media?.ready || !Number.isInteger(media.checksum))
         throw new Error('동기 영상의 검증 정보가 없습니다. 다시 준비하세요.');
       await this.detach();
-      await this.send({op: 'syncStart', session, size: media.total, crc: media.checksum});
+      const request = {op: 'syncStart', session, size: media.total, crc: media.checksum};
+      const deadline = performance.now() + 900000;
+      this.preparing = true;
+      this.onStatus('동기 영상 확인 중… 검증 후 아래 오디오의 재생 버튼을 누르세요.');
+      try {
+        let state;
+        do {
+          if (generation !== this.generation) throw new Error('동기 연결을 취소했습니다.');
+          if (performance.now() > deadline) throw new Error('동기 영상 검증 시간이 초과되었습니다.');
+          state = await this.send(request);
+          if (state?.state === 'running') {
+            this.onStatus(`동기 영상 검증 ${state.progress || 0}% · AP 연결을 유지하세요.`);
+            await new Promise(resolve => setTimeout(resolve, 700));
+          }
+        } while (state?.state === 'running');
+        if (generation !== this.generation) {
+          await this.send({op: 'syncStop', session});
+          throw new Error('동기 연결을 취소했습니다.');
+        }
+      } catch (error) {
+        // Validation never starts playback by itself; cancellation discards any pending result.
+        try { await this.send({op: 'syncCancel', session}); } catch (_) {}
+        throw error;
+      } finally {
+        this.preparing = false;
+      }
       this.session = session;
       this.sequence = 0;
       this.timer = setInterval(() => this.tick(), 250);
@@ -213,6 +241,7 @@ export class SyncClock {
     }
   }
   stop() {
+    if (this.preparing) ++this.generation;
     return this.transition(() => this.detach());
   }
   async detach() {

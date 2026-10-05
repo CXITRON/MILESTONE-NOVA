@@ -112,6 +112,11 @@ bool Network::openAp(const Secrets &s, const Settings &v) {
     apPassword_[8] = 0;
   }
   off_ = false;
+  // A pending STA scan/association can switch the AP channel during browser playback.
+  if (attempting_ && !connected()) {
+    disconnect();
+    attempting_ = testing_ = false;
+  }
   WiFi.mode(WIFI_AP_STA);
   ap_ = WiFi.softAP("MILESTONE-NOVA-SETUP", apPassword_[0] ? apPassword_ : nullptr, 1, false, 4);
   return ap_;
@@ -251,7 +256,7 @@ void Network::tick(uint32_t now, bool ble) {
   }
   // A scan/connect can disturb a live BLE link, but never retrying while the iPhone is connected
   // (the whole NOW session) would leave a dropped Wi-Fi down forever; retry slowly instead.
-  if (configured_ && !attempting_ && !testing_ && !scanning_ &&
+  if (configured_ && !ap_ && !attempting_ && !testing_ && !scanning_ &&
       elapsed(now, attempt_) >= (ble ? std::max<uint32_t>(retry_, 60000) : retry_)) {
     connect(profiles_[index_]);
     retry_ = std::min<uint32_t>(retry_ * 2, retrySeconds_ * 1000);

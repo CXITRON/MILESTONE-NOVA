@@ -410,6 +410,10 @@ void App::console(const char *cmd, uint32_t now) {
     log("HW", "wifi=%s rssi=%d drops=%lu ip=%s BLE=%s SD=%d battery=%.2fV", network_.status(),
         network_.rssi(), static_cast<unsigned long>(network_.drops()), address_,
         ble_.status(), storage_.mounted(), battery_.volts());
+    log("SYNC", "ap=%u screen=%u session=%lu playing=%u position=%lu stale=%u",
+        unsigned(network_.ap()), unsigned(screen_), static_cast<unsigned long>(playback_.session()),
+        unsigned(playback_.playing()), static_cast<unsigned long>(playback_.position(now)),
+        unsigned(playback_.stale()));
     log("MEDIA", "key=%s position=%lu", session_.track().key,
         static_cast<unsigned long>(session_.position(now)));
     char update[128];
