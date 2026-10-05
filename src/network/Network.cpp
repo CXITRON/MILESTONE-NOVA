@@ -52,6 +52,15 @@ void Network::begin(const Secrets &s, const Settings &v) {
   testing_ = saved_ = false;
   WiFi.persistent(false);
   WiFi.setAutoReconnect(false);
+  if (!eventRegistered_) {
+    eventRegistered_ = true;
+    WiFi.onEvent(
+        [this](arduino_event_id_t, arduino_event_info_t info) {
+          reason_ = info.wifi_sta_disconnected.reason;
+          ++drops_;
+        },
+        ARDUINO_EVENT_WIFI_STA_DISCONNECTED);
+  }
   WiFi.setHostname("milestone-nova");
   if (configured_) {
     index_ = 0;
@@ -116,6 +125,7 @@ bool Network::takeSaved(WifiProfile &p) {
 void Network::saveResult(bool saved) {
   strcpy(testStatus_, saved ? "연결 성공 · 저장됨" : "연결 성공 · 저장 실패, 다시 시험하세요");
 }
+int Network::rssi() const { return connected() ? WiFi.RSSI() : 0; }
 bool Network::connected() const { return !off_ && WiFi.status() == WL_CONNECTED; }
 bool Network::settled(uint32_t now) const {
   return !configured_ || connected() || elapsed(now, started_) >= 15000;
@@ -201,8 +211,10 @@ void Network::tick(uint32_t now, bool ble) {
     } else if (count_)
       index_ = (index_ + 1) % count_;
   }
-  if (configured_ && !attempting_ && !testing_ && !scanning_ && !ble &&
-      elapsed(now, attempt_) >= retry_) {
+  // A scan/connect can disturb a live BLE link, but never retrying while the iPhone is connected
+  // (the whole NOW session) would leave a dropped Wi-Fi down forever; retry slowly instead.
+  if (configured_ && !attempting_ && !testing_ && !scanning_ &&
+      elapsed(now, attempt_) >= (ble ? std::max<uint32_t>(retry_, 60000) : retry_)) {
     connect(profiles_[index_]);
     retry_ = std::min<uint32_t>(retry_ * 2, retrySeconds_ * 1000);
   }

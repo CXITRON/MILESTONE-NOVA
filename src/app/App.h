@@ -88,7 +88,7 @@ private:
   bool mediaValid_ = false, assetsNeeded_ = false, assetPending_ = false,
        mediaFailed_ = false, assetError_ = false;
   bool shutdownStarted_ = false, storageStopping_ = false, peripheralsOff_ = false;
-  uint32_t artFailureAt_ = 0, lyricsFailureAt_ = 0;
+  uint32_t artFailureAt_ = 0, lyricsFailureAt_ = 0, lastWifiDrops_ = 0, lastWifiDropAt_ = 0;
   char notice_[128]{}, address_[24]{};
 };
 } // namespace nova

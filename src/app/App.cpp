@@ -407,7 +407,8 @@ void App::console(const char *cmd, uint32_t now) {
     power_.request(now, firmware_.busy() || bootConfirm_.pending());
   } else if (!strcmp(cmd, "status")) {
     network_.address(address_, sizeof(address_));
-    log("HW", "wifi=%s ip=%s BLE=%s SD=%d battery=%.2fV", network_.status(), address_,
+    log("HW", "wifi=%s rssi=%d drops=%lu ip=%s BLE=%s SD=%d battery=%.2fV", network_.status(),
+        network_.rssi(), static_cast<unsigned long>(network_.drops()), address_,
         ble_.status(), storage_.mounted(), battery_.volts());
     log("MEDIA", "key=%s position=%lu", session_.track().key,
         static_cast<unsigned long>(session_.position(now)));
@@ -430,10 +431,10 @@ void App::recordLookupFailure(const char *kind, uint32_t now) {
     return;
   last = now ? now : 1;
   char why[96];
-  snprintf(why, sizeof(why), "%s lookup failed (%d tls=%d errno=%d heap=%u blk=%u)", kind,
+  snprintf(why, sizeof(why), "%s failed (%d tls=%d errno=%d heap=%u blk=%u rssi=%d)", kind,
            Http::lastResult(), Http::lastTlsError(), Http::lastErrno(),
            unsigned(heap_caps_get_free_size(MALLOC_CAP_INTERNAL)),
-           unsigned(heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL)));
+           unsigned(heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL)), network_.rssi());
   diagnostics_.record(why);
 }
 void App::invalidateTrackAssets(uint32_t now, bool trackChanged, bool retryOnline) {
@@ -750,6 +751,15 @@ void App::tick() {
     console(cmd, now);
   if (!shutdownStarted_) {
     network_.tick(now, ble_.connected());
+    // At most one history line every two minutes, so a flapping link cannot wear the flash.
+    if (network_.drops() != lastWifiDrops_ && (!lastWifiDropAt_ || now - lastWifiDropAt_ >= 120000)) {
+      char why[96];
+      snprintf(why, sizeof(why), "Wi-Fi dropped x%lu (reason %u)",
+               static_cast<unsigned long>(network_.drops() - lastWifiDrops_), network_.lastReason());
+      diagnostics_.record(why);
+      lastWifiDrops_ = network_.drops();
+      lastWifiDropAt_ = now ? now : 1;
+    }
     if (!bleStarted_ && navigation_.profile() == Profile::Now && !network_.ap() &&
         network_.settled(now)) {
       bleStarted_ = true;
