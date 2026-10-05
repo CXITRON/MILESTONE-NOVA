@@ -7,3 +7,5 @@
 *.key
 __pycache__/
 /docs/agents/board_state/
+/docs/agents/lounge.md
+/docs/agents/*-self.md

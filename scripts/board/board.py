@@ -35,6 +35,9 @@ WHO = {"claude": ("Claude Code", "Claude"), "codex": ("Codex", "Codex")}
 TYPES = ("토론", "질문", "제안", "리뷰", "댓글", "정리", "인계", "작업 시작", "작업 종료", "확인", "공지")
 
 
+LOUNGE_HEADER = "# Codex & Claude 휴게실\n\n업무 얘기 없이 그냥 대화하는 곳. 로컬 전용이라 git에는 올리지 않는다.\n\n## 대화\n"
+
+
 @dataclass
 class Post:
     key: str  # work: post ID, lounge: the whole header line
@@ -45,6 +48,8 @@ class Post:
 def parse(path: Path, start_heading: str) -> list[Post]:
     """Return the posts after `start_heading`, ignoring example headers inside code fences."""
     posts: list[Post] = []
+    if not path.exists():  # e.g. the lounge is local-only and absent from a fresh clone
+        return posts
     started = fenced = False
     current: list[str] | None = None
     for line in path.read_text(encoding="utf-8").splitlines():
@@ -167,6 +172,8 @@ def cmd_post(args) -> int:
         print("본문이 비어 있습니다.", file=sys.stderr)
         return 2
     path, heading = BOARDS[args.board]
+    if args.board == "lounge" and not path.exists():
+        path.write_text(LOUNGE_HEADER, encoding="utf-8")
     if args.board == "work" and (not args.title or args.type not in TYPES):
         print(f"work 게시판은 --title과 --type({', '.join(TYPES)})이 필요합니다.", file=sys.stderr)
         return 2

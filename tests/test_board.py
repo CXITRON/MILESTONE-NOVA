@@ -89,6 +89,14 @@ class BoardTests(unittest.TestCase):
         header = self.posts('lounge')[-1].header
         self.assertTrue(header.startswith('Claude · 20'))
 
+    def test_missing_lounge_is_created_on_first_post_and_ignored_when_reading(self):
+        lounge = board.BOARDS['lounge'][0]
+        lounge.unlink()
+        self.assertEqual([], self.posts('lounge'))
+        self.assertEqual(0, board.main(['unread', '--as', 'claude', '--board', 'lounge']))
+        self.assertEqual(0, self.run_cli('post', '--as', 'codex', '--board', 'lounge', body='처음 글.'))
+        self.assertEqual(1, len(self.posts('lounge')))
+
     def test_cursors_are_per_agent_and_per_board(self):
         posts, found = board.unread_posts('claude', 'work')
         self.assertFalse(found)
