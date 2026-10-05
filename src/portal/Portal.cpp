@@ -473,6 +473,40 @@ void Portal::file() {
     vTaskDelay(1);
   }
 }
+void Portal::commitTask(void *self) {
+  auto &p = *static_cast<Portal *>(self);
+  auto *job = new (std::nothrow) FileJob;
+  if (!job) {
+    snprintf(p.commitMessage_, sizeof(p.commitMessage_), "Out of memory");
+    p.commit_ = Commit::Failed;
+    vTaskDelete(nullptr);
+    return;
+  }
+  job->op = FileOp::UploadCommit;
+  job->id = p.commitId_;
+  const bool ok = p.storage_->execute(*job);
+  snprintf(p.commitPath_, sizeof(p.commitPath_), "%s", job->path);
+  snprintf(p.commitMessage_, sizeof(p.commitMessage_), "%s",
+           job->error[0] ? job->error : "Validation failed");
+  p.commit_ = ok ? Commit::Done : Commit::Failed;
+  delete job;
+  vTaskDelete(nullptr);
+}
+void Portal::commitStatus() {
+  const Commit state = commit_;
+  auto *out = cJSON_CreateObject();
+  cJSON_AddBoolToObject(out, "ok", state != Commit::Failed);
+  cJSON_AddStringToObject(out, "state", state == Commit::Running ? "running"
+                                          : state == Commit::Done ? "done"
+                                          : state == Commit::Failed ? "failed" : "idle");
+  cJSON_AddNumberToObject(out, "progress", storage_->progress());
+  cJSON_AddStringToObject(out, "path", state == Commit::Done ? commitPath_ : "");
+  cJSON_AddStringToObject(out, "message", state == Commit::Failed ? commitMessage_ : "");
+  if (state == Commit::Failed)
+    json(out, 400);
+  else
+    json(out);
+}
 void Portal::transfer() {
   if (!authorized()) {
     respond(false, "AP session expired");
@@ -495,8 +529,26 @@ void Portal::transfer() {
             (!strncmp(job.path, "/media/", 7) || !strcmp(job.path, "/update/candidate.bin"));
     job.enabled = yes(root.get(), "replace");
   } else if (!strcmp(op, "commit")) {
-    job.op = FileOp::UploadCommit;
-    valid = num(root.get(), "id", job.id);
+    // Start validation in its own task; the browser polls "commitStatus" for progress.
+    uint32_t id = 0;
+    if (!num(root.get(), "id", id)) {
+      respond(false, "Invalid commit");
+      return;
+    }
+    if (commit_ != Commit::Running) {
+      commitId_ = id;
+      commitPath_[0] = commitMessage_[0] = 0;
+      commit_ = Commit::Running;
+      if (xTaskCreate(commitTask, "nova-commit", 4096, this, 1, nullptr) != pdPASS) {
+        commit_ = Commit::Failed;
+        snprintf(commitMessage_, sizeof(commitMessage_), "Out of memory");
+      }
+    }
+    commitStatus();
+    return;
+  } else if (!strcmp(op, "commitStatus")) {
+    commitStatus();
+    return;
   } else if (!strcmp(op, "abort")) {
     job.op = FileOp::UploadAbort;
     valid = num(root.get(), "id", job.id);

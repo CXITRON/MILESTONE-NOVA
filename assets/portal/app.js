@@ -552,7 +552,12 @@ $('#convert').onclick = run(
 $('#upload').onclick = run(() => operation(async signal => {
                              $('#transfer-state').textContent =
                                  '업로드·재개 중. 마지막 단계에서 전체 파일을 검증합니다.';
-                             const meta = await uploadPrepared(store, api, signal, progress);
+                             const meta = await uploadPrepared(store, api, signal, progress, percent => {
+                               progress(percent / 100);
+                               $('#transfer-state').textContent =
+                                   `기기에서 파일 검증 중 ${Math.round(percent)}%`;
+                             }, (n, why) => $('#transfer-state').textContent =
+                                 `전송 재시도 ${n}/3: ${why}`);
                              $('#transfer-state').textContent = 'SD 저장·검증 완료: ' + meta.path;
                              await mediaList();
                            }));
@@ -581,24 +586,17 @@ $('#prepare-sync').onclick =
                          progress: syncProgress('1/2 브라우저 변환')});
           $('#sync-progress').value = 0;
           // The device validates every frame before replying; it cannot answer polls meanwhile.
-          let verifying = 0;
-          const verifyStart = () => {
-            const t0 = Date.now();
-            const show = () => $('#sync-state').textContent =
-                `3/3 기기에서 영상 검증 중 ${Math.round((Date.now() - t0) / 1000)}초 (긴 영상은 몇 분 걸립니다)`;
-            show();
-            verifying = setInterval(show, 1000);
+          const verifyStart = percent => {
+            $('#sync-progress').value = percent / 100;
+            $('#sync-state').textContent =
+                `3/3 기기에서 영상 검증 중 ${Math.round(percent)}% (긴 영상은 몇 분 걸립니다)`;
           };
-          try {
-            const up = syncProgress('2/2 SD 업로드'), t0 = Date.now(), total = (await store.get()).total;
-            await uploadPrepared(store, api, signal, v => {
-              up(v);
-              const kb = Math.round(v * total / 1024 / Math.max(1, (Date.now() - t0) / 1000));
-              $('#sync-state').textContent += ` · ${kb} KB/s`;
-            }, verifyStart, (n, why) => $('#sync-state').textContent = `전송 재시도 ${n}/3: ${why}`);
-          } finally {
-            clearInterval(verifying);
-          }
+          const up = syncProgress('2/2 SD 업로드'), t0 = Date.now(), total = (await store.get()).total;
+          await uploadPrepared(store, api, signal, v => {
+            up(v);
+            const kb = Math.round(v * total / 1024 / Math.max(1, (Date.now() - t0) / 1000));
+            $('#sync-state').textContent += ` · ${kb} KB/s`;
+          }, verifyStart, (n, why) => $('#sync-state').textContent = `전송 재시도 ${n}/3: ${why}`);
           $('#sync-progress').value = 1;
           $('#sync-state').textContent =
               'SD 동기 영상 준비 완료. 동기 재생 연결 후 오디오 재생을 누르세요.';

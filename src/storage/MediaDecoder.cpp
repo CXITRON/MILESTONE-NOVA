@@ -26,6 +26,30 @@ void MediaDecoder::close() {
   path_[0] = 0;
   decodedFrame_ = UINT32_MAX;
 }
+namespace {
+// Cheap structural check: SOI, a baseline/progressive SOF with the expected size, and EOI.
+bool jpegStructure(const uint8_t *d, size_t n, unsigned w, unsigned h) {
+  if (n < 4 || d[0] != 0xFF || d[1] != 0xD8 || d[n - 2] != 0xFF || d[n - 1] != 0xD9)
+    return false;
+  for (size_t at = 2; at + 4 <= n;) {
+    if (d[at] != 0xFF)
+      return false;
+    const uint8_t marker = d[at + 1];
+    if (marker == 0xFF) {
+      ++at;
+      continue;
+    }
+    const size_t length = (size_t(d[at + 2]) << 8) | d[at + 3];
+    if (marker == 0xC0 || marker == 0xC1 || marker == 0xC2)
+      return at + 9 <= n && ((size_t(d[at + 5]) << 8) | d[at + 6]) == h &&
+             ((size_t(d[at + 7]) << 8) | d[at + 8]) == w;
+    if (marker == 0xDA || length < 2)
+      return false;
+    at += 2 + length;
+  }
+  return false;
+}
+} // namespace
 bool MediaDecoder::jpeg(size_t bytes, unsigned w, unsigned h) {
   return w <= maxMediaSide && h <= maxMediaSide &&
          decodeJpeg565(encoded_, bytes, decoded_, w, h, work_, workBytes);
@@ -110,7 +134,11 @@ bool MediaDecoder::validate(const char *path, std::atomic<uint32_t> &progress,
       ok = ok && f.read(h, 8) == 8;
       const uint32_t n = read32(h);
       ok = ok && n >= 4 && n <= maxJpegFrame && n <= f.size() - f.position() && f.read(encoded_, n) == n &&
-           crc32(encoded_, n) == read32(h + 4) && jpeg(n, m.width, m.height);
+           crc32(encoded_, n) == read32(h + 4) &&
+           // Every frame has a CRC and a structure check; decoding all of them dominated the
+           // validation time, so only a sample (first frame, then every 32nd) is fully decoded.
+           jpegStructure(encoded_, n, m.width, m.height) &&
+           ((frame & 31) != 0 || jpeg(n, m.width, m.height));
       if (contentCrc && ok) {
         content = crcUpdate(content, h, sizeof(h));
         content = crcUpdate(content, encoded_, n);

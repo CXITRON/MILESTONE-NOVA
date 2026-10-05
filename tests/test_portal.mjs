@@ -24,9 +24,10 @@ let offset = 10000, committed = false;
 await uploadPrepared(store, async (url, body) => {
   if (url === '/api/transfer') {
     if (body.op === 'begin') return {offset};
-    if (body.op === 'commit') {
+    if (body.op === 'commit') return {ok: true, state: 'running', progress: 0};
+    if (body.op === 'commitStatus') {
       committed = true;
-      return {ok: true};
+      return {ok: true, state: 'done', progress: 100};
     }
   }
   const q = new URL(url, 'http://device/').searchParams,

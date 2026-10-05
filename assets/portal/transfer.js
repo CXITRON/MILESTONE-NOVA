@@ -142,8 +142,23 @@ export async function uploadPrepared(store, api, signal, progress, committing, r
     progress(offset / meta.total);
   }
   signal.throwIfAborted();
-  committing?.();
-  await api('/api/transfer', {op: 'commit', id: meta.id}, signal);
+  // The device validates in the background; poll its progress instead of waiting on one request.
+  committing?.(0);
+  let state = await api('/api/transfer', {op: 'commit', id: meta.id}, signal);
+  while (state.state === 'running') {
+    await new Promise(resolve => setTimeout(resolve, 700));
+    signal.throwIfAborted();
+    try {
+      state = await api('/api/transfer', {op: 'commitStatus'}, signal);
+    } catch (error) {
+      signal.throwIfAborted();
+      if (/AP session|Invalid|검증|Frame|CRC|Validation|header|Incomplete/i.test(error.message)) throw error;
+      state = {state: 'running', progress: state.progress};
+      continue;
+    }
+    committing?.(state.progress);
+  }
+  if (state.state !== 'done') throw new Error(state.message || '기기의 영상 검증에 실패했습니다.');
   return meta;
 }
 export class SyncClock {

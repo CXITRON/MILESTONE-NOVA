@@ -69,11 +69,13 @@ public:
 
 private:
   static void task(void *self);
+  static void commitTask(void *self);
   void run();
   void routes();
   bool authorized();
   bool dispatch(PortalCommand &command);
   void status();
+  void commitStatus();
   void settings();
   void action();
   void media();
@@ -108,5 +110,10 @@ private:
   char token_[33]{};
   std::atomic<bool> requested_{false}, quiescent_{true}, cleanupSync_{false};
   std::atomic<bool> suspendRequested_{false}, suspended_{false};
+  // Validating a large upload takes minutes; it runs outside the HTTP task so progress can be polled.
+  enum class Commit : uint8_t { Idle, Running, Done, Failed };
+  std::atomic<Commit> commit_{Commit::Idle};
+  uint32_t commitId_ = 0;
+  char commitPath_[128]{}, commitMessage_[96]{};
 };
 } // namespace nova
