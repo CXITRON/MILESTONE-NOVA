@@ -170,6 +170,16 @@ arduino-cli upload --fqbn esp32:esp32:lolin_s3:USBMode=hwcdc,CDCOnBoot=cdc \
   --port /dev/ttyACM0 --input-dir build/firmware build/sketch/Nova
 ```
 
+NVS를 20 KiB에서 64 KiB로 넓힌 파티션 표(`partitions.csv`)로 기존 기기를 옮기는 1회용 USB 작업:
+
+```sh
+NOVA_VERSION=0.1.10 scripts/build/repartition.sh --check        # 빌드와 표 검사만
+NOVA_VERSION=0.1.10 scripts/build/repartition.sh /dev/ttyACM0   # 실제 반영
+```
+
+NVS 시작 위치(`0x9000`)가 같아서 저장된 설정과 Wi-Fi가 유지된다. 반영 전 NVS를 `build/repartition/`에 백업한다.
+OTA로는 파티션 표를 바꿀 수 없다. 반영이 끝난 기기는 이후 평소처럼 OTA로 업데이트한다.
+
 본 구현 작업에서는 실제 장치에 flash하지 않았다. 로그는 USB CDC 및
 GPIO43/44 UART0, 115200 baud로 출력한다. USB console은 개행 단위 명령을 받는다.
 
