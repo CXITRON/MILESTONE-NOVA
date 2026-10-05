@@ -1,4 +1,5 @@
 #include "App.h"
+#include "../network/Http.h"
 #include "../core/Text.h"
 #include "../logging/Log.h"
 #include <Wire.h>
@@ -271,7 +272,9 @@ void App::input(const InputEvent &e, uint32_t now) {
   if (screen_ == Screen::Updates || screen_ == Screen::Recovery) {
     if (direction)
       recoveryItem_ = (int(recoveryItem_) + 3 + direction) % 3;
-    if (e.key == Key::Ok && !updateBusy && thermalState_ < 2) {
+    if (e.key == Key::Ok && (updateBusy || thermalState_ >= 2))
+      notice(updateBusy ? "다른 업데이트 작업 중" : "온도가 높아 업데이트 보류", now);
+    else if (e.key == Key::Ok) {
       bool accepted = false;
       if (e.press == Press::Long)
         accepted = firmware_.request(recoveryItem_ == 2 ? Firmware::Work::Rollback
@@ -503,6 +506,11 @@ void App::assets(uint32_t now) {
   // A stale completion is consumed without overwriting the displayed pixels.
   if (cover_ && artwork_.receive(cover_, trackAssets_.generation, artOk)) {
     log("ART", "online artwork %s", artOk ? "received" : "not found");
+    if (!artOk) {
+      char why[48];
+      snprintf(why, sizeof(why), "Artwork lookup failed (%d)", Http::lastResult());
+      diagnostics_.record(why);
+    }
     trackAssets_.coverValid = trackAssets_.coverValid || artOk;
     trackAssets_.artPending = false;
   }
@@ -521,7 +529,14 @@ void App::assets(uint32_t now) {
   bool lyricsFound = false;
   // A stale completion is consumed without touching the current track's lyrics.
   if (lyrics_ && onlineLyrics_.receive(*lyrics_, trackAssets_.generation, lyricsFound))
+  {
     log("LYRICS", lyricsFound ? "online lyrics loaded" : "no online lyrics");
+    if (!lyricsFound && Http::lastResult() != 204) {
+      char why[48];
+      snprintf(why, sizeof(why), "Lyrics lookup failed (%d)", Http::lastResult());
+      diagnostics_.record(why);
+    }
+  }
   // One online lookup per track load; the gateway's edge cache absorbs repeated misses.
   if (lyrics_ && trackAssets_.canFetchLyrics(assetPending_) && !assetsNeeded_ &&
       settings_.lyricsView && !power_.pending() && !shutdownStarted_ && network_.connected() &&

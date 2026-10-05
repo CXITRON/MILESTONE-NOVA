@@ -48,8 +48,11 @@ bool Http::open(const char *url, const char *form, unsigned timeoutMs, RedirectP
     esp_http_client_set_method(client_, HTTP_METHOD_POST);
     esp_http_client_set_header(client_, "Content-Type", "application/x-www-form-urlencoded");
   }
-  if (esp_http_client_open(client_, n) != ESP_OK)
+  const esp_err_t opened = esp_http_client_open(client_, n);
+  if (opened != ESP_OK) {
+    last_ = -int(opened);
     return false;
+  }
   size_t at = 0;
   while (at < n) {
     const int written = esp_http_client_write(client_, form + at, n - at);
@@ -60,6 +63,7 @@ bool Http::open(const char *url, const char *form, unsigned timeoutMs, RedirectP
   for (unsigned hop = 0;; ++hop) {
     length_ = esp_http_client_fetch_headers(client_);
     status_ = esp_http_client_get_status_code(client_);
+    last_ = status_ > 0 ? status_ : -1;
     if (status_ == 200)
       return true;
     const bool moved = status_ == 301 || status_ == 302 || status_ == 303 ||

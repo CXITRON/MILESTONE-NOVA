@@ -54,6 +54,10 @@ bool Firmware::request(Work work) {
     return false;
   if (work == Work::Install)
     message("Installing verified candidate");
+  else if (work == Work::Check)
+    message("새 버전을 확인하는 중...");
+  else if (work == Work::Download)
+    message("다운로드하는 중...");
   work_ = work;
   return true;
 }
