@@ -66,11 +66,15 @@ void Display::present() {
     pending_ = true;
   }
 }
-void Display::flush() {
+void Display::flush(uint32_t sliceUs) {
   if (!ready_ || !pending_)
     return;
   constexpr size_t pixels = board::width * 8;
-  while (strip_ < 40) {
+  // Sending only one strip per loop spreads a full redraw over 40 framework yields and
+  // unrelated work. Batch strips for a short slice, then return to input/network handling.
+  // This reduces the visible rolling update; it is not panel TE/vblank synchronization.
+  const uint32_t started = micros();
+  while (strip_ < board::height / 8) {
     const unsigned row = strip_++ * 8;
     const size_t start = row * board::width;
     auto *current = canvas_.pixels() + start;
@@ -89,9 +93,10 @@ void Display::flush() {
     digitalWrite(board::lcdCs, HIGH);
     spi_.endTransaction();
     memcpy(sent_ + start, current, pixels * 2);
-    break;
+    if (uint32_t(micros() - started) >= sliceUs)
+      break;
   }
-  if (strip_ >= 40) {
+  if (strip_ >= board::height / 8) {
     pending_ = false;
     initial_ = false;
   }

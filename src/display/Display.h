@@ -10,7 +10,9 @@ public:
   void inversion(bool inverted);
   void sleep();
   void present();
-  void flush();
+  // Sends pending strips until the time budget is spent. A video frame passes a budget larger than
+  // a full-screen transfer so one frame is written in one pass instead of across several loops.
+  void flush(uint32_t sliceUs = 4000);
   bool busy() const { return pending_; }
   bool ready() const { return ready_; }
   Canvas &canvas() { return canvas_; }

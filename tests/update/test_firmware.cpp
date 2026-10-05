@@ -156,6 +156,40 @@ int main(int argc, char **argv) {
            !strcmp(again.networks[1].ssid, "Office"));
   }
 
+  // Space recovery may discard history, never the previous settings or Wi-Fi records.
+  {
+    testNvs.clear();
+    Settings before, after, readBack;
+    Secrets credentials, readSecrets;
+    strcpy(before.message, "before");
+    strcpy(after.message, "after");
+    strcpy(credentials.networks[0].ssid, "preserve-network");
+    credentials.networkCount = 1;
+    SettingsStore saving;
+    assert(saving.save(before) && saving.saveSecrets(credentials));
+    const auto keptSecrets = testNvs["nova-secrets"];
+    testNvs["nova-diag"]["a"] = Bytes(1744, 7);
+    testNvsCapacity = testNvsBytes() + 100;
+    assert(saving.save(after));
+    assert(testNvs["nova-diag"].empty() && testNvs["nova-secrets"] == keptSecrets);
+    assert(saving.load(readBack, readSecrets) && !strcmp(readBack.message, "after"));
+    testNvsCapacity = 0;
+    testNvs["nova-diag"]["a"] = Bytes(1744, 7);
+    const auto history = testNvs["nova-diag"];
+    testNvsWriteFail = true;
+    assert(!saving.save(before) && !strcmp(saving.lastError(), "ESP_FAIL"));
+    assert(testNvs["nova-diag"] == history); // I/O failure is not a capacity failure.
+    testNvsWriteFail = false;
+    assert(saving.load(readBack, readSecrets) && !strcmp(readBack.message, "after"));
+    // If even clearing history cannot help, retain both committed records.
+    const auto settingsRecords = testNvs["nova"];
+    const auto secretsRecords = testNvs["nova-secrets"];
+    testNvsCapacity = 1;
+    assert(!saving.save(before) && !strcmp(saving.lastError(), "ESP_ERR_NVS_NOT_ENOUGH_SPACE"));
+    assert(testNvs["nova"] == settingsRecords && testNvs["nova-secrets"] == secretsRecords);
+    testNvsCapacity = 0;
+  }
+
   Firmware normal;
   normal.begin(storage, key.c_str());
   fixture(image, version);

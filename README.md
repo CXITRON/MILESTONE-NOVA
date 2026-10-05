@@ -56,6 +56,9 @@ docs/
 [BLE·파일 프로토콜](docs/guides/protocol.md)을 참고한다. 구현 코드를 `.inc`로 공유하거나
 다른 `.cpp`를 include하지 않는다. `src/main.cpp`는 앱의 setup/loop만 연결한다.
 
+Codex와 Claude의 질문·설계 토론·코드 리뷰·인계는 [공동 작업 게시판](docs/codex/collaboration.md)에서 글과 댓글로 나눈다.
+자동 알림은 없으므로 작업 시작·인계 시 직접 확인한다. 업무 밖 사담은 [휴게실](docs/codex/lounge.md)을 사용한다.
+
 ## 하드웨어 / 최종 GPIO
 
 LOLIN S3 Pro: ESP32-S3, **16 MB QSPI flash / 8 MB OPI PSRAM**.
@@ -170,15 +173,45 @@ arduino-cli upload --fqbn esp32:esp32:lolin_s3:USBMode=hwcdc,CDCOnBoot=cdc \
   --port /dev/ttyACM0 --input-dir build/firmware build/sketch/Nova
 ```
 
-NVS를 20 KiB에서 64 KiB로 넓힌 파티션 표(`partitions.csv`)로 기존 기기를 옮기는 1회용 USB 작업:
+NVS를 **128 KiB**로 늘리는 1회용 USB 이관 작업이다. 기존 20 KiB/64 KiB NOVA 배치만
+허용하며, 이미 128 KiB이거나 알 수 없는 배치이면 쓰기 전에 중단한다.
+
+준비(USB 불필요):
 
 ```sh
-NOVA_VERSION=0.1.10 scripts/build/repartition.sh --check        # 빌드와 표 검사만
-NOVA_VERSION=0.1.10 scripts/build/repartition.sh /dev/ttyACM0   # 실제 반영
+NOVA_VERSION=0.1.11 scripts/build/repartition.sh --check
+scripts/build/repartition.sh --inspect
 ```
 
-NVS 시작 위치(`0x9000`)가 같아서 저장된 설정과 Wi-Fi가 유지된다. 반영 전 NVS를 `build/repartition/`에 백업한다.
-OTA로는 파티션 표를 바꿀 수 없다. 반영이 끝난 기기는 이후 평소처럼 OTA로 업데이트한다.
+준비 파일은 `build/repartition/prepared/`에 버전·SHA-256과 함께 고정된다. 이후 일반 빌드를
+다시 해도 준비 파일은 바뀌지 않는다. 펌웨어 소스를 더 수정했다면 `--check`로 다시 준비한다.
+`0.1.11`은 현재 준비 버전이며 GitHub 릴리스 게시를 뜻하지 않는다.
+
+USB 연결 후(시리얼 모니터 종료, 실제 포트 사용):
+
+```sh
+scripts/build/repartition.sh /dev/ttyACM0
+```
+
+다시 빌드하거나 네트워크에 접속하지 않는다. 기기의 파티션 표를 검사하고 16 MiB 전체
+플래시를 `build/repartition/usb-*/flash-before.bin`에 백업한 뒤 기기와 대조한다.
+이상이 없으면 실제 배치와 목표 버전을 보여주며, `MIGRATE` 입력 후에만 쓰기를 시작한다.
+백업에는 설정·Wi-Fi 비밀번호·BLE 본딩 정보가 들어 있으므로 외부에 공유하지 않는다.
+백업 디렉터리는 소유자만 접근하도록 생성한다.
+
+NVS 시작 주소 `0x9000`과 기존 NVS 내용은 그대로 둔다. 새 앱과 OTA 정보를 기록·검증하고,
+기존 NVS 바이트 보존 및 확장 공간의 지워진 상태를 확인한 뒤 파티션 표를 마지막으로 바꾼다.
+명령 사이에는 부트로더에 머문다. 성공 안내 후 USB를 다시 연결하여 부팅하고 설정·Wi-Fi·BLE를
+확인한다. 이관은 재부팅 직후 설정 마이그레이션까지 실기 검증한 것을 의미하지 않는다.
+
+중간 실패나 전원 차단 시 기존 앱도 일부 덮였을 수 있으므로 반복 실행하거나 임의로
+초기화하지 않는다. `usb-*` 백업 폴더를 보존하고 BOOT/RESET으로 다운로드 모드에 진입한 뒤
+복구한다. 복구 시 `backup.json`의 SHA-256과 `flash-before.bin`을 대조하고, **동일 기기**에만
+esptool의 `write-flash 0x0 <flash-before.bin>`으로 전체 백업을 복원·검증한다. 전체 백업은
+파티션 표·부트로더·두 앱·NVS·OTA 상태를 포함하며 SD 카드는 변경하지 않는다.
+
+일반 앱 OTA는 파티션 표를 변경하지 않는다. 원격 이관은 별도 구현이 필요하며 이 스크립트는
+USB 전용이다. 이관 후에는 평소처럼 앱 OTA를 사용할 수 있다.
 
 본 구현 작업에서는 실제 장치에 flash하지 않았다. 로그는 USB CDC 및
 GPIO43/44 UART0, 115200 baud로 출력한다. USB console은 개행 단위 명령을 받는다.

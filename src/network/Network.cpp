@@ -27,12 +27,21 @@ void Network::configure(const Secrets &s, const Settings &v) {
 namespace {
 // `now` is read at the start of a loop pass and may predate a connect() made later in that pass;
 // a negative difference counts as no time elapsed instead of wrapping to a huge value.
+constexpr uint32_t connectTimeoutMs = 30000;
+constexpr uint32_t settleMs = 2000;
 uint32_t elapsed(uint32_t now, uint32_t since) {
   return int32_t(now - since) > 0 ? now - since : 0;
 }
 } // namespace
+void Network::disconnect(bool radioOff) {
+  // Set before calling the driver: its event arrives on a different task.
+  localDisconnect_ = true;
+  hadIp_ = false;
+  WiFi.disconnect(radioOff, false);
+}
 void Network::connect(const WifiProfile &p) {
-  WiFi.disconnect(false, false);
+  disconnect();
+  linkObserved_ = false;
   WiFi.mode(ap_ ? WIFI_AP_STA : WIFI_STA);
   if (p.auth)
     WiFi.begin(p.ssid, WPA2_AUTH_PEAP, p.identity, p.username, p.password);
@@ -55,11 +64,28 @@ void Network::begin(const Secrets &s, const Settings &v) {
   if (!eventRegistered_) {
     eventRegistered_ = true;
     WiFi.onEvent(
-        [this](arduino_event_id_t, arduino_event_info_t info) {
-          reason_ = info.wifi_sta_disconnected.reason;
-          ++drops_;
-        },
-        ARDUINO_EVENT_WIFI_STA_DISCONNECTED);
+        [this](arduino_event_id_t event, arduino_event_info_t info) {
+          if (event == ARDUINO_EVENT_WIFI_STA_CONNECTED) {
+            localDisconnect_ = false;
+          } else if (event == ARDUINO_EVENT_WIFI_STA_GOT_IP) {
+            localDisconnect_ = false;
+            hadIp_ = true;
+          } else if (event == ARDUINO_EVENT_WIFI_STA_DISCONNECTED) {
+            const unsigned reason = info.wifi_sta_disconnected.reason;
+            const bool wasConnected = hadIp_.exchange(false);
+            const bool local = localDisconnect_.exchange(false);
+            // Only suppress a requested leave, never authentication/no-AP errors.
+            if (local && (reason == WIFI_REASON_ASSOC_LEAVE || reason == WIFI_REASON_STA_LEAVING))
+              return;
+            if (wasConnected) {
+              reason_ = reason;
+              ++drops_;
+            } else {
+              failureReason_ = reason;
+              ++failures_;
+            }
+          }
+        });
   }
   WiFi.setHostname("milestone-nova");
   if (configured_) {
@@ -128,7 +154,9 @@ void Network::saveResult(bool saved) {
 int Network::rssi() const { return connected() ? WiFi.RSSI() : 0; }
 bool Network::connected() const { return !off_ && WiFi.status() == WL_CONNECTED; }
 bool Network::settled(uint32_t now) const {
-  return !configured_ || connected() || elapsed(now, started_) >= 15000;
+  return !configured_ || off_ ||
+         (connected() ? linkObserved_ && elapsed(now, connectedAt_) >= settleMs
+                      : !attempting_ && elapsed(now, started_) >= connectTimeoutMs);
 }
 const char *Network::status() const {
   return connected()    ? "Connected"
@@ -182,6 +210,10 @@ void Network::tick(uint32_t now, bool ble) {
   if (off_)
     return;
   if (connected()) {
+    if (!linkObserved_) {
+      linkObserved_ = true;
+      connectedAt_ = now;
+    }
     if (testing_) {
       if (!stable_)
         stable_ = now;
@@ -201,8 +233,14 @@ void Network::tick(uint32_t now, bool ble) {
   }
   ntp_ = false;
   stable_ = 0;
-  if (attempting_ && elapsed(now, attempt_) >= 15000) {
-    WiFi.disconnect(false, false);
+  if (linkObserved_) {
+    linkObserved_ = false;
+    attempt_ = now; // Backoff starts at the loss, not an hours-old connect() timestamp.
+  }
+  if (attempting_ && elapsed(now, attempt_) >= connectTimeoutMs) {
+    log("WIFI", "connection timeout after %lu ms (BLE=%u)",
+        static_cast<unsigned long>(connectTimeoutMs), unsigned(ble));
+    disconnect();
     attempting_ = false;
     attempt_ = now;
     if (testing_) {
@@ -223,7 +261,7 @@ void Network::stop() {
   off_ = true;
   WiFi.softAPdisconnect(true);
   ap_ = false;
-  WiFi.disconnect(true, false);
+  disconnect(true);
   WiFi.mode(WIFI_OFF);
 }
 } // namespace nova

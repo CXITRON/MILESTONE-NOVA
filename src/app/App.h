@@ -93,7 +93,7 @@ private:
   char lyricsRetryKey_[17]{};
   uint32_t lyricsRetryDue_ = 0;
   unsigned artConnectFails_ = 0, lyricsConnectFails_ = 0;
-  uint32_t saveFailureAt_ = 0, artFailureAt_ = 0, lyricsFailureAt_ = 0, lastWifiDrops_ = 0, lastWifiDropAt_ = 0;
+  uint32_t saveFailureAt_ = 0, artFailureAt_ = 0, lyricsFailureAt_ = 0, lastWifiDrops_ = 0, lastWifiFailures_ = 0, lastWifiDropAt_ = 0;
   char notice_[128]{}, address_[24]{};
 };
 } // namespace nova

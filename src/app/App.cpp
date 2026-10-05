@@ -786,12 +786,15 @@ void App::tick() {
   if (!shutdownStarted_) {
     network_.tick(now, ble_.connected());
     // At most one history line every two minutes, so a flapping link cannot wear the flash.
-    if (network_.drops() != lastWifiDrops_ && (!lastWifiDropAt_ || now - lastWifiDropAt_ >= 120000)) {
+    if ((network_.drops() != lastWifiDrops_ || network_.failures() != lastWifiFailures_) &&
+        (!lastWifiDropAt_ || now - lastWifiDropAt_ >= 120000)) {
       char why[96];
-      snprintf(why, sizeof(why), "Wi-Fi dropped x%lu (reason %u)",
-               static_cast<unsigned long>(network_.drops() - lastWifiDrops_), network_.lastReason());
+      snprintf(why, sizeof(why), "Wi-Fi lost=%lu reason=%u connect_failed=%lu reason=%u",
+               static_cast<unsigned long>(network_.drops() - lastWifiDrops_), network_.lastReason(),
+               static_cast<unsigned long>(network_.failures() - lastWifiFailures_), network_.failureReason());
       diagnostics_.record(why);
       lastWifiDrops_ = network_.drops();
+      lastWifiFailures_ = network_.failures();
       lastWifiDropAt_ = now ? now : 1;
     }
     if (!bleStarted_ && navigation_.profile() == Profile::Now && !network_.ap() &&
@@ -940,7 +943,8 @@ void App::tick() {
   internetUpdate(now);
   publish(now);
   render(now);
-  display_.flush();
+  // Video frames go out in one pass: a frame spread over several loops shows as a sweeping seam.
+  display_.flush(screen_ == Screen::Media ? 60000 : 4000);
   shutdown(millis());
   // Yield to the framework/BLE/SD; animation and playback timing never depend on this.
   vTaskDelay(1);

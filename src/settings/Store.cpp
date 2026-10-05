@@ -28,10 +28,14 @@ template <class T> bool loadRecord(Preferences &p, T &out, bool (*valid)(const T
   out = (y && (!x || int32_t(b.sequence - a.sequence) > 0)) ? b.value : a.value;
   return true;
 }
-template <class T> bool saveRecord(Preferences &p, const T &value) {
+template <class T> bool saveRecord(Preferences &p, const char *space, const T &value,
+                                  esp_err_t &error) {
+  error = ESP_OK;
   auto records = std::unique_ptr<Record<T>[]>(new (std::nothrow) Record<T>[4]);
-  if (!records)
+  if (!records) {
+    error = ESP_ERR_NO_MEM;
     return false;
+  }
   auto &a = records[0], &b = records[1], &next = records[2], &check = records[3];
   const bool x = read(p, "a", a), y = read(p, "b", b);
   const bool latestB = y && (!x || int32_t(b.sequence - a.sequence) > 0);
@@ -39,10 +43,34 @@ template <class T> bool saveRecord(Preferences &p, const T &value) {
   next.value = value;
   next.checksum = crc32(&next, offsetof(Record<T>, checksum));
   const char *key = latestB ? "a" : "b";
-  return p.putBytes(key, &next, sizeof(next)) == sizeof(next) && read(p, key, check) &&
-         memcmp(&next, &check, sizeof(next)) == 0;
+  // Preferences hides the NVS error; retain it to distinguish full flash from low RAM/I/O.
+  nvs_handle_t handle;
+  error = nvs_open(space, NVS_READWRITE, &handle);
+  if (error != ESP_OK)
+    return false;
+  error = nvs_set_blob(handle, key, &next, sizeof(next));
+  if (error == ESP_OK)
+    error = nvs_commit(handle);
+  nvs_close(handle);
+  if (error == ESP_OK && (!read(p, key, check) || memcmp(&next, &check, sizeof(next))))
+    error = ESP_ERR_INVALID_STATE;
+  return error == ESP_OK;
 }
-bool validSecrets(const Secrets &s) {
+template <class T> bool saveWithRecovery(Preferences &p, const char *space, const T &value,
+                                        esp_err_t &error) {
+  if (saveRecord(p, space, value, error))
+    return true;
+  if (error != ESP_ERR_NVS_NOT_ENOUGH_SPACE)
+    return false;
+  // History is expendable; settings, credentials and BLE bonds must never be cleared.
+  Preferences diagnostics;
+  if (!diagnostics.begin("nova-diag", false))
+    return false;
+  const bool cleared = diagnostics.clear();
+  diagnostics.end();
+  return cleared && saveRecord(p, space, value, error);
+}
+template <class T> bool validSecretsFields(const T &s) {
   if (s.networkCount > 8 || !memchr(s.ssid, 0, sizeof(s.ssid)) ||
       !memchr(s.password, 0, sizeof(s.password)) ||
       !memchr(s.apPassword, 0, sizeof(s.apPassword)))
@@ -52,6 +80,7 @@ bool validSecrets(const Secrets &s) {
       return false;
   return !s.apPassword[0] || (strlen(s.apPassword) >= 8 && strlen(s.apPassword) <= 63);
 }
+bool validSecrets(const Secrets &s) { return validSecretsFields(s); }
 // Secrets layout up to v0.1.8. Its two unused OTA fields (1,089 bytes per copy) helped fill the
 // 20 KiB NVS partition until saves failed, so the record was shrunk and is converted on load.
 struct SecretsV1 {
@@ -60,26 +89,13 @@ struct SecretsV1 {
   uint8_t networkCount;
 };
 static_assert(sizeof(SecretsV1) == 3085, "stored Secrets layout changed");
-bool validSecretsV1(const SecretsV1 &s) {
-  if (!memchr(s.ssid, 0, sizeof(s.ssid)) || !memchr(s.password, 0, sizeof(s.password)) ||
-      !memchr(s.apPassword, 0, sizeof(s.apPassword)))
-    return false;
-  Secrets c;
-  memcpy(c.ssid, s.ssid, sizeof(c.ssid));
-  memcpy(c.password, s.password, sizeof(c.password));
-  memcpy(c.apPassword, s.apPassword, sizeof(c.apPassword));
-  memcpy(c.networks, s.networks, sizeof(c.networks));
-  c.networkCount = s.networkCount;
-  return validSecrets(c);
-}
-Secrets fromV1(const SecretsV1 &s) {
-  Secrets c;
-  memcpy(c.ssid, s.ssid, sizeof(c.ssid));
-  memcpy(c.password, s.password, sizeof(c.password));
-  memcpy(c.apPassword, s.apPassword, sizeof(c.apPassword));
-  memcpy(c.networks, s.networks, sizeof(c.networks));
-  c.networkCount = s.networkCount;
-  return c;
+bool validSecretsV1(const SecretsV1 &s) { return validSecretsFields(s); }
+void fromV1(const SecretsV1 &s, Secrets &out) {
+  memcpy(out.ssid, s.ssid, sizeof(out.ssid));
+  memcpy(out.password, s.password, sizeof(out.password));
+  memcpy(out.apPassword, s.apPassword, sizeof(out.apPassword));
+  memcpy(out.networks, s.networks, sizeof(out.networks));
+  out.networkCount = s.networkCount;
 }
 // Read the previous NOVA record without modifying its layout or legacy namespaces.
 struct SettingsV1 {
@@ -136,19 +152,18 @@ bool SettingsStore::load(Settings &s, Secrets &secrets) {
     return false;
   bool current = loadRecord(p, secrets, validSecrets);
   if (!current) {
-    SecretsV1 old{};
-    if (loadRecord(p, old, validSecretsV1)) {
-      secrets = fromV1(old);
+    // The legacy blob is 3 KiB. Together with conversion temporaries it overflowed
+    // Arduino's loopTask stack on first boot from v0.1.9. Keep it off the stack.
+    auto old = std::unique_ptr<SecretsV1>(new (std::nothrow) SecretsV1{});
+    if (!old) {
+      p.end();
+      return false;
+    }
+    if (loadRecord(p, *old, validSecretsV1)) {
+      fromV1(*old, secrets);
       // Store the smaller record. The partition may be full, and diagnostics are expendable.
-      bool ok = saveRecord(p, secrets);
-      if (!ok) {
-        Preferences diagnostics;
-        if (diagnostics.begin("nova-diag", false)) {
-          diagnostics.clear();
-          diagnostics.end();
-        }
-        ok = saveRecord(p, secrets);
-      }
+      esp_err_t error;
+      const bool ok = saveWithRecovery(p, "nova-secrets", secrets, error);
       if (ok)
         for (const char *key : {"a", "b"})
           if (p.getBytesLength(key) == sizeof(Record<SecretsV1>))
@@ -174,6 +189,7 @@ bool SettingsStore::load(Settings &s, Secrets &secrets) {
 }
 bool SettingsStore::save(const Settings &s) {
   error_ = "";
+  nvsFree_ = nvsTotal_ = 0;
   if (!validSettings(s)) {
     error_ = "invalid";
     return false;
@@ -183,10 +199,11 @@ bool SettingsStore::save(const Settings &s) {
     error_ = "open";
     return false;
   }
-  const bool ok = saveRecord(p, s);
+  esp_err_t error;
+  const bool ok = saveWithRecovery(p, "nova", s, error);
   p.end();
   if (!ok) {
-    error_ = "write";
+    error_ = esp_err_to_name(error);
     nvs_stats_t stats{};
     if (nvs_get_stats(nullptr, &stats) == ESP_OK) {
       nvsFree_ = stats.free_entries;
@@ -203,8 +220,10 @@ bool SettingsStore::saveSecrets(const Secrets &s) {
     return false;
   Secrets old;
   bool ok = loadRecord(p, old, validSecrets) && !memcmp(&old, &s, sizeof(s));
-  if (!ok)
-    ok = saveRecord(p, s);
+  if (!ok) {
+    esp_err_t error;
+    ok = saveWithRecovery(p, "nova-secrets", s, error);
+  }
   p.end();
   return ok;
 }
