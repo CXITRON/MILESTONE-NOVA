@@ -423,6 +423,15 @@ void App::console(const char *cmd, uint32_t now) {
   } else
     notice("Unknown command; type help", now);
 }
+void App::recordSaveFailure(uint32_t now) {
+  if (saveFailureAt_ && now - saveFailureAt_ < 600000)
+    return;
+  saveFailureAt_ = now ? now : 1;
+  char why[96];
+  snprintf(why, sizeof(why), "Settings save failed (%s nvs=%u/%u heap=%u)", store_.lastError(),
+           store_.nvsFree(), store_.nvsTotal(), unsigned(ESP.getFreeHeap()));
+  diagnostics_.record(why);
+}
 // Online lookups can fail every minute; keep one history line per kind per five minutes, with the
 // connection and internal-heap numbers that tell a memory shortage from a network problem.
 void App::recordLookupFailure(const char *kind, uint32_t now) {
@@ -635,6 +644,7 @@ void App::shutdown(uint32_t now) {
     if (settingsDirty_ && !store_.save(settings_)) {
       notice("Settings save failed", now);
       log("SETTINGS", "save failed during shutdown");
+      recordSaveFailure(now);
       if (!reboot) {
         power_.cancel();
         shutdownStarted_ = false;
@@ -902,8 +912,10 @@ void App::tick() {
     savedAt_ = now;
     if (store_.save(settings_))
       settingsDirty_ = false;
-    else
+    else {
       notice("Settings save failed", now);
+      recordSaveFailure(now);
+    }
   }
   if (!shutdownStarted_ && network_.connected() && now - lastRtc_ >= 3600000) {
     lastRtc_ = now;

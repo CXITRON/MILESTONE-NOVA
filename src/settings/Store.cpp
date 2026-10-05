@@ -1,6 +1,7 @@
 #include "Store.h"
 #include "../core/Text.h"
 #include <Preferences.h>
+#include <nvs.h>
 #include <cstddef>
 #include <cstring>
 #include <memory>
@@ -120,13 +121,26 @@ bool SettingsStore::load(Settings &s, Secrets &secrets) {
   return true;
 }
 bool SettingsStore::save(const Settings &s) {
-  if (!validSettings(s))
+  error_ = "";
+  if (!validSettings(s)) {
+    error_ = "invalid";
     return false;
+  }
   Preferences p;
-  if (!p.begin("nova", false))
+  if (!p.begin("nova", false)) {
+    error_ = "open";
     return false;
+  }
   const bool ok = saveRecord(p, s);
   p.end();
+  if (!ok) {
+    error_ = "write";
+    nvs_stats_t stats{};
+    if (nvs_get_stats(nullptr, &stats) == ESP_OK) {
+      nvsFree_ = stats.free_entries;
+      nvsTotal_ = stats.total_entries;
+    }
+  }
   return ok;
 }
 bool SettingsStore::saveSecrets(const Secrets &s) {

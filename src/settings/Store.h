@@ -10,9 +10,15 @@ public:
   bool reset(bool credentials);
   bool autoUpdate() const { return autoUpdate_; }
   bool saveAutoUpdate(bool enabled);
+  // Why the latest save() failed ("invalid", "open", "write"), and NVS entries free/total then.
+  const char *lastError() const { return error_; }
+  unsigned nvsFree() const { return nvsFree_; }
+  unsigned nvsTotal() const { return nvsTotal_; }
 
 private:
   bool hasSettings_ = false;
   bool autoUpdate_ = false;
+  const char *error_ = "";
+  unsigned nvsFree_ = 0, nvsTotal_ = 0;
 };
 } // namespace nova

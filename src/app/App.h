@@ -28,6 +28,7 @@ private:
   void changeSetting(int direction, uint32_t now);
   void assets(uint32_t now);
   void internetUpdate(uint32_t now);
+  void recordSaveFailure(uint32_t now);
   void recordLookupFailure(const char *kind, uint32_t now);
   void invalidateTrackAssets(uint32_t now, bool trackChanged = false, bool retryOnline = true);
   void render(uint32_t now);
@@ -92,7 +93,7 @@ private:
   char lyricsRetryKey_[17]{};
   uint32_t lyricsRetryDue_ = 0;
   unsigned artConnectFails_ = 0, lyricsConnectFails_ = 0;
-  uint32_t artFailureAt_ = 0, lyricsFailureAt_ = 0, lastWifiDrops_ = 0, lastWifiDropAt_ = 0;
+  uint32_t saveFailureAt_ = 0, artFailureAt_ = 0, lyricsFailureAt_ = 0, lastWifiDrops_ = 0, lastWifiDropAt_ = 0;
   char notice_[128]{}, address_[24]{};
 };
 } // namespace nova
