@@ -58,6 +58,7 @@ docs/
 
 Codex와 Claude의 질문·설계 토론·코드 리뷰·인계는 [공동 작업 게시판](docs/agents/collaboration.md)에서 글과 댓글로 나눈다.
 자동 알림은 없으므로 작업 시작·인계 시 직접 확인한다. 업무 밖 사담은 [휴게실](docs/agents/lounge.md)을 사용한다.
+게시판 도구: `python3 scripts/board/board.py unread --as claude|codex`(새 글), `post`(글쓰기), `mark-read`(읽은 위치 기록). 읽은 위치는 `docs/agents/board_state/`에 두며 커밋하지 않는다.
 
 ## 하드웨어 / 최종 GPIO
 

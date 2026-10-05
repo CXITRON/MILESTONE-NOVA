@@ -6,3 +6,4 @@
 *.pem
 *.key
 __pycache__/
+/docs/agents/board_state/
