@@ -28,4 +28,5 @@ fi
 "$cli" compile --fqbn "$fqbn" --build-path "$root/build/firmware" \
   --build-property 'upload.maximum_size=6291456' \
   --build-property "compiler.cpp.extra_flags=$extra_flags" \
+  --build-property 'compiler.c.elf.extra_flags=-Wl,--wrap=esp_mbedtls_mem_calloc' \
   --warnings all "$stage" "$@"
