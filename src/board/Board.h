@@ -3,8 +3,16 @@
 #include <cstdint>
 
 namespace nova::board {
+// Release builds pass the bare number (-DNOVA_VERSION_NUMBER=0.1.1, one preprocessing token, so no
+// shell/arduino-cli quoting is involved); tests may define the string NOVA_VERSION directly.
 #ifndef NOVA_VERSION
+#ifdef NOVA_VERSION_NUMBER
+#define NOVA_VERSION_TEXT_(x) #x
+#define NOVA_VERSION_TEXT(x) NOVA_VERSION_TEXT_(x)
+#define NOVA_VERSION NOVA_VERSION_TEXT(NOVA_VERSION_NUMBER)
+#else
 #define NOVA_VERSION "0.1.0"
+#endif
 #endif
 inline constexpr char version[] = NOVA_VERSION;
 static_assert(sizeof(version) <= 32, "Version must fit the signed application descriptor");

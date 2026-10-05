@@ -23,7 +23,7 @@ if [[ -n ${NOVA_VERSION:-} ]]; then
     echo 'NOVA_VERSION must be a stable major.minor.patch version.' >&2
     exit 2
   }
-  extra_flags+=" -DNOVA_VERSION=\\\"$NOVA_VERSION\\\""
+  extra_flags+=" -DNOVA_VERSION_NUMBER=$NOVA_VERSION"
 fi
 "$cli" compile --fqbn "$fqbn" --build-path "$root/build/firmware" \
   --build-property 'upload.maximum_size=6291456' \
