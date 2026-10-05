@@ -523,6 +523,12 @@ void App::assets(uint32_t now) {
     log("ART", "online artwork %s", artOk ? "received" : "not found");
     if (!artOk)
       recordLookupFailure("Artwork", now);
+    // A connection that could not even be opened (right after boot, DNS, a busy radio) is usually
+    // transient: retry after 10 s, 20 s, 40 s instead of waiting the full minute.
+    if (artOk || Http::lastResult() >= 0)
+      artConnectFails_ = 0;
+    else if (artConnectFails_ < 3)
+      trackAssets_.artRetry = now - 60000 + (10000u << artConnectFails_++);
     trackAssets_.coverValid = trackAssets_.coverValid || artOk;
     trackAssets_.artPending = false;
   }
@@ -552,6 +558,24 @@ void App::assets(uint32_t now) {
     log("LYRICS", lyricsFound ? "online lyrics loaded" : "no online lyrics");
     if (!lyricsFound && Http::lastResult() != 204)
       recordLookupFailure("Lyrics", now);
+    if (strncmp(lyricsRetryKey_, session_.track().key, 16)) {
+      lyricsRetryKey_[0] = 0;
+      lyricsConnectFails_ = 0;
+    }
+    if (!lyricsFound && Http::lastResult() < 0 && lyricsConnectFails_ < 3) {
+      snprintf(lyricsRetryKey_, sizeof(lyricsRetryKey_), "%.16s", session_.track().key);
+      lyricsRetryDue_ = now + (10000u << lyricsConnectFails_++);
+      lyricsRetryWaiting_ = true;
+    } else
+      lyricsRetryWaiting_ = false;
+    if (lyricsFound)
+      lyricsConnectFails_ = 0;
+  }
+  // Same transient-connection retry for lyrics, only for the track that failed.
+  if (lyricsRetryWaiting_ && int32_t(now - lyricsRetryDue_) >= 0) {
+    lyricsRetryWaiting_ = false;
+    if (!strncmp(lyricsRetryKey_, session_.track().key, 16))
+      trackAssets_.lyricsRequested = false;
   }
   // One online lookup per track load; the gateway's edge cache absorbs repeated misses.
   if (lyrics_ && trackAssets_.canFetchLyrics(assetPending_) && !assetsNeeded_ &&
