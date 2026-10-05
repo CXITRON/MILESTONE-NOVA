@@ -5,6 +5,7 @@
 #include "Storage.h"
 #include <algorithm>
 #include <cstring>
+#include <memory>
 #include <new>
 namespace nova {
 namespace {
@@ -358,6 +359,8 @@ void Storage::fileJob(FileJob &j) {
     writing_ = true;
     decoder_.close();
     j.ok = atomicWrite(j.path, j.data, j.length);
+    if (j.ok && j.op == FileOp::ArtSave && artBytes_ != artBytesUnknown)
+      artBytes_ += j.length;
     if (j.ok && (artworkPath(j.path) || !strncmp(j.path, "/lyrics/", 8)))
       ++assetRevision_;
     writing_ = false;
@@ -721,38 +724,88 @@ void Storage::fileJob(FileJob &j) {
     return;
   }
   if (j.op == FileOp::ArtCleanup) {
+    // Directory walks are expensive on a large cache, so the running total (updated on every save)
+    // decides whether a walk is needed at all. A wrong total only causes an extra or late walk.
+    const uint64_t limit = uint64_t(j.total) * 1048576;
+    j.capacity = SD.totalBytes() - SD.usedBytes();
+    j.value = 0;
+    j.ok = true;
+    if (artBytes_ != artBytesUnknown && artBytes_ <= limit) {
+      j.used = artBytes_;
+      return;
+    }
+    // One cheap pass: sum sizes and keep the oldest unlocked files by save time. Use-time and
+    // lock markers are only consulted for files that can enter that small pool.
+    struct Candidate {
+      char path[96];
+      uint32_t written, size;
+    };
+    constexpr size_t pool = 32;
+    std::unique_ptr<Candidate[]> keep(new (std::nothrow) Candidate[pool]);
+    if (!keep) {
+      fail("Out of memory");
+      return;
+    }
+    size_t count = 0;
     uint64_t total = 0;
-    uint32_t oldest = UINT32_MAX;
-    char candidate[128]{};
+    unsigned seen = 0;
     File dir = SD.open("/artwork");
     for (File f = dir.openNextFile(); f; f = dir.openNextFile()) {
+      if (!(++seen & 31))
+        vTaskDelay(1); // Let playback and lyrics reads interleave with a long walk.
       if (f.isDirectory() || !strstr(f.name(), ".nvi") || strstr(f.name(), ".nvi."))
         continue;
       total += f.size();
+      const uint32_t written = f.getLastWrite();
+      if (count == pool && written >= keep[count - 1].written)
+        continue;
+      if (strlen(f.path()) >= sizeof(Candidate::path))
+        continue;
       char flag[144];
       snprintf(flag, sizeof(flag), "%s.pin", f.path());
       bool locked = SD.exists(flag);
       snprintf(flag, sizeof(flag), "%s.custom", f.path());
       locked = locked || SD.exists(flag);
-      snprintf(flag, sizeof(flag), "%s.used", f.path());
-      File used = SD.open(flag);
-      const uint32_t age = used ? used.getLastWrite() : f.getLastWrite();
-      if (!locked && age <= oldest) {
-        oldest = age;
-        snprintf(candidate, sizeof(candidate), "%s", f.path());
+      if (locked)
+        continue;
+      size_t at = count < pool ? count++ : count - 1;
+      while (at > 0 && keep[at - 1].written > written) {
+        keep[at] = keep[at - 1];
+        --at;
       }
+      snprintf(keep[at].path, sizeof(keep[at].path), "%s", f.path());
+      keep[at].written = written;
+      keep[at].size = f.size();
     }
+    dir.close();
+    artBytes_ = total;
     j.used = total;
-    j.capacity = SD.totalBytes() - SD.usedBytes();
-    j.ok = true;
-    if (total > uint64_t(j.total) * 1048576 && candidate[0]) {
-      decoder_.close();
-      j.ok = SD.remove(candidate);
-      char used[144];
-      snprintf(used, sizeof(used), "%s.used", candidate);
-      SD.remove(used);
-      j.value = j.ok ? 1 : 0;
+    if (total <= limit || !count)
+      return;
+    // Recently shown art survives longer: order the pool by last use, falling back to save time.
+    for (size_t i = 0; i < count; ++i) {
+      char flag[144];
+      snprintf(flag, sizeof(flag), "%s.used", keep[i].path);
+      File used = SD.open(flag);
+      if (used)
+        keep[i].written = std::max(keep[i].written, uint32_t(used.getLastWrite()));
     }
+    std::sort(keep.get(), keep.get() + count,
+              [](const Candidate &a, const Candidate &b) { return a.written < b.written; });
+    // Evict a batch down to 90% so the next saves do not trigger another walk immediately.
+    const uint64_t target = limit / 10 * 9;
+    decoder_.close();
+    for (size_t i = 0; i < count && total > target; ++i) {
+      if (!SD.remove(keep[i].path))
+        continue;
+      char flag[144];
+      snprintf(flag, sizeof(flag), "%s.used", keep[i].path);
+      SD.remove(flag);
+      total -= std::min<uint64_t>(total, keep[i].size);
+      ++j.value;
+    }
+    artBytes_ = total;
+    j.used = total;
     return;
   }
   fail("Unsupported storage operation");

@@ -34,7 +34,7 @@ function toast(message) {
   toastTimer = setTimeout(() => $('#toast').style.display = 'none', 6500);
 }
 async function api(path, data, signal) {
-  const deadline = AbortSignal.timeout(data?.op === 'sync' ? 1800 : 300000);
+  const deadline = AbortSignal.timeout(data?.op === 'sync' ? 1800 : data?.op === 'commit' ? 900000 : 300000);
   const options = {
     signal: signal ? AbortSignal.any([signal, deadline]) : deadline,
     cache: 'no-store',
@@ -580,7 +580,20 @@ $('#prepare-sync').onclick =
                         {path: outputPath(file, true), fps: 20, signal,
                          progress: syncProgress('1/2 브라우저 변환')});
           $('#sync-progress').value = 0;
-          await uploadPrepared(store, api, signal, syncProgress('2/2 SD 업로드'));
+          // The device validates every frame before replying; it cannot answer polls meanwhile.
+          let verifying = 0;
+          const verifyStart = () => {
+            const t0 = Date.now();
+            const show = () => $('#sync-state').textContent =
+                `3/3 기기에서 영상 검증 중 ${Math.round((Date.now() - t0) / 1000)}초 (긴 영상은 몇 분 걸립니다)`;
+            show();
+            verifying = setInterval(show, 1000);
+          };
+          try {
+            await uploadPrepared(store, api, signal, syncProgress('2/2 SD 업로드'), verifyStart);
+          } finally {
+            clearInterval(verifying);
+          }
           $('#sync-progress').value = 1;
           $('#sync-state').textContent =
               'SD 동기 영상 준비 완료. 동기 재생 연결 후 오디오 재생을 누르세요.';

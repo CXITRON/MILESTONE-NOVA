@@ -74,6 +74,8 @@ private:
   std::atomic<bool> stopping_{false}, stopped_{true}, mounted_{false}, writing_{false},
       validationCancelled_{false};
   std::atomic<unsigned> mediaCount_{0};
+  static constexpr uint64_t artBytesUnknown = UINT64_MAX;
+  std::atomic<uint64_t> artBytes_{artBytesUnknown};
   std::atomic<uint32_t> catalogVersion_{0}, assetRevision_{0}, progress_{0};
   uint32_t catalogSequence_ = 0;
   portMUX_TYPE jobGate_ = portMUX_INITIALIZER_UNLOCKED;

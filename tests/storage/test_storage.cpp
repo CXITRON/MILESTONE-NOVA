@@ -423,8 +423,8 @@ int main(int argc, char **argv) {
   assert(!StorageTestAccess::run(resumed, job));
   job.op = FileOp::ArtCleanup;
   job.total = 0;
-  assert(StorageTestAccess::run(resumed, job) && job.value == 1);
-  assert(SD.exists("/artwork/0000000000000000.nvi"));
+  assert(StorageTestAccess::run(resumed, job) && job.value >= 1);
+  assert(SD.exists("/artwork/0000000000000000.nvi")); // Pinned art is never evicted.
   job.op = FileOp::Remove;
   assert(StorageTestAccess::run(resumed, job));
   assert(SD.exists("/artwork/0000000000000000.missing"));

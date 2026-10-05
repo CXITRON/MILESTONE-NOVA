@@ -104,7 +104,7 @@ export class TransferStore {
     return this.finish();
   }
 }
-export async function uploadPrepared(store, api, signal, progress) {
+export async function uploadPrepared(store, api, signal, progress, committing) {
   signal.throwIfAborted();
   const meta = await store.get();
   if (!meta?.ready) throw new Error('먼저 파일을 변환·준비하세요.');
@@ -129,6 +129,7 @@ export async function uploadPrepared(store, api, signal, progress) {
     progress(offset / meta.total);
   }
   signal.throwIfAborted();
+  committing?.();
   await api('/api/transfer', {op: 'commit', id: meta.id}, signal);
   return meta;
 }
