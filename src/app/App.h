@@ -28,6 +28,7 @@ private:
   void changeSetting(int direction, uint32_t now);
   void assets(uint32_t now);
   void internetUpdate(uint32_t now);
+  void recordLookupFailure(const char *kind, uint32_t now);
   void invalidateTrackAssets(uint32_t now, bool trackChanged = false, bool retryOnline = true);
   void render(uint32_t now);
   void shutdown(uint32_t now);
@@ -87,6 +88,7 @@ private:
   bool mediaValid_ = false, assetsNeeded_ = false, assetPending_ = false,
        mediaFailed_ = false, assetError_ = false;
   bool shutdownStarted_ = false, storageStopping_ = false, peripheralsOff_ = false;
+  uint32_t artFailureAt_ = 0, lyricsFailureAt_ = 0;
   char notice_[128]{}, address_[24]{};
 };
 } // namespace nova

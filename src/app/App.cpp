@@ -422,6 +422,20 @@ void App::console(const char *cmd, uint32_t now) {
   } else
     notice("Unknown command; type help", now);
 }
+// Online lookups can fail every minute; keep one history line per kind per five minutes, with the
+// connection and internal-heap numbers that tell a memory shortage from a network problem.
+void App::recordLookupFailure(const char *kind, uint32_t now) {
+  uint32_t &last = kind[0] == 'A' ? artFailureAt_ : lyricsFailureAt_;
+  if (last && now - last < 300000)
+    return;
+  last = now ? now : 1;
+  char why[96];
+  snprintf(why, sizeof(why), "%s lookup failed (%d tls=%d errno=%d heap=%u blk=%u)", kind,
+           Http::lastResult(), Http::lastTlsError(), Http::lastErrno(),
+           unsigned(heap_caps_get_free_size(MALLOC_CAP_INTERNAL)),
+           unsigned(heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL)));
+  diagnostics_.record(why);
+}
 void App::invalidateTrackAssets(uint32_t now, bool trackChanged, bool retryOnline) {
   trackAssets_.invalidate(now, trackChanged, retryOnline);
   assetsNeeded_ = true;
@@ -506,11 +520,8 @@ void App::assets(uint32_t now) {
   // A stale completion is consumed without overwriting the displayed pixels.
   if (cover_ && artwork_.receive(cover_, trackAssets_.generation, artOk)) {
     log("ART", "online artwork %s", artOk ? "received" : "not found");
-    if (!artOk) {
-      char why[48];
-      snprintf(why, sizeof(why), "Artwork lookup failed (%d)", Http::lastResult());
-      diagnostics_.record(why);
-    }
+    if (!artOk)
+      recordLookupFailure("Artwork", now);
     trackAssets_.coverValid = trackAssets_.coverValid || artOk;
     trackAssets_.artPending = false;
   }
@@ -538,11 +549,8 @@ void App::assets(uint32_t now) {
   if (lyrics_ && onlineLyrics_.receive(*lyrics_, trackAssets_.generation, lyricsFound))
   {
     log("LYRICS", lyricsFound ? "online lyrics loaded" : "no online lyrics");
-    if (!lyricsFound && Http::lastResult() != 204) {
-      char why[48];
-      snprintf(why, sizeof(why), "Lyrics lookup failed (%d)", Http::lastResult());
-      diagnostics_.record(why);
-    }
+    if (!lyricsFound && Http::lastResult() != 204)
+      recordLookupFailure("Lyrics", now);
   }
   // One online lookup per track load; the gateway's edge cache absorbs repeated misses.
   if (lyrics_ && trackAssets_.canFetchLyrics(assetPending_) && !assetsNeeded_ &&

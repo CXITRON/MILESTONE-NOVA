@@ -18,9 +18,12 @@ public:
   bool complete() const;
   // Outcome of the latest open() on any task: HTTP status, or -esp_err_t when no response came.
   static int lastResult() { return last_; }
+  // Why the latest open() failed to connect: mbedTLS error (negative) or socket errno.
+  static int lastTlsError() { return lastTls_; }
+  static int lastErrno() { return lastErrno_; }
 
 private:
-  static inline std::atomic<int> last_{0};
+  static inline std::atomic<int> last_{0}, lastTls_{0}, lastErrno_{0};
   static esp_err_t event(esp_http_client_event_t *event);
   esp_http_client_handle_t client_ = nullptr;
   std::unique_ptr<char[]> location_;

@@ -35,8 +35,10 @@ bool Http::open(const char *url, const char *form, unsigned timeoutMs, RedirectP
   config.timeout_ms = timeoutMs;
   config.crt_bundle_attach = esp_crt_bundle_attach;
   config.disable_auto_redirect = true;
-  config.buffer_size = 4096;
-  config.buffer_size_tx = 2048;
+  // These buffers live in internal RAM (allocations of 4 KiB or less never go to PSRAM). Only
+  // the release download follows long CDN redirects; small gateway replies need far less.
+  config.buffer_size = redirect ? 4096 : 1024;
+  config.buffer_size_tx = redirect ? 2048 : 1024;
   config.user_agent = "MILESTONE-NOVA/1";
   config.event_handler = event;
   config.user_data = this;
@@ -51,6 +53,10 @@ bool Http::open(const char *url, const char *form, unsigned timeoutMs, RedirectP
   const esp_err_t opened = esp_http_client_open(client_, n);
   if (opened != ESP_OK) {
     last_ = -int(opened);
+    int tls = 0, flags = 0;
+    esp_http_client_get_and_clear_last_tls_error(client_, &tls, &flags);
+    lastTls_ = tls;
+    lastErrno_ = esp_http_client_get_errno(client_);
     return false;
   }
   size_t at = 0;

@@ -60,6 +60,11 @@ inline int64_t esp_http_client_fetch_headers(Client *c) {
   return c->response.body.size();
 }
 inline int esp_http_client_get_status_code(Client *c) { return c->response.status; }
+inline int esp_http_client_get_errno(Client *) { return 0; }
+inline int esp_http_client_get_and_clear_last_tls_error(Client *, int *tls, int *flags) {
+  *tls = *flags = 0;
+  return ESP_OK;
+}
 inline int esp_http_client_read(Client *c, char *out, size_t size) {
   size = std::min(size, c->response.body.size() - c->offset);
   memcpy(out, c->response.body.data() + c->offset, size);
