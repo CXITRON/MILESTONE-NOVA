@@ -482,6 +482,8 @@ void App::assets(uint32_t now) {
   }
   const uint32_t revision = storage_.assetRevision();
   const bool trackChanged = session_.generation() != lastGeneration_;
+  if (trackChanged)
+    artLookupFailed_ = false;
   if (trackChanged || revision != lastAssetRevision_) {
     log("MEDIA", "reload track assets key=%s gen %lu->%lu rev %lu->%lu", session_.track().key,
         static_cast<unsigned long>(lastGeneration_), static_cast<unsigned long>(session_.generation()),
@@ -499,6 +501,10 @@ void App::assets(uint32_t now) {
       log("MEDIA", "track assets art=%d lyrics=%d blocked=%d error=%d", int(result->artPresent),
           int(result->lyricsPresent), int(result->blocked), int(result->error));
       trackAssets_.loaded(result->artPresent, result->lyricsPresent, result->blocked, result->error);
+      if (result->artPresent)
+        artLookupFailed_ = false;
+      else if (result->error && !trackAssets_.coverValid)
+        artLookupFailed_ = true;
       if (lyrics_ && result->lyricsPresent)
         LrcParser{}.parse({result->lyrics, result->lyricsBytes}, *lyrics_);
       else if (lyrics_ && !result->error) {
@@ -543,6 +549,7 @@ void App::assets(uint32_t now) {
     else if (artConnectFails_ < 3)
       trackAssets_.artRetry = now - 60000 + (10000u << artConnectFails_++);
     trackAssets_.coverValid = trackAssets_.coverValid || artOk;
+    artLookupFailed_ = !artOk && !trackAssets_.coverValid;
     trackAssets_.artPending = false;
   }
   if (!storage_.mounted()) {
@@ -907,13 +914,33 @@ void App::tick() {
     const bool night = settings_.nightStart < settings_.nightEnd
                            ? minute >= settings_.nightStart && minute < settings_.nightEnd
                            : minute >= settings_.nightStart || minute < settings_.nightEnd;
+    LightState lights;
+    lights.sleeping = power_.pending();
+    lights.critical = battery_.critical() || thermalState_ >= 3;
+    lights.warning = battery_.low() || thermalState_ >= 1;
+    lights.updating = firmware_.busy();
+    lights.progress = firmware_.progress();
+    lights.ap = network_.ap();
+    lights.synchronized = playback_.synchronized();
+    lights.stale = playback_.stale();
+    lights.media = screen_ == Screen::Media;
+    lights.now = navigation_.profile() == Profile::Now;
+    lights.connected = ble_.connected();
+    lights.playing = lights.media || lights.synchronized ? playback_.playing() : session_.playing();
+    lights.timerRunning = timer_.state() == FocusTimer::State::Running;
+    lights.timerPaused = timer_.state() == FocusTimer::State::Paused;
+    lights.timerFinished = timer_.state() == FocusTimer::State::Finished;
+    lights.track = session_.track().key[0];
+    lights.trackGeneration = session_.generation(); // SD revisions are not new songs.
+    lights.artLoading = trackAssets_.artPending;
+    lights.artValid = trackAssets_.coverValid;
+    lights.artFailed = artLookupFailed_ && !trackAssets_.artBlocked;
     rgb_.tick(now,
               settings_.ledsEnabled
                   ? night ? std::min(settings_.rgbBrightness, settings_.nightBrightness)
                           : settings_.rgbBrightness
                   : 0,
-              session_.playing(), timer_.state() == FocusTimer::State::Running,
-              timer_.state() == FocusTimer::State::Finished, battery_.low(), power_.pending());
+              lights);
   }
   if (settingsDirty_ && !shutdownStarted_ && now - savedAt_ >= 2000) {
     savedAt_ = now;

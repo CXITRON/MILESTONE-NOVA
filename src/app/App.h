@@ -89,7 +89,7 @@ private:
   bool mediaValid_ = false, assetsNeeded_ = false, assetPending_ = false,
        mediaFailed_ = false, assetError_ = false;
   bool shutdownStarted_ = false, storageStopping_ = false, peripheralsOff_ = false;
-  bool lyricsRetryWaiting_ = false;
+  bool artLookupFailed_ = false, lyricsRetryWaiting_ = false;
   char lyricsRetryKey_[17]{};
   uint32_t lyricsRetryDue_ = 0;
   unsigned artConnectFails_ = 0, lyricsConnectFails_ = 0;
