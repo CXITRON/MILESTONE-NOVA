@@ -49,10 +49,6 @@ struct WifiProfile {
 struct Secrets {
   char ssid[33]{};
   char password[65]{};
-  // Unused since the app only updates from signed GitHub releases; kept so the stored Secrets
-  // record (Wi-Fi profiles) keeps its size and stays readable.
-  char otaPassword[65]{};
-  char otaPublicKey[1024]{};
   char apPassword[65]{};
   WifiProfile networks[8]{};
   uint8_t networkCount = 0;

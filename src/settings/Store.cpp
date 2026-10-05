@@ -45,14 +45,41 @@ template <class T> bool saveRecord(Preferences &p, const T &value) {
 bool validSecrets(const Secrets &s) {
   if (s.networkCount > 8 || !memchr(s.ssid, 0, sizeof(s.ssid)) ||
       !memchr(s.password, 0, sizeof(s.password)) ||
-      !memchr(s.otaPassword, 0, sizeof(s.otaPassword)) ||
-      !memchr(s.otaPublicKey, 0, sizeof(s.otaPublicKey)) ||
       !memchr(s.apPassword, 0, sizeof(s.apPassword)))
     return false;
   for (unsigned i = 0; i < s.networkCount; ++i)
     if (!validWifiProfile(s.networks[i]))
       return false;
   return !s.apPassword[0] || (strlen(s.apPassword) >= 8 && strlen(s.apPassword) <= 63);
+}
+// Secrets layout up to v0.1.8. Its two unused OTA fields (1,089 bytes per copy) helped fill the
+// 20 KiB NVS partition until saves failed, so the record was shrunk and is converted on load.
+struct SecretsV1 {
+  char ssid[33], password[65], otaPassword[65], otaPublicKey[1024], apPassword[65];
+  WifiProfile networks[8];
+  uint8_t networkCount;
+};
+static_assert(sizeof(SecretsV1) == 3085, "stored Secrets layout changed");
+bool validSecretsV1(const SecretsV1 &s) {
+  if (!memchr(s.ssid, 0, sizeof(s.ssid)) || !memchr(s.password, 0, sizeof(s.password)) ||
+      !memchr(s.apPassword, 0, sizeof(s.apPassword)))
+    return false;
+  Secrets c;
+  memcpy(c.ssid, s.ssid, sizeof(c.ssid));
+  memcpy(c.password, s.password, sizeof(c.password));
+  memcpy(c.apPassword, s.apPassword, sizeof(c.apPassword));
+  memcpy(c.networks, s.networks, sizeof(c.networks));
+  c.networkCount = s.networkCount;
+  return validSecrets(c);
+}
+Secrets fromV1(const SecretsV1 &s) {
+  Secrets c;
+  memcpy(c.ssid, s.ssid, sizeof(c.ssid));
+  memcpy(c.password, s.password, sizeof(c.password));
+  memcpy(c.apPassword, s.apPassword, sizeof(c.apPassword));
+  memcpy(c.networks, s.networks, sizeof(c.networks));
+  c.networkCount = s.networkCount;
+  return c;
 }
 // Read the previous NOVA record without modifying its layout or legacy namespaces.
 struct SettingsV1 {
@@ -72,6 +99,8 @@ bool SettingsStore::load(Settings &s, Secrets &secrets) {
     return false;
   autoUpdate_ = p.getBool("update-auto", false);
   hasSettings_ = loadRecord(p, s, validSettings);
+  if (hasSettings_ && p.isKey("settings"))
+    p.remove("settings"); // Schema-1 blob, no longer needed once a current record exists.
   if (!hasSettings_) {
     struct Old {
       SettingsV1 value;
@@ -105,18 +134,41 @@ bool SettingsStore::load(Settings &s, Secrets &secrets) {
   p.end();
   if (!p.begin("nova-secrets", false))
     return false;
-  if (!loadRecord(p, secrets, validSecrets)) {
-    p.getString("ssid", secrets.ssid, sizeof(secrets.ssid));
-    p.getString("password", secrets.password, sizeof(secrets.password));
-    p.getString("ota-pass", secrets.otaPassword, sizeof(secrets.otaPassword));
-    p.getString("ota-key", secrets.otaPublicKey, sizeof(secrets.otaPublicKey));
-    if (secrets.ssid[0]) {
-      strcpy(secrets.networks[0].ssid, secrets.ssid);
-      strcpy(secrets.networks[0].password, secrets.password);
-      if (validWifiProfile(secrets.networks[0]))
-        secrets.networkCount = 1;
+  bool current = loadRecord(p, secrets, validSecrets);
+  if (!current) {
+    SecretsV1 old{};
+    if (loadRecord(p, old, validSecretsV1)) {
+      secrets = fromV1(old);
+      // Store the smaller record. The partition may be full, and diagnostics are expendable.
+      bool ok = saveRecord(p, secrets);
+      if (!ok) {
+        Preferences diagnostics;
+        if (diagnostics.begin("nova-diag", false)) {
+          diagnostics.clear();
+          diagnostics.end();
+        }
+        ok = saveRecord(p, secrets);
+      }
+      if (ok)
+        for (const char *key : {"a", "b"})
+          if (p.getBytesLength(key) == sizeof(Record<SecretsV1>))
+            p.remove(key);
+      current = ok;
+    } else {
+      p.getString("ssid", secrets.ssid, sizeof(secrets.ssid));
+      p.getString("password", secrets.password, sizeof(secrets.password));
+      if (secrets.ssid[0]) {
+        strcpy(secrets.networks[0].ssid, secrets.ssid);
+        strcpy(secrets.networks[0].password, secrets.password);
+        if (validWifiProfile(secrets.networks[0]))
+          secrets.networkCount = 1;
+      }
     }
   }
+  if (current)
+    for (const char *key : {"ssid", "password", "ota-pass", "ota-key"})
+      if (p.isKey(key))
+        p.remove(key); // Pre-record strings, superseded by the Secrets record.
   p.end();
   return true;
 }

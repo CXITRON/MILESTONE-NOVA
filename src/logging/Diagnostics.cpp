@@ -34,11 +34,15 @@ bool Diagnostics::save() {
   if (!p.begin("nova-diag", false))
     return false;
   history_.crc = crc32(&history_, offsetof(Record, crc));
-  const char *key = history_.sequence & 1 ? "a" : "b";
+  // NVS replaces an item atomically, so one slot is enough; two copies cost 1.7 KiB of the
+  // small partition for no gain. The second slot of older versions is removed once this one is written.
+  const char *key = "a";
   auto check = std::unique_ptr<Record>(new (std::nothrow) Record);
   const bool ok = check && p.putBytes(key, &history_, sizeof(history_)) == sizeof(history_) &&
                   p.getBytes(key, check.get(), sizeof(Record)) == sizeof(Record) &&
                   !memcmp(check.get(), &history_, sizeof(history_));
+  if (ok && p.isKey("b"))
+    p.remove("b");
   p.end();
   return ok;
 }

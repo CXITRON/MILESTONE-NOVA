@@ -7,11 +7,21 @@
 #include <vector>
 inline std::map<std::string, std::map<std::string, std::vector<uint8_t>>> testNvs;
 inline bool testNvsWriteFail = false;
+// When non-zero, writes that would push the total stored bytes past this fail (a full partition).
+inline size_t testNvsCapacity = 0;
+inline size_t testNvsBytes() {
+  size_t total = 0;
+  for (const auto &space : testNvs)
+    for (const auto &item : space.second) total += item.second.size();
+  return total;
+}
 class Preferences {
   std::string space_;
 public:
   bool begin(const char *name, bool = false) { space_ = name; return true; }
   void end() {}
+  bool isKey(const char *key) { return !testNvs[space_][key].empty(); }
+  bool remove(const char *key) { return testNvs[space_].erase(key) > 0; }
   bool clear() { testNvs[space_].clear(); return true; }
   size_t getBytesLength(const char *key) { return testNvs[space_][key].size(); }
   size_t getBytes(const char *key, void *out, size_t size) {
@@ -22,6 +32,8 @@ public:
   }
   size_t putBytes(const char *key, const void *data, size_t size) {
     if (testNvsWriteFail) return 0;
+    if (testNvsCapacity &&
+        testNvsBytes() - testNvs[space_][key].size() + size > testNvsCapacity) return 0;
     const auto *bytes = static_cast<const uint8_t *>(data);
     testNvs[space_][key] = {bytes, bytes + size};
     return size;

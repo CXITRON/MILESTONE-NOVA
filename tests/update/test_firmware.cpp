@@ -1,5 +1,6 @@
 #include "update/Firmware.h"
 #include "network/Http.h"
+#include "core/Text.h"
 #include "settings/Store.h"
 #include <Preferences.h>
 #include <Update.h>
@@ -106,6 +107,54 @@ int main(int argc, char **argv) {
   assert(!reload.saveAutoUpdate(false) && reload.autoUpdate());
   testNvsWriteFail = false;
   assert(reload.reset(false) && !reload.autoUpdate());
+
+  // v0.1.8 stored Secrets with 1,089 unused bytes of OTA fields. Loading must keep the Wi-Fi
+  // profiles, store the smaller record, and drop the old copy even when the partition is full.
+  {
+    struct V1 {
+      char ssid[33], password[65], otaPassword[65], otaPublicKey[1024], apPassword[65];
+      WifiProfile networks[8];
+      uint8_t networkCount;
+    };
+    struct Rec {
+      uint32_t magic, sequence;
+      V1 value;
+      uint32_t checksum;
+    } old{};
+    old.magic = 0x4E564132;
+    old.sequence = 5;
+    strcpy(old.value.apPassword, "ap-password");
+    strcpy(old.value.otaPublicKey, "-----BEGIN PUBLIC KEY-----");
+    strcpy(old.value.networks[0].ssid, "HomeNet");
+    strcpy(old.value.networks[0].password, "pass-one");
+    strcpy(old.value.networks[1].ssid, "Office");
+    strcpy(old.value.networks[1].password, "pass-two");
+    old.value.networkCount = 2;
+    old.checksum = crc32(&old, offsetof(Rec, checksum));
+    testNvs.clear();
+    testNvs["nova-secrets"]["a"].assign(reinterpret_cast<uint8_t *>(&old),
+                                        reinterpret_cast<uint8_t *>(&old) + sizeof(old));
+    testNvs["nova-secrets"]["ssid"] = {'x'};
+    testNvs["nova-diag"]["a"] = std::vector<uint8_t>(1744, 7);
+    testNvs["nova-diag"]["b"] = std::vector<uint8_t>(1744, 8);
+    testNvsCapacity = testNvsBytes() + 100; // Too full for the new record until diagnostics go.
+    Settings migratedSettings;
+    Secrets migrated;
+    SettingsStore migrating;
+    assert(migrating.load(migratedSettings, migrated));
+    testNvsCapacity = 0;
+    assert(migrated.networkCount == 2 && !strcmp(migrated.networks[0].ssid, "HomeNet") &&
+           !strcmp(migrated.networks[1].password, "pass-two") &&
+           !strcmp(migrated.apPassword, "ap-password"));
+    assert(testNvs["nova-secrets"]["a"].empty() && !testNvs["nova-secrets"]["ssid"].size());
+    assert(testNvs["nova-secrets"]["b"].size() > 0 && testNvs["nova-secrets"]["b"].size() < sizeof(Rec));
+    assert(testNvs["nova-diag"]["a"].empty() && testNvs["nova-diag"]["b"].empty());
+    Secrets again;
+    Settings againSettings;
+    SettingsStore second;
+    assert(second.load(againSettings, again) && again.networkCount == 2 &&
+           !strcmp(again.networks[1].ssid, "Office"));
+  }
 
   Firmware normal;
   normal.begin(storage, key.c_str());
