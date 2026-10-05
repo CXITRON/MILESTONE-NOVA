@@ -583,9 +583,12 @@ void Storage::fileJob(FileJob &j) {
       const uint32_t durable = upload_.offset;
       upload_.offset += at;
       j.ok = saveTransfer();
-      if (!j.ok)
+      if (!j.ok) {
         upload_.offset = durable;
-    }
+        fail("SD checkpoint write failed");
+      }
+    } else
+      fail(stopping_ ? "Storage is stopping" : "SD write failed");
     writing_ = false;
     j.offset = upload_.offset;
     return;

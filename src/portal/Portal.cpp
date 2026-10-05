@@ -615,7 +615,7 @@ void Portal::chunk() {
     return;
   }
   if (!storage_->execute(job)) {
-    respond(false, job.error);
+    respond(false, job.error[0] ? job.error : "SD unavailable or busy");
     return;
   }
   auto *root = cJSON_CreateObject();

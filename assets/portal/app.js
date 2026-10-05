@@ -590,7 +590,12 @@ $('#prepare-sync').onclick =
             verifying = setInterval(show, 1000);
           };
           try {
-            await uploadPrepared(store, api, signal, syncProgress('2/2 SD 업로드'), verifyStart);
+            const up = syncProgress('2/2 SD 업로드'), t0 = Date.now(), total = (await store.get()).total;
+            await uploadPrepared(store, api, signal, v => {
+              up(v);
+              const kb = Math.round(v * total / 1024 / Math.max(1, (Date.now() - t0) / 1000));
+              $('#sync-state').textContent += ` · ${kb} KB/s`;
+            }, verifyStart, (n, why) => $('#sync-state').textContent = `전송 재시도 ${n}/3: ${why}`);
           } finally {
             clearInterval(verifying);
           }

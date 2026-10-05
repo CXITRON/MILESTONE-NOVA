@@ -104,7 +104,7 @@ export class TransferStore {
     return this.finish();
   }
 }
-export async function uploadPrepared(store, api, signal, progress, committing) {
+export async function uploadPrepared(store, api, signal, progress, committing, retried) {
   signal.throwIfAborted();
   const meta = await store.get();
   if (!meta?.ready) throw new Error('먼저 파일을 변환·준비하세요.');
@@ -123,7 +123,20 @@ export async function uploadPrepared(store, api, signal, progress, committing) {
     const query = new URLSearchParams({id: meta.id, offset, crc: crc32(part)});
     const body = new FormData();
     body.append('chunk', new Blob([part]), 'chunk.bin');
-    const next = await api('/api/blob?' + query, body, signal);
+    // A chunk is safe to send again: the device checks an already written range against the CRC.
+    // Retry transient failures (busy SD, lost response, brief Wi-Fi stall) instead of aborting.
+    let next;
+    for (let attempt = 0;; ++attempt) {
+      try {
+        next = await api('/api/blob?' + query, body, signal);
+        break;
+      } catch (error) {
+        signal.throwIfAborted();
+        if (attempt >= 3 || /CRC|Invalid chunk|Wrong|Incomplete/.test(error.message)) throw error;
+        retried?.(attempt + 1, error.message);
+        await new Promise(resolve => setTimeout(resolve, 700 * (attempt + 1)));
+      }
+    }
     if (next.offset !== offset + part.length) throw new Error('전송 체크포인트 불일치');
     offset = next.offset;
     progress(offset / meta.total);
