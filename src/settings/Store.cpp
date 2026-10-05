@@ -187,6 +187,13 @@ bool SettingsStore::load(Settings &s, Secrets &secrets) {
   p.end();
   return true;
 }
+void SettingsStore::refreshNvsUsage() {
+  nvs_stats_t stats{};
+  if (nvs_get_stats(nullptr, &stats) == ESP_OK) {
+    usageFree_ = stats.free_entries;
+    usageTotal_ = stats.total_entries;
+  }
+}
 bool SettingsStore::save(const Settings &s) {
   error_ = "";
   nvsFree_ = nvsTotal_ = 0;

@@ -260,7 +260,7 @@ void App::publish(uint32_t now, bool force) {
       "NOVA %s\nreset=%d uptime=%lus\nheap=%u min=%u PSRAM=%u stack=%u\nloop_max_us=%lu\nSD=%d "
       "writing=%d progress=%lu catalog=%u\nWi-Fi=%s ip=%s\nBLE=%s\nRTC=%d AHT=%d "
       "sample_ms=%lu\nbattery=%.3fV low=%d critical=%d\nchip=%.1fC thermal_state=%d "
-      "cpu=%uMHz\nupdate_pending=%d\nprofile=%u core=%u layout=%u\nsync=%lu "
+      "cpu=%uMHz\nupdate_pending=%d\nnvs=%u/%u\nprofile=%u core=%u layout=%u\nsync=%lu "
       "position=%lu stale=%d\nHistory (UTC epoch, uptime, event):\n",
       board::version, int(esp_reset_reason()), static_cast<unsigned long>(s.uptime),
       unsigned(s.heap), unsigned(ESP.getMinFreeHeap()), unsigned(s.psram),
@@ -269,7 +269,8 @@ void App::publish(uint32_t now, bool force) {
       catalog_ ? catalog_->count : 0, s.network.status, s.network.ip, s.ble, rtc_.present(),
       s.sensor, static_cast<unsigned long>(settings_.sampleMs), s.volts, battery_.low(),
       battery_.critical(), chipTemperature_, thermalState_, unsigned(getCpuFrequencyMhz()),
-      bootConfirm_.pending(), s.mode, navigation_.core(),
+      bootConfirm_.pending(), store_.nvsUsageFree(), store_.nvsUsageTotal(), s.mode,
+      navigation_.core(),
       settings_.nowLayout, static_cast<unsigned long>(s.syncSession),
       static_cast<unsigned long>(s.position), s.syncStale);
   if (n > 0 && size_t(n) < sizeof(s.diagnostics))

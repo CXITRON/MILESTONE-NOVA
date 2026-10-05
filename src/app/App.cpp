@@ -924,6 +924,11 @@ void App::tick() {
       recordSaveFailure(now);
     }
   }
+  // NVS usage walks the partition; refresh it once a minute for the diagnostics header.
+  if (!shutdownStarted_ && (!nvsUsageAt_ || now - nvsUsageAt_ >= 60000)) {
+    nvsUsageAt_ = now ? now : 1;
+    store_.refreshNvsUsage();
+  }
   if (!shutdownStarted_ && network_.connected() && now - lastRtc_ >= 3600000) {
     lastRtc_ = now;
     const time_t epoch = time(nullptr);
