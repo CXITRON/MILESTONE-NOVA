@@ -49,15 +49,15 @@ data/config/   SD 설정 예시
 docs/
   design/      선행 분석과 아키텍처
   guides/      데이터 프로토콜과 실물 검증
-  codex/       Request/Report/업무 템플릿
+  agents/      Request/Report/업무 템플릿, 에이전트 게시판·휴게실
 ```
 
 [선행 분석](docs/design/legacy-analysis.md), [아키텍처와 소유권](docs/design/architecture.md),
 [BLE·파일 프로토콜](docs/guides/protocol.md)을 참고한다. 구현 코드를 `.inc`로 공유하거나
 다른 `.cpp`를 include하지 않는다. `src/main.cpp`는 앱의 setup/loop만 연결한다.
 
-Codex와 Claude의 질문·설계 토론·코드 리뷰·인계는 [공동 작업 게시판](docs/codex/collaboration.md)에서 글과 댓글로 나눈다.
-자동 알림은 없으므로 작업 시작·인계 시 직접 확인한다. 업무 밖 사담은 [휴게실](docs/codex/lounge.md)을 사용한다.
+Codex와 Claude의 질문·설계 토론·코드 리뷰·인계는 [공동 작업 게시판](docs/agents/collaboration.md)에서 글과 댓글로 나눈다.
+자동 알림은 없으므로 작업 시작·인계 시 직접 확인한다. 업무 밖 사담은 [휴게실](docs/agents/lounge.md)을 사용한다.
 
 ## 하드웨어 / 최종 GPIO
 
@@ -479,7 +479,7 @@ USB로 직접 올린 기기와 같은 버전의 릴리스는 "최신 버전입�
 ## 검증 범위와 제한
 
 - 2026-10-05 USB 업로드·flash 검증, BLE 곡 정보/SD 자산 읽기와 입력 큐 로그를 확인했다.
-  최초 수정 이미지와 최종 이미지의 관찰 범위는 [C0010](docs/codex/reports/report_C0010_2026_10_05.md)에 구분한다.
+  최초 수정 이미지와 최종 이미지의 관찰 범위는 [C0010](docs/agents/reports/report_C0010_2026_10_05.md)에 구분한다.
 - 실제 LCD 방향/색상/10 cm 배선 clock, RF 공존, SD 제거, Deep Sleep 전류,
   ADC 보정, iPhone pairing/reconnect/원격 제어, OTA 전원 차단 및 24~72시간 soak는 미검증.
 - 호스트 SD 검사는 실제 처리 코드에 파일/오류 adapter를 붙여 실행하며, SPI/FreeRTOS
@@ -488,7 +488,7 @@ USB로 직접 올린 기기와 같은 버전의 릴리스는 "최신 버전입�
   실제 Wi-Fi 지연에 따른 동기 오차는 사용하는 iPhone/브라우저에서 측정해야 한다.
 - 온라인 가사는 Worker 배포와 인터넷 연결이 필요하며 공급원에 없는 곡은 표시하지 못한다.
   동기화 정보 없는 온라인 가사는 내려받지 않는다. 로컬 LRC는 그대로 사용할 수 있다.
-  Worker 배포와 운영 v3 JPEG 200·온라인 가사 응답은 [C0009](docs/codex/reports/report_C0009_2026_10_03.md)에서
+  Worker 배포와 운영 v3 JPEG 200·온라인 가사 응답은 [C0009](docs/agents/reports/report_C0009_2026_10_03.md)에서
   확인했다. NOVA는 이전 88×88 MAC1 응답도 확대 표시할 수 있다. ESP32 TLS/RF 공존의 장시간 검증은 별도다.
 - 배터리는 전압 추정이다. 충전 상태 입력이 없어 충전 여부를 표시하지 않는다.
 - 글꼴 미수록 한글/기타 문자/emoji는 `?`로 대체한다.

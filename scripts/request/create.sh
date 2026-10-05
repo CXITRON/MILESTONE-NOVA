@@ -3,9 +3,9 @@ set -euo pipefail
 
 ROOT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
 
-REQUEST_ROOT="$ROOT/docs/codex/requests"
+REQUEST_ROOT="$ROOT/docs/agents/requests"
 ACTIVE_DIR="$REQUEST_ROOT/active"
-TEMPLATE="$ROOT/docs/codex/templates/request_template.md"
+TEMPLATE="$ROOT/docs/agents/templates/request_template.md"
 
 mkdir -p "$ACTIVE_DIR"
 

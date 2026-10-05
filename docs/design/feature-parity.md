@@ -10,16 +10,16 @@ C0001의 완료 판정은 철회 상태로 유지한다. 이 표의 **구현됨*
 보호 상태 재검사/오래된 결과 폐기, 재조회 실패 시 원본 유지, 업로드 취소·저장 실패를
 회귀 검사에 추가했다. 종료 시에는 AP 닫힘과 별도로 service worker의 I/O 종료·로그
 drain을 기다린다. 자세한 변경과 09-29 빌드 입력 대조 결과는
-[C0003](../codex/reports/report_C0003_2026_09_29.md)에 기록한다.
+[C0003](../agents/reports/report_C0003_2026_09_29.md)에 기록한다.
 
 2026-10-03 추가: 사용자 추가 지시로 NOW 통합 레이아웃(5), 172px 아트와 텍스트 두 줄,
 Worker 경유 온라인 동기 가사를 연결했다. Claude Code의 초기 구현과 Codex의 서버 완성·
-보완·통합 검증 범위는 [C0008](../codex/reports/report_C0008_2026_10_03.md)에 기록한다.
+보완·통합 검증 범위는 [C0008](../agents/reports/report_C0008_2026_10_03.md)에 기록한다.
 
 2026-10-05 추가: 일본어 글꼴, 저장된 부팅 문구, 같은 곡의 아트/가사 재읽기,
 화면 지연 중 버튼 취득을 수정해 연결 기기에 업로드했다. 수정·호스트 검사와 실기 로그의
-범위는 [C0010](../codex/reports/report_C0010_2026_10_05.md)에 구분한다. Worker 배포는
-[C0009](../codex/reports/report_C0009_2026_10_03.md)에서 완료되었으며 이번에는 변경하지 않았다.
+범위는 [C0010](../agents/reports/report_C0010_2026_10_05.md)에 구분한다. Worker 배포는
+[C0009](../agents/reports/report_C0009_2026_10_03.md)에서 완료되었으며 이번에는 변경하지 않았다.
 
 기존 코드 표의 경로는 `MILESTONE_Legacy/MILESTONE_Core/` 기준이다.
 `core` 검사는 tests/test_core.cpp, `parity`는 tests/test_parity.cpp,

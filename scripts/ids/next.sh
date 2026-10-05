@@ -2,8 +2,8 @@
 set -euo pipefail
 
 ROOT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
-REQUEST_DIR="$ROOT/docs/codex/requests"
-REPORT_DIR="$ROOT/docs/codex/reports"
+REQUEST_DIR="$ROOT/docs/agents/requests"
+REPORT_DIR="$ROOT/docs/agents/reports"
 
 last_u="$(
   find "$REQUEST_DIR" -type f \
@@ -28,4 +28,4 @@ next_u=$((10#${last_u:-0000} + 1))
 next_c=$((10#${last_c:-0000} + 1))
 
 printf 'Next User Request : U%04d\n' "$next_u"
-printf 'Next Codex Report : C%04d\n' "$next_c"
+printf 'Next Work Report : C%04d\n' "$next_c"

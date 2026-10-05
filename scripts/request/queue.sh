@@ -2,7 +2,7 @@
 set -euo pipefail
 
 ROOT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
-ACTIVE_DIR="$ROOT/docs/codex/requests/active"
+ACTIVE_DIR="$ROOT/docs/agents/requests/active"
 
 if [[ ! -d "$ACTIVE_DIR" ]]; then
     echo "No active request directory."

@@ -2,8 +2,8 @@
 set -euo pipefail
 
 ROOT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
-REQUEST_DIR="$ROOT/docs/codex/requests"
-REPORT_DIR="$ROOT/docs/codex/reports"
+REQUEST_DIR="$ROOT/docs/agents/requests"
+REPORT_DIR="$ROOT/docs/agents/reports"
 
 current_u="$(
   find "$REQUEST_DIR" -type f \
@@ -25,4 +25,4 @@ current_c="$(
 )"
 
 printf 'Current User Request : %s\n' "${current_u:-U0000}"
-printf 'Current Codex Report : %s\n' "${current_c:-C0000}"
+printf 'Current Work Report : %s\n' "${current_c:-C0000}"
