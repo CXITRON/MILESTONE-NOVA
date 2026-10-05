@@ -526,6 +526,13 @@ void App::assets(uint32_t now) {
         serviceReady_ && artwork_.request(session_.track(), trackAssets_.generation, settings_);
     trackAssets_.artRetry = now;
   }
+  // Replaying the same song retries whatever is still missing for it.
+  if (session_.takeRestart()) {
+    if (!trackAssets_.coverValid)
+      trackAssets_.artRetry = now - 60000;
+    if (!trackAssets_.lyricsLocal && (!lyrics_ || !lyrics_->count))
+      trackAssets_.lyricsRequested = false;
+  }
   bool lyricsFound = false;
   // A stale completion is consumed without touching the current track's lyrics.
   if (lyrics_ && onlineLyrics_.receive(*lyrics_, trackAssets_.generation, lyricsFound))

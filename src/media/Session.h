@@ -24,12 +24,18 @@ public:
   const PlayerInfo &player() const { return player_; }
   void player(const PlayerInfo &info) { player_ = info; }
   bool positionKnown() const { return known_; }
+  // True once after the same track jumps back to its start (a replay); reading clears it.
+  bool takeRestart() {
+    const bool r = restarted_;
+    restarted_ = false;
+    return r;
+  }
 
 private:
   Track track_{};
   PlayerInfo player_{};
   uint32_t anchorMs_ = 0, anchorPosition_ = 0, generation_ = 0;
   float rate_ = 1.0f;
-  bool playing_ = false, known_ = false;
+  bool playing_ = false, known_ = false, restarted_ = false;
 };
 } // namespace nova

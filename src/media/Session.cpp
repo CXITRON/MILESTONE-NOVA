@@ -14,6 +14,7 @@ bool MediaSession::replace(const Track &t, uint32_t now) {
     ++generation_;
     anchorMs_ = now;
     anchorPosition_ = 0;
+    restarted_ = false;
     playing_ = false;
     known_ = false;
   }
@@ -21,6 +22,9 @@ bool MediaSession::replace(const Track &t, uint32_t now) {
   return change;
 }
 void MediaSession::synchronize(uint32_t p, bool playing, uint32_t now, float rate) {
+  // A same-track jump from well into the song back to its start is a replay.
+  if (known_ && p < 3000 && position(now) >= 10000)
+    restarted_ = true;
   anchorPosition_ = track_.durationMs ? std::min(p, track_.durationMs) : p;
   anchorMs_ = now;
   playing_ = playing;

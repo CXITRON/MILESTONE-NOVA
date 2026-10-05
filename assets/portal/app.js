@@ -494,6 +494,15 @@ $('#clear-media').onclick = run(async () => {
 function progress(value) {
   $('#progress').value = Math.min(1, value);
 }
+// Sync preparation has two phases (browser conversion, then SD upload); show both on the sync page.
+function syncProgress(phase) {
+  return value => {
+    const v = Math.min(1, value);
+    $('#sync-progress').value = v;
+    $('#sync-state').textContent = `${phase} ${Math.round(v * 100)}%`;
+    progress(v);
+  };
+}
 async function operation(fn) {
   if (!store)
     throw new Error('브라우저 저장소를 사용할 수 없어 파일을 준비하거나 전송할 수 없습니다.');
@@ -565,9 +574,14 @@ $('#prepare-sync').onclick =
           await clock.stop();
           const file = $('#sync-file').files[0];
           if (!file) throw new Error('원본 영상을 선택하세요.');
-          $('#sync-state').textContent = '변환·저장 중';
-          await convert(file, store, {path: outputPath(file, true), fps: 20, signal, progress});
-          await uploadPrepared(store, api, signal, progress);
+          $('#sync-progress').value = 0;
+          $('#sync-state').textContent = '변환 중 0%';
+          await convert(file, store,
+                        {path: outputPath(file, true), fps: 20, signal,
+                         progress: syncProgress('1/2 브라우저 변환')});
+          $('#sync-progress').value = 0;
+          await uploadPrepared(store, api, signal, syncProgress('2/2 SD 업로드'));
+          $('#sync-progress').value = 1;
           $('#sync-state').textContent =
               'SD 동기 영상 준비 완료. 동기 재생 연결 후 오디오 재생을 누르세요.';
         }));
