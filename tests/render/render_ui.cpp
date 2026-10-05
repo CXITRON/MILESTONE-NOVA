@@ -4,6 +4,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <string>
+#include <vector>
 using namespace nova;
 int main(int argc, char **argv) {
   if (argc != 2)
@@ -70,7 +71,7 @@ int main(int argc, char **argv) {
   v.mediaPosition = 24000;
   v.mediaPlaying = true;
   v.apPassword = "NOVA2468";
-  v.updateStatus = "Signature valid. Hold OK on device";
+  v.updateStatus = "서명 확인 완료 / 길게 OK로 설치";
   v.updateReady = true;
   const Settings defaults = settings;
   const View base = v;
@@ -264,13 +265,64 @@ int main(int argc, char **argv) {
   v.updateReady = false;
   v.updateProgress = 48;
   v.recoveryItem = 1;
-  v.updateStatus = "Downloading signed firmware...";
+  v.updateStatus = "새 버전 v0.2.0 사용 가능 (현재 v0.1.0)";
   save("업데이트 / 전원", "업데이트 · 다운로드 중");
   reset(Screen::Recovery);
   v.updateReady = false;
   v.recoveryItem = 2;
-  v.updateStatus = "Signature verification failed";
+  v.updateStatus = "릴리스 정보를 받지 못했습니다 (Wi-Fi/게시 여부 확인)";
   save("업데이트 / 전원", "업데이트 · 서명 검증 실패");
+  Track japanese = track;
+  strcpy(japanese.title, "日本語の表示テスト");
+  strcpy(japanese.artist, "ひらがな・カタカナ");
+  strcpy(japanese.album, "한글 / 日本語 / English");
+  MediaSession japaneseMedia;
+  japaneseMedia.replace(japanese, 0);
+  japaneseMedia.synchronize(134000, true, base.now);
+  Lyrics japaneseLyrics;
+  LrcParser{}.parse("[02:10]静かな空を見上げよう\n[02:13]今日も一歩ずつ進もう\n"
+                   "[02:18]明日は新しい始まり", japaneseLyrics);
+  for (uint8_t layout : {uint8_t(4), uint8_t(5)}) {
+    reset(Screen::Now);
+    settings.nowLayout = layout;
+    v.media = &japaneseMedia;
+    v.lyrics = &japaneseLyrics;
+    save("NOW", layout == 4 ? "일본어 가사 · 한자/가나" : "통합 화면 · 한글/일본어/English");
+  }
+  reset(Screen::Boot);
+  strcpy(settings.message, "設定したメッセージ\n설정한 나의 문구");
+  settings.messageColor = 0xffe0;
+  save("메뉴 / 설정", "부팅 · 사용자 문구/색상");
+  const std::vector<uint16_t> configured(c.pixels(), c.pixels() + board::width * board::height);
+  settings.message[0] = 0;
+  ui.render(c, v);
+  bool messageChanged = false;
+  for (int y = 0; y < board::height; ++y)
+    for (int x = 0; x < board::width; ++x) {
+      const auto i = y * board::width + x;
+      if (y < 223 || y >= 277)
+        assert(c.pixels()[i] == configured[i]);
+      else if (c.pixels()[i] != configured[i]) {
+        assert(configured[i] == settings.messageColor);
+        messageChanged = true;
+      }
+    }
+  assert(messageChanged);
+  save("메뉴 / 설정", "부팅 · 빈 문구 유지");
+  assert(c.textWidth("가あA") == 40);
+  assert(c.textWidth("ひらがな") == 64 && c.textWidth("カタカナ") == 64);
+  assert(c.textWidth("日本語歌詞") == 80);
+  for (const char *glyph : {"あ", "ア", "語", "夢", "ｶ", "가"}) {
+    c.clear(0);
+    c.text(0, 0, 32, 20, "?", 0xffff);
+    const std::vector<uint16_t> missing(c.pixels(), c.pixels() + board::width * 20);
+    c.clear(0);
+    c.text(0, 0, 32, 20, glyph, 0xffff);
+    if (memcmp(missing.data(), c.pixels(), missing.size() * sizeof(uint16_t)) == 0) {
+      fprintf(stderr, "Missing glyph: %s\n", glyph);
+      std::abort();
+    }
+  }
   if (fclose(manifest))
     return 2;
   printf("Rendered %u scenes using the firmware UI\n", count);
@@ -289,4 +341,22 @@ int main(int argc, char **argv) {
   ui.render(c, v);
   assert(c.pixels()[30 * board::width] != color::accent);
   assert(c.pixels()[291 * board::width + 16] == settings.accentColor);
+
+  // Punctuation missing from both fonts is drawn as its ASCII lookalike, never as '?'.
+  const auto drawn = [&](const char *text) {
+    c.rect(0, 0, 40, 24, 0);
+    c.text(0, 0, 40, 24, text, 0xffff);
+    std::vector<uint16_t> out;
+    for (int y = 0; y < 24; ++y)
+      for (int x = 0; x < 40; ++x)
+        out.push_back(c.pixels()[y * board::width + x]);
+    return out;
+  };
+  const auto question = drawn("?");
+  assert(drawn("\xc2\xb7") == drawn("-") && drawn("\xc2\xb7") != question);   // middle dot
+  assert(drawn("\xe2\x80\x94") == drawn("-") && drawn("\xe2\x80\x93") == drawn("-")); // dashes
+  assert(drawn("\xe2\x86\x92") == drawn(">"));                                // arrow
+  assert(drawn("\xe2\x80\x99") == drawn("'") && drawn("\xe2\x80\x9c") == drawn("\""));
+  assert(drawn("\xe2\x80\xa6") == drawn("."));                                // ellipsis
+  assert(drawn("\xf0\x9f\x8e\xb5") == question);  // no lookalike: still '?'
 }

@@ -3,6 +3,7 @@
 #include "media/AmsDecoder.h"
 #include "media/Formats.h"
 #include "media/Playback.h"
+#include "media/TrackAssets.h"
 #include "settings/Values.h"
 #include "storage/Journal.h"
 #include "ui/Navigation.h"
@@ -15,6 +16,46 @@
 #include <vector>
 using namespace nova;
 int main() {
+  TrackAssets assets;
+  assets.invalidate(100, true);
+  assert(assets.loading && !assets.coverValid);
+  assert(!assets.canFetchArtwork(100, false) && !assets.canFetchLyrics(false));
+  assets.loaded(false, false, false, false);
+  assert(assets.canFetchArtwork(100, false) && assets.canFetchLyrics(false));
+  assets.coverValid = assets.lyricsLocal = true;
+  // A download/save changes the SD revision. A queued read must not start another HTTP request.
+  for (uint32_t now = 200; now < 20200; now += 2000) {
+    const auto previous = assets.generation;
+    assets.invalidate(now, false);
+    assert(assets.generation != previous && assets.coverValid && assets.lyricsLocal);
+    assert(!assets.canFetchArtwork(now, true) && !assets.canFetchLyrics(true));
+    assert(!assets.canFetchArtwork(now, false)); // No result yet, even before/after queue handoff.
+    assets.loaded(true, true, false, false);
+    assert(!assets.canFetchArtwork(now, false) && !assets.canFetchLyrics(false));
+  }
+  assets.invalidate(25000, false);
+  assets.loaded(false, false, false, true);
+  assert(assets.coverValid && assets.lyricsLocal); // I/O failure retains visible assets.
+  assets.invalidate(26000, false);
+  assets.loaded(false, false, true, false);
+  assert(!assets.coverValid && !assets.lyricsLocal); // Confirmed removal clears them.
+  assert(!assets.canFetchArtwork(26000, false) && assets.canFetchLyrics(false));
+  assets.coverValid = assets.lyricsLocal = true;
+  assets.invalidate(0xfffffff0U, true);
+  assert(!assets.coverValid && !assets.lyricsLocal);
+  assets.loaded(false, false, false, false);
+  assert(assets.canFetchArtwork(0x10U, false));
+  assets.artRetry = 0xfffffff0U;
+  assert(!assets.canFetchArtwork(0x10U, false));
+  assert(assets.canFetchArtwork(60000U, false));
+  assets.artRetry = 60000;
+  assets.lyricsRequested = true;
+  assets.invalidate(61000, false);
+  assets.loaded(false, false, false, true);
+  assert(!assets.canFetchArtwork(61000, false) && !assets.canFetchLyrics(false));
+  assets.invalidate(62000, false, true); // An explicit user refresh can retry immediately.
+  assets.loaded(false, false, false, false);
+  assert(assets.canFetchArtwork(62000, false) && assets.canFetchLyrics(false));
   // Each threshold has its own recovery hysteresis. Invalid samples cannot
   // release an existing stop, and a sudden cooldown can safely skip levels.
   assert(thermalLevel(91, 0, 70, 80, 90) == 3);

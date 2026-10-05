@@ -57,9 +57,6 @@ void Storage::importConfig(Settings &s, Secrets &secrets, bool importSettings) {
         } else if (!strcmp(text, "password")) {
           dst = secrets.password;
           cap = sizeof(secrets.password);
-        } else if (!strcmp(text, "ota_password")) {
-          dst = secrets.otaPassword;
-          cap = sizeof(secrets.otaPassword);
         }
         if (dst && strlen(value) < cap)
           strcpy(dst, value);
@@ -71,14 +68,6 @@ void Storage::importConfig(Settings &s, Secrets &secrets, bool importSettings) {
     strcpy(profile.ssid, secrets.ssid);
     strcpy(profile.password, secrets.password);
     rememberWifiProfile(secrets, profile);
-  }
-  File key = SD.open("/config/ota_public.pem", FILE_READ);
-  if (key && key.size() > 0 && key.size() < sizeof(secrets.otaPublicKey)) {
-    const size_t size = key.size();
-    if (key.readBytes(secrets.otaPublicKey, size) == size)
-      secrets.otaPublicKey[size] = 0;
-    else
-      secrets.otaPublicKey[0] = 0;
   }
 }
 

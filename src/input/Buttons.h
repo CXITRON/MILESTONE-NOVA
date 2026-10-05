@@ -1,20 +1,20 @@
 #pragma once
 #include "../board/Board.h"
-#include "Button.h"
-#include <array>
+#include "InputEvents.h"
+#include <freertos/FreeRTOS.h>
+#include <freertos/task.h>
 namespace nova {
-enum class Key : uint8_t { Back, Prev, Ok, Next, Menu };
-struct InputEvent {
-  Key key;
-  Press press;
-};
 class Buttons {
 public:
-  void begin();
+  bool begin();
   bool poll(InputEvent &event);
+  uint32_t dropped();
 
 private:
-  std::array<Button, 5> keys_{};
-  unsigned cursor_ = 0;
+  static void task(void *context);
+  void sample();
+  InputEvents events_;
+  TaskHandle_t sampler_ = nullptr;
+  portMUX_TYPE gate_ = portMUX_INITIALIZER_UNLOCKED;
 };
 } // namespace nova

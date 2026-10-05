@@ -133,6 +133,20 @@ form,.card,details {
 .setting input,.setting select {
   margin:0;
 }
+.setting-group summary {
+  cursor:pointer;
+  font-weight:600;
+  padding:4px 0;
+}
+.bits {
+  display:flex;
+  flex-wrap:wrap;
+  gap:4px 12px;
+}
+.bits label {
+  margin:0;
+  white-space:nowrap;
+}
 .modes {
   display:flex;
 }

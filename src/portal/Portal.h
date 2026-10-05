@@ -27,10 +27,10 @@ enum class CommandKind : uint8_t {
   SyncTick,
   SyncStop,
   ArtRefresh,
-  OtaWindow,
   UpdateCheck,
   UpdateDownload,
   UpdatePrepare,
+  UpdateAuto,
   LogsClear,
   Restart
 };
@@ -51,7 +51,7 @@ struct PortalSnapshot {
   unsigned wifiCount = 0, mode = 0, mediaIndex = 0;
   uint32_t uptime = 0, heap = 0, psram = 0, position = 0, syncSession = 0;
   float temperature = 0, humidity = 0, volts = 0;
-  bool sensor = false, sd = false, playing = false, syncStale = false;
+  bool sensor = false, sd = false, playing = false, syncStale = false, autoUpdate = false;
 };
 // HTTP/DNS and outbound I/O have one worker; hardware/NVS/UI remain on App's loop.
 class Portal {

@@ -50,7 +50,6 @@ bool readLegacySettings(Settings &out, Secrets &secrets) {
     snprintf(n, sizeof(n), "%d", p.getChar("tone_ctr", 8));
     applySetting(next, "contrast", n);
   }
-  integer("led_lvl", "heartbeat_brightness", p.getUChar("led_lvl", 24));
   integer("led_night", "night_brightness", p.getUChar("led_night", 6));
   integer("night_start", "night_start", p.getUShort("night_start", 1320));
   integer("night_end", "night_end", p.getUShort("night_end", 420));

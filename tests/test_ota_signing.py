@@ -62,7 +62,8 @@ class OtaSigningTests(unittest.TestCase):
                     "--key", str(private_path), "--out", str(signed_path)
                 ], check=True, capture_output=True, text=True)
                 release = base / "release"
-                url = "https://raw.githubusercontent.com/CXITRON/MILESTONE-NOVA/main/releases/nova.bin"
+                version = firmware[48:80].split(b'\0')[0].decode('ascii')
+                url = f"https://github.com/CXITRON/MILESTONE-NOVA/releases/download/v{version}/nova.bin"
                 subprocess.run([
                     sys.executable, str(ROOT / "scripts/build/release.py"),
                     "--input", str(self.firmware), "--key", str(private_path),
@@ -74,6 +75,22 @@ class OtaSigningTests(unittest.TestCase):
                 self.assertEqual(manifest["target"], "milestone-nova-s3")
                 self.assertEqual(manifest["size"], len(release_image))
                 self.assertEqual(manifest["sha256"], hashlib.sha256(release_image).hexdigest())
+                self.assertEqual(manifest["url"], url)
+                self.assertEqual(manifest["version"], version)
+                if bits == 2048:
+                    for rejected_url in (
+                        'https://raw.githubusercontent.com/CXITRON/MILESTONE-NOVA/main/nova.bin',
+                        'https://github.com/other/repo/releases/download/v' + version + '/nova.bin',
+                        'https://github.com/CXITRON/MILESTONE-NOVA/releases/download/v999.999.999/nova.bin',
+                        url + '?download=1',
+                    ):
+                        result = subprocess.run([
+                            sys.executable, str(ROOT / 'scripts/build/release.py'),
+                            '--input', str(self.firmware), '--key', str(private_path),
+                            '--url', rejected_url, '--output-dir', str(base / 'invalid'),
+                        ], capture_output=True, text=True)
+                        self.assertNotEqual(result.returncode, 0)
+                        self.assertFalse((base / 'invalid').exists())
                 public.verify(release_image[-512:][:bits // 8], firmware, algorithm, hashes.SHA256())
                 signed = signed_path.read_bytes()
                 self.assertEqual(len(signed), len(firmware) + 512)

@@ -17,16 +17,15 @@
 namespace nova {
 void App::begin() {
   gpio_deep_sleep_hold_dis();
-  for (int p : {board::red, board::green, board::backlight, board::rgb})
+  for (int p : {board::backlight, board::rgb})
     gpio_hold_dis(static_cast<gpio_num_t>(p));
   startLog();
   boot_ = millis();
-  ota_.beginBootCheck();
+  bootConfirm_.begin();
   log("BOOT", "NOVA %s reset=%d PSRAM=%u", board::version, int(esp_reset_reason()),
       unsigned(ESP.getPsramSize()));
-  leds_.begin();
   rgb_.begin();
-  buttons_.begin();
+  log("INPUT", buttons_.begin() ? "5 ms sampler ready" : "sampler unavailable; polling fallback");
   const bool nvs = store_.load(settings_, secrets_);
   log("SETTINGS",
       nvs ? "NVS loaded; validated defaults available" : "NVS unavailable; using defaults");
@@ -43,6 +42,7 @@ void App::begin() {
     }
     View boot;
     boot.screen = Screen::Boot;
+    boot.settings = &settings_;
     ui_.render(display_.canvas(), boot);
     display_.present();
     while (display_.busy()) {
@@ -76,7 +76,6 @@ void App::begin() {
   log("BAT", "calibrated ADC, divider x2; initial filter pending");
   log("AHT", "AHT10 asynchronous probe scheduled");
   log("RGB", "5 pixels with brightness limit %u", settings_.rgbBrightness);
-  log("LED", "red/green PWM initialized");
   auto *memory = heap_caps_malloc(sizeof(Lyrics), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
   if (memory)
     lyrics_ = new (memory) Lyrics{};
@@ -86,8 +85,6 @@ void App::begin() {
       heap_caps_malloc(rawBytes(board::mediaSide), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
   log("LYRICS", lyrics_ ? "bounded parser ready" : "PSRAM unavailable; lyrics disabled");
   network_.begin(secrets_, settings_);
-  log("OTA", ota_.begin(secrets_) ? "RSA/SHA256 verifier provisioned; window closed"
-                                  : "disabled until password and RSA public key provisioned");
   timer_.reset(settings_.focusSeconds);
   if (auto *p = heap_caps_malloc(sizeof(MediaCatalog), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT))
     catalog_ = new (p) MediaCatalog{};
@@ -100,7 +97,9 @@ void App::begin() {
   diagnostics_.record(reason);
   artwork_.begin(storage_);
   onlineLyrics_.begin(storage_);
-  firmware_.begin(storage_, secrets_.otaPublicKey);
+  firmware_.begin(storage_);
+  autoUpdate_.begin(millis());
+  log("UPDATE", "GitHub Releases ready; automatic=%d", int(store_.autoUpdate()));
   serviceReady_ = portal_.begin(storage_, artwork_, onlineLyrics_, firmware_);
   navigation_.core(settings_.coreStart);
   navigation_.select(static_cast<Profile>(settings_.profile));
@@ -124,15 +123,11 @@ void App::changeSetting(int direction, uint32_t now) {
     settings_.rgbBrightness = std::clamp(int(settings_.rgbBrightness) + direction * 4, 0, 96);
     break;
   case 2:
-    settings_.heartbeatBrightness =
-        std::clamp(int(settings_.heartbeatBrightness) + direction * 4, 0, 128);
-    break;
-  case 3:
     settings_.focusSeconds = std::clamp(int(settings_.focusSeconds) + direction * 60, 60, 14400);
     if (timer_.state() == FocusTimer::State::Idle)
       timer_.reset(settings_.focusSeconds);
     break;
-  case 4:
+  case 3:
     settings_.lyricsView = !settings_.lyricsView;
     break;
   default:
@@ -193,11 +188,9 @@ void App::input(const InputEvent &e, uint32_t now) {
     display_.brightness(settings_.lcdBrightness);
     return;
   }
-  const bool updateBusy = firmware_.busy() || !ota_.quiescent() || ota_.bootPending();
+  const bool updateBusy = firmware_.busy() || bootConfirm_.pending();
   if (e.key == Key::Menu && e.press == Press::Long) {
-    if (power_.request(now, updateBusy))
-      ota_.close();
-    else
+    if (!power_.request(now, updateBusy))
       notice("업데이트 / 부팅 검증 대기", now);
     return;
   }
@@ -248,8 +241,8 @@ void App::input(const InputEvent &e, uint32_t now) {
         navigation_.page(Screen::Diagnostics);
       else if (action == MenuAction::Restart && !updateBusy)
         rebootRequested_ = true;
-      else if (action == MenuAction::Off && power_.request(now, updateBusy))
-        ota_.close();
+      else if (action == MenuAction::Off)
+        power_.request(now, updateBusy);
     }
     screen_ = navigation_.screen();
     return;
@@ -259,36 +252,37 @@ void App::input(const InputEvent &e, uint32_t now) {
       if (settingsEditing_)
         changeSetting(direction, now);
       else
-        setting_ = (int(setting_) + 8 + direction) % 8;
+        setting_ = (int(setting_) + 7 + direction) % 7;
     } else if (e.key == Key::Ok && e.press == Press::Short) {
-      if (setting_ < 5)
+      if (setting_ < 4)
         settingsEditing_ = !settingsEditing_;
-      else if (setting_ == 5 && !updateBusy)
+      else if (setting_ == 4 && !updateBusy)
         network_.begin(secrets_, settings_);
-      else if (setting_ == 6)
-        notice(!firmware_.busy() && ota_.open() ? "OTA 수신 창 10분"
-                                                : "Wi-Fi / OTA 키 / 업데이트 상태 확인",
+      else if (setting_ == 5)
+        notice(!updateBusy && thermalState_ < 2 && firmware_.request(Firmware::Work::Check)
+                   ? "GitHub 릴리스 확인 중"
+                   : "업데이트 확인 불가: Wi-Fi/SD/작업 상태 확인",
                now);
-      else if (setting_ == 7 && power_.request(now, updateBusy))
-        ota_.close();
+      else if (setting_ == 6)
+        power_.request(now, updateBusy);
     }
     return;
   }
   if (screen_ == Screen::Updates || screen_ == Screen::Recovery) {
     if (direction)
-      recoveryItem_ = (int(recoveryItem_) + 4 + direction) % 4;
+      recoveryItem_ = (int(recoveryItem_) + 3 + direction) % 3;
     if (e.key == Key::Ok && !updateBusy && thermalState_ < 2) {
       bool accepted = false;
       if (e.press == Press::Long)
-        accepted = firmware_.request(recoveryItem_ == 3 ? Firmware::Work::Rollback
+        accepted = firmware_.request(recoveryItem_ == 2 ? Firmware::Work::Rollback
                                                         : Firmware::Work::Install);
       else if (e.press == Press::Short) {
         const Firmware::Work work[]{Firmware::Work::Check, Firmware::Work::Download,
-                                    Firmware::Work::Prepare, Firmware::Work::None};
+                                    Firmware::Work::None};
         accepted = firmware_.request(work[recoveryItem_]);
       }
       if (!accepted)
-        notice("후보 검증 후 길게 OK / 복구 항목 확인", now);
+        notice(recoveryItem_ == 1 ? "먼저 새 버전 확인 후 다운로드" : "다운로드 후 길게 OK", now);
     }
     return;
   }
@@ -334,7 +328,7 @@ void App::input(const InputEvent &e, uint32_t now) {
       notice("iPhone 재생 제어 사용 불가", now);
   } else if (screen_ == Screen::Media && e.press == Press::Short) {
     if (thermalState_ >= 3)
-      notice("내부 온도 높음 · 냉각 대기", now);
+      notice("내부 온도 높음 / 냉각 대기", now);
     else if (playback_.synchronized())
       notice("브라우저에서 재생 / 일시 정지", now);
     else {
@@ -365,8 +359,8 @@ void App::console(const char *cmd, uint32_t now) {
     applySettings(now);
     notice("Setting applied", now);
   } else if (!strncmp(cmd, "wifi ", 5)) {
-    if (!ota_.quiescent() || firmware_.busy() || !portal_.quiescent() || ble_.connected()) {
-      notice("Disconnect BLE/OTA first", now);
+    if (firmware_.busy() || !portal_.quiescent() || ble_.connected()) {
+      notice("Disconnect BLE/update first", now);
       return;
     }
     const char *split = strchr(cmd + 5, '|');
@@ -399,35 +393,36 @@ void App::console(const char *cmd, uint32_t now) {
     settimeofday(&tv, nullptr);
     rtc_.write(tv.tv_sec);
     notice("Time set", now);
+  } else if (!strcmp(cmd, "update-auto on") || !strcmp(cmd, "update-auto off")) {
+    notice(store_.saveAutoUpdate(!strcmp(cmd, "update-auto on"))
+               ? "GitHub 자동 업데이트 설정 저장됨" : "자동 업데이트 설정 저장 실패", now);
+  } else if (!strcmp(cmd, "update-check")) {
+    notice(!bootConfirm_.pending() && thermalState_ < 2 &&
+                   firmware_.request(Firmware::Work::Check)
+               ? "GitHub Releases 확인 중" : "업데이트 확인 불가", now);
   } else if (!strcmp(cmd, "sleep")) {
-    if (power_.request(now, firmware_.busy() || !ota_.quiescent() || ota_.bootPending()))
-      ota_.close();
-  } else if (!strcmp(cmd, "ota")) {
-    notice(!firmware_.busy() && thermalState_ < 2 && ota_.open() ? "OTA window open"
-                                                                 : "OTA unavailable",
-           now);
-  } else if (!strcmp(cmd, "ota-close"))
-    ota_.close();
-  else if (!strcmp(cmd, "status")) {
+    power_.request(now, firmware_.busy() || bootConfirm_.pending());
+  } else if (!strcmp(cmd, "status")) {
     network_.address(address_, sizeof(address_));
     log("HW", "wifi=%s ip=%s BLE=%s SD=%d battery=%.2fV", network_.status(), address_,
         ble_.status(), storage_.mounted(), battery_.volts());
     log("MEDIA", "key=%s position=%lu", session_.track().key,
         static_cast<unsigned long>(session_.position(now)));
-    log("OTA", "%s progress=%u error=%d", ota_.status(), ota_.progress(), ota_.error());
+    char update[128];
+    firmware_.status(update, sizeof(update));
+    log("UPDATE", "version=%s automatic=%d state=%u progress=%u %s", board::version,
+        int(store_.autoUpdate()), unsigned(firmware_.state()), firmware_.progress(), update);
   } else if (!strcmp(cmd, "help")) {
     log("UI", "set key=value | wifi SSID|password | time UTC_epoch");
-    log("UI", "status | ota | ota-close | sleep; credentials are never echoed");
+    log("UI", "status | update-check | update-auto on|off | sleep; credentials are never echoed");
+    log("UI", "update-check | update-auto on | update-auto off (GitHub Releases)");
   } else
     notice("Unknown command; type help", now);
 }
-void App::invalidateTrackAssets(uint32_t now) {
-  ++assetGeneration_;
+void App::invalidateTrackAssets(uint32_t now, bool trackChanged, bool retryOnline) {
+  trackAssets_.invalidate(now, trackChanged, retryOnline);
   assetsNeeded_ = true;
-  coverValid_ = artBlocked_ = artPending_ = false;
-  lyricsLocal_ = lyricsRequested_ = false;
-  artRetry_ = now - 60000;
-  if (lyrics_) {
+  if (lyrics_ && trackChanged) {
     lyrics_->count = lyrics_->used = 0;
     lyrics_->synced = false;
   }
@@ -454,25 +449,34 @@ void App::assets(uint32_t now) {
     playback_.load(0, now);
     stillSince_ = now;
   }
-  if (session_.generation() != lastGeneration_ || storage_.assetRevision() != lastAssetRevision_) {
+  const uint32_t revision = storage_.assetRevision();
+  const bool trackChanged = session_.generation() != lastGeneration_;
+  if (trackChanged || revision != lastAssetRevision_) {
+    log("MEDIA", "reload track assets key=%s gen %lu->%lu rev %lu->%lu", session_.track().key,
+        static_cast<unsigned long>(lastGeneration_), static_cast<unsigned long>(session_.generation()),
+        static_cast<unsigned long>(lastAssetRevision_),
+        static_cast<unsigned long>(revision));
     lastGeneration_ = session_.generation();
-    lastAssetRevision_ = storage_.assetRevision();
-    invalidateTrackAssets(now);
-    log("MEDIA", "reload track assets key=%s", session_.track().key);
+    lastAssetRevision_ = revision;
+    invalidateTrackAssets(now, trackChanged, false);
   }
   if (auto *result = storage_.receive()) {
     assetPending_ = false;
     assetError_ = result->error;
     if (result->request.kind == AssetKind::Track &&
-        result->request.generation == assetGeneration_) {
-      lyricsLocal_ = result->lyricsPresent;
+        result->request.generation == trackAssets_.generation) {
+      log("MEDIA", "track assets art=%d lyrics=%d blocked=%d error=%d", int(result->artPresent),
+          int(result->lyricsPresent), int(result->blocked), int(result->error));
+      trackAssets_.loaded(result->artPresent, result->lyricsPresent, result->blocked, result->error);
       if (lyrics_ && result->lyricsPresent)
         LrcParser{}.parse({result->lyrics, result->lyricsBytes}, *lyrics_);
+      else if (lyrics_ && !result->error) {
+        lyrics_->count = lyrics_->used = 0;
+        lyrics_->synced = false;
+      }
       if (cover_ && result->artPresent) {
         memcpy(cover_, result->pixels, rawBytes(board::artSide));
-        coverValid_ = true;
       }
-      artBlocked_ = result->blocked;
     } else if (result->request.kind == AssetKind::Media &&
                result->request.generation == mediaGeneration_) {
       const bool first = !mediaValid_;
@@ -489,7 +493,7 @@ void App::assets(uint32_t now) {
         mediaValid_ = false;
         mediaFailed_ = true;
         playback_.seek(playback_.position(now), false, now);
-        notice("미디어 형식 / 읽기 오류 — NEXT로 다음 파일", now);
+        notice("미디어 형식 / 읽기 오류 - NEXT로 다음 파일", now);
         diagnostics_.record("Media decode failed");
       }
     }
@@ -497,28 +501,34 @@ void App::assets(uint32_t now) {
   }
   bool artOk;
   // A stale completion is consumed without overwriting the displayed pixels.
-  if (cover_ && artwork_.receive(cover_, assetGeneration_, artOk)) {
-    coverValid_ = artOk;
-    artPending_ = false;
+  if (cover_ && artwork_.receive(cover_, trackAssets_.generation, artOk)) {
+    log("ART", "online artwork %s", artOk ? "received" : "not found");
+    trackAssets_.coverValid = trackAssets_.coverValid || artOk;
+    trackAssets_.artPending = false;
   }
-  if (!storage_.mounted())
+  if (!storage_.mounted()) {
     assetsNeeded_ = false;
-  if (!coverValid_ && !artBlocked_ && !artPending_ && !assetsNeeded_ && settings_.artworkAuto &&
+    trackAssets_.loading = false;
+  }
+  if (trackAssets_.canFetchArtwork(now, assetPending_) && !assetsNeeded_ && settings_.artworkAuto &&
+      !power_.pending() && !shutdownStarted_ &&
       network_.connected() && !network_.ap() && session_.track().key[0] &&
-      now - artRetry_ >= 60000) {
-    artPending_ = serviceReady_ && artwork_.request(session_.track(), assetGeneration_, settings_);
-    artRetry_ = now;
+      session_.track().title[0] && session_.track().artist[0]) {
+    trackAssets_.artPending =
+        serviceReady_ && artwork_.request(session_.track(), trackAssets_.generation, settings_);
+    trackAssets_.artRetry = now;
   }
   bool lyricsFound = false;
   // A stale completion is consumed without touching the current track's lyrics.
-  if (lyrics_ && onlineLyrics_.receive(*lyrics_, assetGeneration_, lyricsFound))
+  if (lyrics_ && onlineLyrics_.receive(*lyrics_, trackAssets_.generation, lyricsFound))
     log("LYRICS", lyricsFound ? "online lyrics loaded" : "no online lyrics");
   // One online lookup per track load; the gateway's edge cache absorbs repeated misses.
-  if (lyrics_ && !lyricsLocal_ && !lyricsRequested_ && !assetsNeeded_ && !assetPending_ &&
+  if (lyrics_ && trackAssets_.canFetchLyrics(assetPending_) && !assetsNeeded_ &&
       settings_.lyricsView && !power_.pending() && !shutdownStarted_ && network_.connected() &&
       !network_.ap() && session_.track().key[0] && session_.track().title[0] &&
       session_.track().artist[0]) {
-    lyricsRequested_ = serviceReady_ && onlineLyrics_.request(session_.track(), assetGeneration_);
+    trackAssets_.lyricsRequested =
+        serviceReady_ && onlineLyrics_.request(session_.track(), trackAssets_.generation);
   }
   if (thermalState_ < 3 && screen_ == Screen::Media && settings_.mediaAutoplay &&
       !playback_.synchronized() && catalog_ && mediaValid_ && storage_.mounted()) {
@@ -536,7 +546,7 @@ void App::assets(uint32_t now) {
   if (assetPending_ || power_.pending() || shutdownStarted_ || !storage_.mounted())
     return;
   if (assetsNeeded_) {
-    assetPending_ = storage_.request(session_.track().key, assetGeneration_);
+    assetPending_ = storage_.request(session_.track().key, trackAssets_.generation);
     if (assetPending_ || !session_.track().key[0])
       assetsNeeded_ = false;
   } else if ((screen_ == Screen::Media || playback_.synchronized()) &&
@@ -555,18 +565,16 @@ void App::assets(uint32_t now) {
   }
 }
 void App::shutdown(uint32_t now) {
-  const bool reboot = rebootRequested_ || ota_.state() == Ota::State::Success ||
-                      firmware_.state() == Firmware::State::Success;
+  const bool reboot = rebootRequested_ || firmware_.state() == Firmware::State::Success;
   if (!power_.pending() && !reboot)
     return;
   if (!shutdownStarted_) {
     shutdownStarted_ = true;
     shutdownAt_ = now;
-    ota_.close();
     portal_.suspend(true);
     ble_.suspend(true);
   }
-  if (!ota_.quiescent() || firmware_.busy() || !portal_.suspended() || ble_.connected())
+  if (firmware_.busy() || !portal_.suspended() || ble_.connected())
     return;
   if (!storageStopping_) {
     if (settingsDirty_ && !store_.save(settings_)) {
@@ -596,13 +604,39 @@ void App::shutdown(uint32_t now) {
     network_.stop();
     display_.sleep();
     rgb_.off();
-    leds_.off();
     Wire.end();
     peripheralsOff_ = true;
     power_.peripheralsStopped(now);
     log("POWER", "files closed; entering deep sleep after OK release");
   }
   power_.tick(now);
+}
+void App::internetUpdate(uint32_t now) {
+  const bool permitted = serviceReady_ && network_.connected() && !network_.ap() &&
+                         storage_.mounted() && !power_.pending() && !shutdownStarted_ &&
+                         !bootConfirm_.pending() && thermalState_ < 2 &&
+                         !playback_.synchronized() && !storage_.writing();
+  const auto action = autoUpdate_.next(now, store_.autoUpdate(), permitted, firmware_.busy(),
+                                       firmware_.state());
+  const auto work = action == AutoUpdate::Action::Check ? Firmware::Work::Check
+                    : action == AutoUpdate::Action::Download ? Firmware::Work::Download
+                    : action == AutoUpdate::Action::Install ? Firmware::Work::AutoInstall
+                                                            : Firmware::Work::None;
+  if (work != Firmware::Work::None) {
+    log("UPDATE", "scheduled step=%u accepted=%d", unsigned(action), int(firmware_.request(work)));
+    if (action == AutoUpdate::Action::Install)
+      notice("서명된 GitHub 릴리스 설치 후 재시작", now);
+  }
+  // Announce a newly found release once, whether the check was scheduled or manual.
+  const auto state = firmware_.state();
+  if (state == Firmware::State::Available && lastUpdateState_ != Firmware::State::Available) {
+    char latest[48], message[96];
+    firmware_.latest(latest, sizeof(latest));
+    snprintf(message, sizeof(message), "새 버전 v%s / MENU > 업데이트", latest);
+    notice(message, now);
+    log("UPDATE", "release v%s available (running v%s)", latest, board::version);
+  }
+  lastUpdateState_ = state;
 }
 void App::render(uint32_t now) {
   if (!display_.ready() || display_.busy() || peripheralsOff_ ||
@@ -616,7 +650,7 @@ void App::render(uint32_t now) {
   v.media = &session_;
   v.lyrics = lyrics_;
   v.timer = &timer_;
-  v.artwork = coverValid_ ? cover_ : nullptr;
+  v.artwork = trackAssets_.coverValid ? cover_ : nullptr;
   v.mediaPixels = mediaValid_ ? mediaPixels_ : nullptr;
   v.now = now;
   v.epoch = time(nullptr);
@@ -641,11 +675,9 @@ void App::render(uint32_t now) {
   v.ip = address_;
   v.setting = setting_;
   v.settingsEditing = settingsEditing_;
-  v.otaStatus = ota_.status();
-  v.otaPercent = ota_.progress();
-  v.mediaName = playback_.synchronized()                   ? "AP Sync · 브라우저 오디오"
+  v.mediaName = playback_.synchronized()                   ? "AP Sync / 브라우저 오디오"
                 : catalog_ && mediaItem_ < catalog_->count ? catalog_->entries[mediaItem_].title
-                                                           : "MENU → 설정 AP에서 업로드";
+                                                           : "MENU > 설정 AP에서 업로드";
   v.mediaDuration = playback_.duration();
   v.mediaPosition = playback_.position(now);
   v.mediaPlaying = playback_.playing();
@@ -668,10 +700,8 @@ void App::render(uint32_t now) {
   v.updateReady = firmware_.state() == Firmware::State::Ready;
   v.updateProgress = firmware_.progress();
   v.notice = now - noticed_ < 4000 ? notice_ : "";
-  if (ota_.active() || ota_.state() == Ota::State::Success || ota_.state() == Ota::State::Failed)
-    v.notice = ota_.status();
-  else if (ota_.bootPending())
-    v.notice = "OTA runtime check (60s)";
+  if (bootConfirm_.pending())
+    v.notice = "새 펌웨어 검증 중 (60초)";
   v.sleeping = power_.pending();
   ui_.render(display_.canvas(), v);
   display_.present();
@@ -700,7 +730,7 @@ void App::tick() {
   if (bleStarted_)
     ble_.tick(session_, millis());
   now = millis();
-  const bool wirelessBlocked = shutdownStarted_ || !ota_.quiescent() || firmware_.busy() ||
+  const bool wirelessBlocked = shutdownStarted_ || firmware_.installing() ||
                                thermalState_ >= 2 || network_.ap() ||
                                navigation_.profile() != Profile::Now;
   ble_.suspend(wirelessBlocked);
@@ -723,10 +753,10 @@ void App::tick() {
         secrets_ = *candidate;
         network_.configure(secrets_, settings_);
         network_.saveResult(true);
-        notice("Wi-Fi 시험 성공 · 저장됨", now);
+        notice("Wi-Fi 시험 성공 / 저장됨", now);
       } else {
         network_.saveResult(false);
-        notice("Wi-Fi 연결됨 · 저장 실패", now);
+        notice("Wi-Fi 연결됨 / 저장 실패", now);
       }
     } else
       network_.saveResult(false);
@@ -756,7 +786,7 @@ void App::tick() {
       thermalState_ = thermalLevel(chipTemperature_, previous, settings_.thermalWarn,
                                    settings_.thermalThrottle, settings_.thermalStop);
       const unsigned frequency = thermalState_ >= 2 ? 80 : 240;
-      if (getCpuFrequencyMhz() != frequency && !firmware_.busy() && ota_.quiescent())
+      if (getCpuFrequencyMhz() != frequency && !firmware_.busy())
         setCpuFrequencyMhz(frequency);
       if (previous != thermalState_) {
         char message[96];
@@ -767,7 +797,7 @@ void App::tick() {
       if (thermalState_ >= 3) {
         playback_.seek(playback_.position(now), false, now);
         display_.brightness(8);
-        notice("내부 온도 높음 · 냉각 대기", now);
+        notice("내부 온도 높음 / 냉각 대기", now);
       } else if (previous >= 3 && !screenOff_)
         display_.brightness(settings_.lcdBrightness);
     }
@@ -796,25 +826,6 @@ void App::tick() {
     const bool night = settings_.nightStart < settings_.nightEnd
                            ? minute >= settings_.nightStart && minute < settings_.nightEnd
                            : minute >= settings_.nightStart || minute < settings_.nightEnd;
-    const float ambient = environment_.temperature() + settings_.temperatureOffset;
-    const float humidity =
-        std::clamp(environment_.humidity() + settings_.humidityOffset, 0.0f, 100.0f);
-    const bool sensorValid = settings_.environmentEnabled && environment_.valid(now);
-    const bool sensorWarning =
-        sensorValid &&
-        (ambient < settings_.temperatureLow || ambient >= settings_.temperatureHigh ||
-         humidity < settings_.humidityLow || humidity >= settings_.humidityHigh);
-    const bool sensorCritical = sensorValid && (ambient >= settings_.temperatureCritical ||
-                                                humidity >= settings_.humidityCritical);
-    leds_.tick(now,
-               settings_.ledsEnabled
-                   ? night ? std::min(settings_.heartbeatBrightness, settings_.nightBrightness)
-                           : settings_.heartbeatBrightness
-                   : 0,
-               sensorWarning || thermalState_ >= 1 || battery_.low() || assetError_ ||
-                   !storage_.mounted() || ota_.state() == Ota::State::Failed,
-               sensorCritical || thermalState_ >= 3 || battery_.critical() || !display_.ready(),
-               ota_.active());
     rgb_.tick(now,
               settings_.ledsEnabled
                   ? night ? std::min(settings_.rgbBrightness, settings_.nightBrightness)
@@ -823,7 +834,7 @@ void App::tick() {
               session_.playing(), timer_.state() == FocusTimer::State::Running,
               timer_.state() == FocusTimer::State::Finished, battery_.low(), power_.pending());
   }
-  if (settingsDirty_ && !shutdownStarted_ && ota_.quiescent() && now - savedAt_ >= 2000) {
+  if (settingsDirty_ && !shutdownStarted_ && now - savedAt_ >= 2000) {
     savedAt_ = now;
     if (store_.save(settings_))
       settingsDirty_ = false;
@@ -844,11 +855,13 @@ void App::tick() {
   }
   if (now - lastLog_ >= 60000) {
     lastLog_ = now;
-    log("MEM", "heap=%u min=%u psram=%u stack=%u loop_max_us=%lu", unsigned(ESP.getFreeHeap()),
+    log("MEM", "heap=%u min=%u psram=%u stack=%u loop_max_us=%lu input_dropped=%lu", unsigned(ESP.getFreeHeap()),
         unsigned(ESP.getMinFreeHeap()), unsigned(ESP.getFreePsram()),
-        unsigned(uxTaskGetStackHighWaterMark(nullptr)), static_cast<unsigned long>(loopMax_));
+        unsigned(uxTaskGetStackHighWaterMark(nullptr)), static_cast<unsigned long>(loopMax_),
+        static_cast<unsigned long>(buttons_.dropped()));
   }
-  ota_.checkBoot(now);
+  bootConfirm_.tick(now);
+  internetUpdate(now);
   publish(now);
   render(now);
   display_.flush();

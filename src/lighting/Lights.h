@@ -2,12 +2,6 @@
 #include "../board/Board.h"
 #include <Adafruit_NeoPixel.h>
 namespace nova {
-class StatusLeds {
-public:
-  void begin();
-  void tick(uint32_t now, uint8_t brightness, bool warning, bool critical, bool updating);
-  void off();
-};
 class Rgb {
 public:
   void begin();

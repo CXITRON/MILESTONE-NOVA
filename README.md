@@ -2,9 +2,9 @@
 
 LOLIN S3 Pro 한 대로 구동하는 탁상형 펌웨어, 버전 **0.1.0**.
 240×320 ST7789V, 5버튼, 시계/날짜/D-Day/문구/집중 타이머, AHT10 환경 정보,
-배터리 추정, NOW/앨범아트/동기 가사, SD 미디어, Wi-Fi/NTP, BLE, 서명 OTA,
+배터리 추정, NOW/앨범아트/동기 가사, SD 미디어, Wi-Fi/NTP, BLE, GitHub 릴리스 업데이트,
 설정 AP/오프라인 포털, AP Sync, Artwork Worker 200×200 자동 조회, 환경 CSV,
-RGB 및 상태 LED, Deep Sleep OFF를 새 C++ 모듈로 구현한다.
+RGB, Deep Sleep OFF를 새 C++ 모듈로 구현한다.
 기능별 구현·검증 근거는 [기능 대조표](docs/design/feature-parity.md)에 기록한다.
 
 실제 ESP32-S3 빌드와 호스트 테스트를 수행했다. **실물 동작·장시간 안정성은 아직
@@ -23,20 +23,21 @@ src/
   settings/    schema/범위 검증, CRC/NVS 저장
   sensors/     DS3231, AHT10, battery ADC
   storage/     SD worker, 미디어 decoder, 업로드 checkpoint, catalog, 로그 journal
-  media/       AMS/helper parser, BLE, playback clock, 파일 형식, JPEG decode
+  media/       AMS/helper parser, BLE, playback clock, 곡 자산 갱신 상태, 파일 형식, JPEG decode
   lyrics/      provider/cache 계약, LRC parser/timeline/renderer
   ui/          공통 요소와 화면별 렌더링
-  network/     Wi-Fi/AP/NTP, HTTPS, 로컬 서명 OTA와 부팅 확인
+  network/     Wi-Fi/AP/NTP, HTTPS
   artwork/     Artwork Worker 조회, 캐시 정책
   portal/      HTTP/DNS, 앱 명령 mailbox, offline 자산 제공
   update/      NOVA manifest, SD 후보 검증/설치/rollback
-  lighting/    SK6812와 RED/GREEN manager
+  lighting/    SK6812 RGB
   power/       GPIO5 Deep Sleep
   logging/     UART0/USB 로그, CRC A/B 진단 이력
 tests/         하드웨어 독립 logic/도구 검사
   render/      실제 C++ renderer와 이미지 검증
   storage/     실제 SD 처리 코드 + 파일/실패 주입 adapter
   portal/      로컬 API fixture와 브라우저 codec/IndexedDB 검사
+  update/      릴리스 확인·다운로드·서명 검증·설치 worker, 일정, 부팅 확정
 assets/portal/ CDN 없는 HTML/CSS/JS 원본
 scripts/
   build/       펌웨어 빌드, 포털 embedding, 독립 서명 release 생성
@@ -63,14 +64,14 @@ ST7789V 2.0인치 SPI RGB565 패널은 MISO를 연결하지 않는다.
 
 | GPIO | 기능 |
 |---:|---|
-| 1 | RED status LED, 1 kΩ 직렬, active HIGH |
+| 1 | 미사용(예비) — 상태 LED 제거 |
 | 2 | 외부 SK6812 3535 RGB(MINI-HS) 5개, 74HCT125N + 510Ω |
 | 3 | 배터리 ADC, 보드 내장 100 kΩ / 100 kΩ divider (JP2 `BAT_AD` 연결 필요) |
 | 4 | RESERVED |
 | 5 | OK / Deep Sleep wake, INPUT_PULLUP |
 | 6 | LCD MOSI |
 | 7 | LCD SCK |
-| 8 | GREEN status LED, 1 kΩ 직렬, active HIGH |
+| 8 | 미사용(예비) — 상태 LED 제거 |
 | 9 | I2C SDA |
 | 10 | I2C SCL |
 | 11 | SD MOSI |
@@ -113,11 +114,10 @@ LOLIN S3 Pro 공식 회로도 V1.0.0 기준이다. 펌웨어는 아래 구조를
 | 배터리 측정 | 보드 내장 VBAT─100 kΩ─AD_BAT─100 kΩ─GND, 100 nF. AD_BAT는 솔더 점퍼 JP2(`BAT_AD`)를 거쳐 GPIO3에 연결된다. 외부 divider를 추가하지 않는다. 회로도 기호상 JP2는 open으로 보이므로 실물 패드가 떨어져 있으면 납땜으로 연결한다. 미연결 시 배터리 표시/경고가 동작하지 않는다 |
 | 5V_AUX | DM13B 자동 buck-boost 5 V 모듈. 입력 VI+ = 보드 `VIN`, VI− = GND, 입출력에 각각 100 µF. `VIN`은 USB 연결 시 VBUS(다이오드 경유), 배터리만 있을 때 VBAT(MOSFET 경유)이므로 3.0–5 V 입력을 모두 처리하는 buck-boost를 사용한다 |
 | 74HCT125N | VCC = 5V_AUX, GND, VCC–GND 100 nF. 4번 채널만 사용: 4A = GPIO2, 4Y → 510 Ω → LED1 DIN, 4OE = GND. 미사용 1A–3A는 GND, 1OE–3OE는 VCC(출력 high-Z) |
-| SK6812 3535 RGB ×5 | 3색 RGB(SZH-LD159, MINI-HS). VDD = 5V_AUX, LED마다 VDD–GND 100 nF, LED1 DOUT → LED2 DIN → … → LED5. 펌웨어는 `NEO_GRB + NEO_KHZ800`. RGBW 제품으로 바꾸면 `src/lighting/Lights.h`를 수정한다 |
-| LCD | 보드의 TFT 전용 SH1.0 커넥터(J2)는 사용하지 않고 헤더에 외부 배선한다. VCC = 3V3, GND, DIN→6, SCK→7, CS→15, RST→16, D/C→17, BL→18 |
+| SK6812 3535 RGB ×5 | 3색 RGB(SZH-LD159, MINI-HS). VDD = 5V_AUX, LED마다 VDD–GND 100 nF, LED1 DOUT → LED2 DIN → … → LED5. 데이터는 **가장 오른쪽 LED(LED1)**로 들어가며 펌웨어는 `Board.h`의 `rgbFromRight`로 왼쪽→오른쪽 효과 방향을 맞춘다. 펌웨어는 `NEO_GRB + NEO_KHZ800`. RGBW 제품으로 바꾸면 `src/lighting/Lights.h`를 수정한다 |
+| LCD | 보드의 TFT 전용 SH1.0 커넥터(J2)는 사용하지 않고 헤더에 외부 배선한다. VCC = 3V3, GND, DIN→6, SCK→7, CS→15, RST→16, D/C→17, BL→18. 장착 방향은 `Board.h`의 `lcdMadctl`(현재 0xC0, 180° 회전)로 맞춘다 |
 | 버튼 ×5 | P2285 tactile. 한쪽 = 해당 GPIO, 반대쪽 = GND 공통(INPUT_PULLUP, 눌림 LOW) |
 | DS3231 / AHT10 | VCC = 3V3, GND, SDA→9, SCL→10. 보드에 I2C pull-up이 없으므로 모듈 내장 pull-up을 사용한다 |
-| RED / GREEN LED | GPIO1 / GPIO8 → 1 kΩ → LED → GND. 미장착이어도 펌웨어 동작에 영향이 없다 |
 
 조립 순서: 74HCT125N과 DM13B를 LOLIN 장착 전에 먼저 납땜한다. 첫 전원 인가 전
 극성·단락을 확인하고, USB만 연결한 상태에서 74HCT125N 14번(VCC)–7번(GND)이 5 V인지
@@ -151,7 +151,7 @@ PSRAM은 LOLIN S3 board profile의 OPI 설정을 사용한다. `build/`는 Git�
 `scripts/test/run.sh`는 ASan/UBSan을 사용한다. ptrace 기반 실행 환경에서는 LeakSanitizer가
 동작하지 않아 기본 `detect_leaks=0`이며 지원되는 호스트에서
 `ASAN_OPTIONS=detect_leaks=1 ./scripts/test/run.sh`로 추가 검사할 수 있다.
-`preview.sh`는 제품의 C++ renderer로 화면·레이아웃·진단·대기/오류 상태 63개 장면을 그린다.
+`preview.sh`는 제품의 C++ renderer로 화면·레이아웃·진단·대기/오류 상태 67개 장면을 그린다.
 `build/preview/index.md` 또는 `index.html`에서 이름과 분류별로 전체 화면을 볼 수 있다.
 개별 `screen-*.png`는 원본 240×320 픽셀이며, `screens*.png`는 9개씩 묶은 비교 이미지다.
 날짜·음악·센서·아트는 예시 데이터이며 실물 LCD나 동작 애니메이션의 캡처는 아니다.
@@ -159,7 +159,9 @@ PSRAM은 LOLIN S3 board profile의 OPI 설정을 사용한다. `build/`는 Git�
 펌웨어 산출물과 Python `cryptography`가 있으면 호스트 검사에 RSA-2048/4096
 서명·변조 거절 검사도 포함된다. SDK 위치는 `NOVA_CORE`로 지정할 수 있다.
 필요 파일/의존성이 없으면 서명 검사는 skipped로 표시된다. 최종 검증에서는 skip 없이 실행했다. 테스트 키는 임시
-디렉터리에서만 생성하고 삭제하며, 실물 OTA 전송 검증을 대신하지 않는다.
+디렉터리에서만 생성하고 삭제하며, 실물 업데이트 설치 검증을 대신하지 않는다.
+업데이트 회귀 검사는 실제 `Firmware.cpp`(릴리스 확인·다운로드·서명·설치)와 `AutoUpdate.cpp`
+(부팅/하루 한 번 일정), `BootConfirm.cpp`(부팅 확정)를 호스트 adapter로 실행한다.
 
 최초 USB 업로드 예시(포트는 실제 보드에 맞춘다):
 
@@ -196,7 +198,14 @@ GPIO43/44 UART0, 115200 baud로 출력한다. USB console은 개행 단위 명�
 
 명령 전송 자체를 실제 재생 변화로 표시하지 않는다. 새 authoritative 상태가 와야
 NOW가 바뀐다. 일반 버튼은 active LOW, 30 ms debounce, 900 ms long press,
-필요한 PREV/NEXT repeat 180 ms다.
+필요한 PREV/NEXT repeat 180 ms다. GPIO는 별도 입력 task에서 5ms마다 읽고,
+32개 이벤트 큐를 통해 loop에 전달하므로 가사 렌더·NVS 처리 중에도 짧은 누름을 수집한다.
+대기 중 같은 버튼의 repeat는 합쳐 MENU/BACK/OK 공간을 남긴다. 실제 누름으로도 큐가
+가득 차면 누락 수를 `MEM` 로그의 `input_dropped`로 기록한다. task 생성 실패 시 polling으로
+동작하고 `INPUT` 로그에 표시한다.
+
+부팅 문구는 설정의 `message`와 `message_color`를 사용한다. 빈 문구를 저장하면
+기본 문구를 강제로 표시하지 않는다. 길면 기존 영역 안에서 줄바꿈한다.
 
 ## 설정과 Wi-Fi
 
@@ -206,14 +215,14 @@ MENU → 설정 AP → 화면에 표시된 `MILESTONE-NOVA-SETUP`에 연결 →
 지원한다. 암호는 기기 화면에만 표시하며 API로 되돌려 주지 않는다.
 
 연결 탭에서 비동기 검색 후 Personal/Open/PEAP를 시험한다. 15초 안에 연결되고
-2초 이상 유지된 경우 최대 8개 프로필에 저장한다. WPA3 전용과 CA 검증이 필요한
+2초 이상 유지된 경우 최대 8개 프로필에 저장한다. WPA2/WPA3 혼합 모드는 WPA2로 접속한다. WPA3 전용과 CA 검증이 필요한
 Enterprise 구성은 지원하지 않는다. AP가 열려 있는 동안 NOW BLE는 중단하며,
 BACK 또는 포털의 AP 닫기를 누르면 선택한 모드로 돌아간다.
 
 `data/config/device.ini`는 최초 설정을 위한 SD `/config/device.ini` 예시다.
 유효한 NOVA NVS 설정이 있으면 이 파일은 다시 적용하지 않는다.
-`secrets.example.ini`를 채워 `/config/secrets.ini`로 복사하면 Wi-Fi/AP/OTA를
-프로비저닝할 수 있다. 이 자격증명 파일과 `/config/ota_public.pem`은 부팅마다 읽는다.
+`secrets.example.ini`를 채워 `/config/secrets.ini`로 복사하면 Wi-Fi/AP를
+프로비저닝할 수 있다. 이 자격증명 파일은 부팅마다 읽는다.
 프로비저닝 후 SD의 자격증명 파일을 제거하면 이후 포털 변경값을 NVS에 유지한다.
 설정 기본값은 자격증명을 유지한다. 기기 초기화는 NOVA NVS를 지우며 SD 파일은
 보존하므로, SD에 남긴 프로비저닝 파일은 다음 부팅에 재적용된다.
@@ -224,7 +233,6 @@ USB console에서도 설정할 수 있다.
 ```text
 set lcd_brightness=160
 set rgb_brightness=24
-set heartbeat_brightness=24
 set lcd_hz=20000000
 set dday=2027-01-01
 set message=오늘도 한 걸음
@@ -235,15 +243,15 @@ set battery_offset=0.000
 wifi MyNetwork|my-network-password
 time 1790121600
 status
-ota
-ota-close
+update-check
+update-auto on
 sleep
 ```
 
 시간 명령 값은 UTC Unix seconds다. RTC에도 UTC를 저장하고 화면에서 POSIX TZ를
 적용한다. NTP는 Wi-Fi 연결 뒤 비동기로 시작한다. Wi-Fi 신규 연결은 15초 제한과
 설정된 상한까지의 재시도 간격을 쓰며 BLE 연결 중 새 association은 미룬다.
-SSID/비밀번호 변경은 BLE/OTA 연결을 끝낸 뒤 한다. 비밀번호는 console에 echo하지 않는다.
+SSID/비밀번호 변경은 BLE 연결과 업데이트 작업을 끝낸 뒤 한다. 비밀번호는 console에 echo하지 않는다.
 설정은 schema/CRC/범위 검사 후 사용하며 잘못된 데이터는 기본값으로 복구한다.
 
 ## SD / NOW / 가사 / 앨범아트
@@ -253,7 +261,6 @@ FAT32 카드의 구조:
 ```text
 /config/device.ini
 /config/secrets.ini
-/config/ota_public.pem
 /lyrics/<16자리-track-key>.lrc
 /artwork/<16자리-track-key>.nvi
 /media/photo.nvi
@@ -305,7 +312,7 @@ pause 고정, seek 즉시 보정, 곡 변경 시 reset, binary search로 줄을 
 받은 가사는 SD `/lyrics/<key>.lrc`에 저장해 다음부터 오프라인으로 사용한다.
 기존 파일은 빈 파일이라도 자동으로 덮어쓰지 않는다. SD 없음/저장 실패 시에는
 현재 곡의 RAM 결과를 표시한다. 곡이 바뀐 뒤 도착한 결과는 화면에 적용하지 않는다.
-온라인 조회는 곡 자산을 읽을 때 한 번 시도한다. 실패한 곡의 재시도는 곡 재선택이나
+온라인 가사는 곡당 한 번 자동 시도하며 SD 변경 알림만으로 반복 시도하지 않는다. 실패한 곡의 재시도는 곡 재선택이나
 포털의 현재 곡 재읽기(`artRefresh`)로 할 수 있다. AP 사용/OFF 중에는 새 조회를 시작하지 않는다.
 `artwork_auto`와 가사 조회는 독립이며, 자동 가사 조회는 `lyrics_view`를 따른다.
 서버 배포 전에는 가사 경로가 없을 수 있다. [API와 제한](docs/guides/protocol.md#온라인-가사-worker)을 참고한다.
@@ -317,6 +324,15 @@ NOW 레이아웃은 0~5번이다. 0은 큰 아트+제목/아티스트, 1은 작�
 `scroll`이 켜져 있고 글자가 영역보다 길면 제목·아티스트·앨범 marquee는 양 끝에서
 2초씩 멈추며 가로로 왕복한다(`scroll_speed`, 기본 24 px/s). 모든 텍스트에 적용되는 것은
 아니다. 2번의 큰 제목과 가사는 줄바꿈/영역 자르기를 사용한다.
+
+글꼴은 기존 Unifont Korean2에 Japanese3를 추가했다. 한글/영문을 유지하면서 가나·한자는
+일본어 글꼴을 우선하며 줄바꿈·가운데 정렬·스크롤도 같은 글자 폭을 사용한다.
+반각 가나는 전각 대응 글자로 표시한다(원래 가사/metadata/key는 바꾸지 않음).
+이 글꼴에 없는 드문 한자나 emoji 등은 `?`로 표시한다.
+
+같은 곡의 SD 자산을 다시 읽을 때는 현재 아트·가사를 유지한 뒤 결과를 교체한다.
+실제 곡 변경 또는 확인된 파일 삭제에서는 이전 자산을 지운다. SD 읽기가 끝나기 전
+자동 아트를 요청하지 않고, 자동 저장으로 생긴 SD 변경도 재시도 간격을 초기화하지 않는다.
 
 ```sh
 # P6 PPM은 Python 표준 library만 필요. PNG/JPEG에는 Pillow가 필요하다.
@@ -371,58 +387,56 @@ Sync 영상을 정리하고 일반 미디어 업로드 체크포인트는 유지
 브라우저 저장소를 열지 못해도 포털의 설정·연결·진단은 사용할 수 있다.
 미디어/펌웨어 파일 준비·전송은 IndexedDB를 사용할 수 있는 일반 브라우저에서 진행한다.
 
-## 서명 OTA / 복구
+## 업데이트 (GitHub 릴리스) / 복구
 
-로컬 Arduino OTA는 사용자 활성화 후 10분 동안만 수신한다.
-전송 중 BLE는 연결/광고를 중지하고 객체 수명은 유지한다. OTA worker가 파일을
-수신하며 UI/입력은 계속 실행한다. 한 전송은 120초, 무응답은 짧은 timeout으로
-제한한다. SD 없이도 이미 저장된 Wi-Fi/password/public key로 OTA가 가능하다.
+암호나 키를 기기에 설정할 필요가 없다. Wi-Fi만 연결되어 있으면 된다.
+서명 검증용 **공개키는 펌웨어에 내장**되어 있고 개인키는 PC에만 둔다.
 
-RSA-2048 이상의 공개키와 12자 이상 OTA password가 없으면 OTA가 비활성화된다.
-`/config/ota_public.pem`에는 **공개키만** 놓는다. private key는 PC에 별도 보관한다.
-공개키를 SD에서 프로비저닝하는 모델이며 secure boot/flash encryption은 설정하지 않았다.
+- **자동 확인**: 부팅 후 Wi-Fi가 연결되면 약 30초 뒤 한 번, 이후 24시간마다 한 번
+  `github.com/CXITRON/MILESTONE-NOVA`의 최신 정식 릴리스를 확인한다. 실패하면(오프라인,
+  릴리스 없음) 1시간 뒤 다시 시도한다. 새 버전을 찾으면 화면에
+  `새 버전 vX.Y.Z / MENU > 업데이트` 알림만 표시하고 **설치하지 않는다**.
+- **수동 확인/설치**: MENU → 업데이트.
+  1. `새 버전 확인` — OK
+  2. `다운로드 + 서명 검증` — OK. 크기·SHA-256·RSA 서명을 확인하고 SD에 후보를 저장한다.
+  3. 검증이 끝나면 **길게 OK**로 설치하고 재시작한다.
+  기기 설정의 `Check update` 항목, 포털 정비 탭, USB console의 `update-check`도 같은 확인을 한다.
+- **자동 설치(선택)**: 포털 정비 탭의 `자동 업데이트 켜기` 또는 console `update-auto on`.
+  켜면 자동 확인에서 새 버전을 찾았을 때 다운로드·검증·설치·재시작까지 이어서 진행한다.
+  기본은 꺼짐이다.
+- **안전장치**: 칩 ID가 ESP32-S3, 앱 descriptor의 제품명이 `MILESTONE-NOVA`, 버전이 릴리스
+  태그와 일치해야 한다. 설치 직전 크기·hash·서명을 다시 확인한다. 새 이미지는 60초/500회 이상
+  loop와 최소 heap 여유를 확인한 뒤 정상 확정하며, 그 전에 재시작하면 bootloader가 이전
+  이미지로 되돌린다. `이전 펌웨어로 복구` 항목은 검증된 이전 NOVA slot만 선택한다.
+  SD가 없으면 다운로드할 수 없다. 설치 중에는 음악/설정 AP를 사용할 수 없다.
+- secure boot/flash encryption은 설정하지 않았다. 공개키 내장과 서명 검증은 변조된 이미지를
+  거절하지만 물리 접근자를 막지는 않는다.
 
-```sh
-# NOVA_CORE는 설치된 Arduino-ESP32 3.3.11 디렉터리
-export NOVA_CORE="$HOME/.arduino15/packages/esp32/hardware/esp32/3.3.11"
-python3 "$NOVA_CORE/tools/bin_signing.py" --generate-key rsa-2048 --out /safe/nova-private.pem
-python3 "$NOVA_CORE/tools/bin_signing.py" --extract-pubkey /safe/nova-private.pem --out /safe/ota_public.pem
-python3 "$NOVA_CORE/tools/bin_signing.py" --bin build/firmware/Nova.ino.bin \
-  --key /safe/nova-private.pem --out build/firmware/Nova-signed.bin
-# 기기 Settings의 Signed OTA 또는 USB console의 ota로 수신 창을 연 뒤:
-python3 "$NOVA_CORE/tools/espota.py" -i <device-ip> -a "$NOVA_OTA_PASSWORD" \
-  -f build/firmware/Nova-signed.bin
-```
+### 릴리스 게시 (개발자)
 
-**같은 3.3.11 core의 `espota.py`**를 사용한다. 이 버전의 인증은 PBKDF2/SHA256이며
-서명은 RSA/SHA256이다. 전송 MD5만으로 펌웨어를 신뢰하지 않는다.
-서명 검증을 통과해야 비활성 slot을 다음 부팅 대상으로 지정한다.
-새 이미지의 초기 확인을 미루고 60초/500회 이상 loop와 최소 heap 여유를 확인한 뒤
-정상 확정한다. 그 전에 reset하면 bootloader rollback 대상이다. optional SD/RTC/AHT
-부재는 확정 실패 이유로 삼지 않는다. 실물 전원 차단·rollback 시험은 별도로 필요하다.
-
-인터넷 업데이트는 `src/network/Endpoints.h`의 NOVA 전용 manifest를 확인하고,
-명시된 크기/SHA256과 RSA 서명을 검증한 뒤 SD 후보를 준비한다. 직접 올린 서명 이미지도
-같은 검증을 거친다. 칩 ID가 ESP32-S3이고 application descriptor의 제품명이
-`MILESTONE-NOVA`여야 한다. 기기에서 OK를 길게 누르기 전에는 설치하지 않는다.
-설치 직전 크기·hash·서명을 다시 검증한다. 복구 메뉴는 이전의 VALID 상태 NOVA slot만
-선택한다. legacy MAIN/ZERO 이미지와 키, 릴리스 카탈로그는 사용하지 않는다.
-
-릴리스 산출물 준비(생성만 하며 게시·flash하지 않음):
+릴리스는 `v<major.minor.patch>` 태그에 서명된 `.bin`과 `stable.json` 두 파일을 붙여 게시한다.
+기기는 `releases/latest/download/stable.json`을 읽으므로 최신 정식 릴리스(초안/pre-release 제외)가
+기준이다. 개인키는 저장소 밖(`~/.config/milestone-nova/keys/nova-private.pem`)에 두며, 내장 공개키
+(`src/update/Trust.h`)와 한 쌍이어야 한다. 키를 바꾸면 이미 배포한 기기는 새 릴리스를 거절한다.
 
 ```sh
-python3 scripts/build/release.py --key /safe/nova-private.pem \
-  --url https://raw.githubusercontent.com/CXITRON/MILESTONE-NOVA/main/releases/nova-0.1.0.bin \
-  --output-dir build/release/0.1.0
+V=0.1.1
+NOVA_VERSION=$V ./scripts/build/firmware.sh     # 이미지 버전을 릴리스 태그와 일치시킨다
+python3 scripts/build/release.py --key ~/.config/milestone-nova/keys/nova-private.pem \
+  --url https://github.com/CXITRON/MILESTONE-NOVA/releases/download/v$V/nova-$V.bin \
+  --output-dir build/release/$V                 # 서명·재검증 후 nova-$V.bin, stable.json 생성
+gh release create v$V build/release/$V/nova-$V.bin build/release/$V/stable.json \
+  --title "NOVA $V" --notes "변경 내용"
 ```
 
-출력 signed `.bin`과 `stable.json`은 키·서명·제품 descriptor를 검증한 파일이다.
-인터넷 업데이트를 실제 배포에 사용하려면 이 파일들을 설정된 NOVA 저장소에 게시해야 한다.
-이번 작업에서는 공개 릴리스를 게시하지 않았다. 미게시/접속 실패를 업데이트 가능 상태로
-표시하지 않는다. SD 후보 및 로컬 OTA 경로는 공개 릴리스 없이 사용할 수 있다.
+`release.py`는 서명 후 공개키로 다시 검증하고 제품 descriptor를 확인한다. 소스의 기본 버전은
+`src/board/Board.h`의 `version`이며 `NOVA_VERSION`을 주면 그 값이 우선한다.
+USB로 직접 올린 기기와 같은 버전의 릴리스는 "최신 버전입니다"로 처리되어 설치하지 않는다.
 
 ## 검증 범위와 제한
 
+- 2026-10-05 USB 업로드·flash 검증, BLE 곡 정보/SD 자산 읽기와 입력 큐 로그를 확인했다.
+  최초 수정 이미지와 최종 이미지의 관찰 범위는 [C0010](docs/codex/reports/report_C0010_2026_10_05.md)에 구분한다.
 - 실제 LCD 방향/색상/10 cm 배선 clock, RF 공존, SD 제거, Deep Sleep 전류,
   ADC 보정, iPhone pairing/reconnect/원격 제어, OTA 전원 차단 및 24~72시간 soak는 미검증.
 - 호스트 SD 검사는 실제 처리 코드에 파일/오류 adapter를 붙여 실행하며, SPI/FreeRTOS
@@ -431,8 +445,8 @@ python3 scripts/build/release.py --key /safe/nova-private.pem \
   실제 Wi-Fi 지연에 따른 동기 오차는 사용하는 iPhone/브라우저에서 측정해야 한다.
 - 온라인 가사는 Worker 배포와 인터넷 연결이 필요하며 공급원에 없는 곡은 표시하지 못한다.
   동기화 정보 없는 온라인 가사는 내려받지 않는다. 로컬 LRC는 그대로 사용할 수 있다.
-  v3 JPEG 200 응답은 로컬 Node에서 실제 Deezer/Apple 조회와 Wasm MozJPEG 변환을 확인했으나
-  Worker를 아직 배포하지 않았다. 배포 전에는 88×88 MAC1 확대본이 표시된다. ESP32 TLS/RF 공존은 별도 검증한다.
+  Worker 배포와 운영 v3 JPEG 200·온라인 가사 응답은 [C0009](docs/codex/reports/report_C0009_2026_10_03.md)에서
+  확인했다. NOVA는 이전 88×88 MAC1 응답도 확대 표시할 수 있다. ESP32 TLS/RF 공존의 장시간 검증은 별도다.
 - 배터리는 전압 추정이다. 충전 상태 입력이 없어 충전 여부를 표시하지 않는다.
 - 글꼴 미수록 한글/기타 문자/emoji는 `?`로 대체한다.
 - RGB 음악 효과는 수신한 재생 상태 기반이며 오디오 분석이 아니다.

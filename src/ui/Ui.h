@@ -30,11 +30,10 @@ struct View {
   bool mediaPlaying = false, sleeping = false, settingsEditing = false, warning = false;
   float temperature = 0, humidity = 0, volts = 0, percent = 0;
   uint32_t mediaPosition = 0, mediaDuration = 0;
-  unsigned setting = 0, otaPercent = 0;
+  unsigned setting = 0;
   const char *bleStatus = "Off";
   const char *wifiStatus = "Off";
   const char *ip = "--";
-  const char *otaStatus = "Closed";
   const char *mediaName = "No media";
   const char *notice = "";
 };

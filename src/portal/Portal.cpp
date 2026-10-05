@@ -156,6 +156,7 @@ void Portal::status() {
   cJSON_AddStringToObject(root, "message", v.message);
   cJSON_AddStringToObject(root, "ble", v.ble);
   cJSON_AddBoolToObject(root, "sd", v.sd);
+  cJSON_AddBoolToObject(root, "autoUpdate", v.autoUpdate);
   cJSON_AddNumberToObject(root, "uptime", v.uptime);
   cJSON_AddNumberToObject(root, "heap", v.heap);
   cJSON_AddNumberToObject(root, "psram", v.psram);
@@ -326,14 +327,17 @@ void Portal::action() {
     valid = num(root.get(), "session", command_.id) && command_.id;
   } else if (!strcmp(op, "artRefresh"))
     command_.kind = CommandKind::ArtRefresh;
-  else if (!strcmp(op, "ota"))
-    command_.kind = CommandKind::OtaWindow;
   else if (!strcmp(op, "updateCheck"))
     command_.kind = CommandKind::UpdateCheck;
   else if (!strcmp(op, "updateDownload"))
     command_.kind = CommandKind::UpdateDownload;
   else if (!strcmp(op, "updatePrepare"))
     command_.kind = CommandKind::UpdatePrepare;
+  else if (!strcmp(op, "updateAuto")) {
+    command_.kind = CommandKind::UpdateAuto;
+    valid = cJSON_IsBool(cJSON_GetObjectItemCaseSensitive(root.get(), "enabled"));
+    command_.id = yes(root.get(), "enabled");
+  }
   else if (!strcmp(op, "logsClear")) {
     command_.kind = CommandKind::LogsClear;
     valid = yes(root.get(), "confirmed");

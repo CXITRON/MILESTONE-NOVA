@@ -33,7 +33,7 @@ void Power::tick(uint32_t now) {
     state_ = State::Failed;
     return;
   }
-  for (int p : {board::red, board::green, board::backlight, board::rgb}) {
+  for (int p : {board::backlight, board::rgb}) {
     ledcDetach(p);
     pinMode(p, OUTPUT);
     digitalWrite(p, LOW);

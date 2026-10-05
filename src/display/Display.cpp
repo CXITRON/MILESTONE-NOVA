@@ -30,7 +30,7 @@ bool Display::begin(uint32_t hz, uint8_t light, bool inverted) {
   delay(150);
   command(0x11);
   delay(120);
-  const uint8_t rgb565 = 0x55, madctl = 0x00;
+  const uint8_t rgb565 = 0x55, madctl = board::lcdMadctl;
   command(0x3A, &rgb565, 1);
   command(0x36, &madctl, 1);
   command(inverted ? 0x21 : 0x20);

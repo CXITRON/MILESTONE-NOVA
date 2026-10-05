@@ -365,8 +365,9 @@ void Storage::fileJob(FileJob &j) {
   }
   if (j.op == FileOp::Remove) {
     decoder_.close();
-    j.ok = !SD.exists(j.path) || SD.remove(j.path);
-    if (j.ok && (!strncmp(j.path, "/artwork/", 9) || !strncmp(j.path, "/lyrics/", 8)))
+    const bool existed = SD.exists(j.path);
+    j.ok = !existed || SD.remove(j.path);
+    if (j.ok && existed && (!strncmp(j.path, "/artwork/", 9) || !strncmp(j.path, "/lyrics/", 8)))
       ++assetRevision_;
     if (j.ok && !strncmp(j.path, "/artwork/", 9) && strlen(j.path) == 29 &&
         !strcmp(j.path + 25, ".nvi")) {
@@ -376,8 +377,11 @@ void Storage::fileJob(FileJob &j) {
         SD.remove(flag);
       }
       snprintf(flag, sizeof(flag), "%.25s.missing", j.path);
+      const bool missing = SD.exists(flag);
       const uint8_t marker = 1;
       j.ok = atomicWrite(flag, &marker, 1);
+      if (j.ok && !existed && !missing)
+        ++assetRevision_; // An absent image can still acquire a new no-auto-lookup marker.
     }
     return;
   }

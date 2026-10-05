@@ -14,9 +14,10 @@ from urllib.parse import urlsplit
 ROOT = Path(__file__).resolve().parents[2]
 OUTPUT = ROOT / "build/portal"
 VALUES = {"lcd_brightness": "160", "message": "오늘도 한 걸음", "media_loop": "1",
-          "dday": "2027-01-01", "core_order": "0,1,2,3,4,5,6,7,8"}
+          "dday": "2027-01-01", "core_order": "0,1,2,3,4,5,6,7,8", "label": "수능까지",
+          "time_color": "65535", "core_mask": "5", "night_start": "1320", "now_layout": "5"}
 STATE = {"token": "local-test-fixture", "mode": 0, "message": "로컬 검증용 응답",
-         "ble": "AP 중 대기", "sd": True, "uptime": 3600, "sensor": True,
+         "ble": "AP 중 대기", "sd": True, "uptime": 3600, "sensor": True, "autoUpdate": False,
          "temperature": 23.4, "humidity": 47.2, "volts": 3.95,
          "syncSession": 0, "syncStale": False,
          "track": {"key": "1234567890abcdef", "title": "테스트 곡", "artist": "NOVA", "album": "검증"},
@@ -43,7 +44,12 @@ class Handler(BaseHTTPRequestHandler):
             return self.reply({"values": VALUES, "specs": [
                 {"name": "lcd_brightness", "type": 0, "min": 8, "max": 255},
                 {"name": "message", "type": 6, "min": 0, "max": 193},
-                {"name": "media_loop", "type": 5, "min": 0, "max": 1}]})
+                {"name": "media_loop", "type": 5, "min": 0, "max": 1},
+                {"name": "label", "type": 6, "min": 0, "max": 65},
+                {"name": "time_color", "type": 1, "min": 0, "max": 65535},
+                {"name": "core_mask", "type": 1, "min": 1, "max": 511},
+                {"name": "night_start", "type": 1, "min": 0, "max": 1439},
+                {"name": "now_layout", "type": 0, "min": 0, "max": 5}]})
         if path in ("/api/media", "/api/files"):
             return self.reply([])
         if path == "/tests/browser.html":
@@ -66,6 +72,8 @@ class Handler(BaseHTTPRequestHandler):
             VALUES.update(data)
         elif self.path == "/api/action" and data.get("op") == "mode":
             STATE["mode"] = data["value"]
+        elif self.path == "/api/action" and data.get("op") == "updateAuto" and isinstance(data.get("enabled"), bool):
+            STATE["autoUpdate"] = data["enabled"]
         else:
             return self.reply({"ok": False, "message": "This action needs the device"}, status=400)
         return self.reply({"ok": True, "message": "Fixture saved"})

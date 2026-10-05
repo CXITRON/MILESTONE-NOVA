@@ -1,6 +1,6 @@
 # 실물 검증 체크리스트
 
-U0001 · Hardware Validation: **Not performed** · Hardware Validation Required: **Yes**
+U0001 · Hardware Validation: **Partial** (2026-10-05 USB 업로드·BLE/SD 로그 관찰) · Hardware Validation Required: **Yes**
 
 컴파일과 호스트 검사만으로 아래 항목을 통과한 것으로 보지 않는다. 로그의 reset reason,
 heap/min heap, 최대 loop 간격과 실패 시점을 함께 기록한다. 측정 장비/보드 revision/
@@ -9,30 +9,29 @@ SD 모델/OS 버전/펌웨어 hash를 시험 기록에 남긴다.
 | 항목 | 절차 및 합격 기준 | 상태 |
 |---|---|---|
 | 보드 | LOLIN S3 Pro 16MB/8MB OPI 확인, 부팅 PSRAM 값 확인 | 미실시 |
-| NOW 아트 | Worker v3 갱신 배포 후 200×200 원본을 큰 레이아웃 172×172·작은 레이아웃 88×88로 표시, 배포 전 MAC1·이전 160 캐시 표시, 진행 바/제목/아티스트 겹침 없음 | host 디코딩·대체 경로·렌더 검사 통과, 실물/배포 후 실서비스 미실시 |
+| NOW 아트 | Worker v3 200×200 원본을 큰 레이아웃 172×172·작은 레이아웃 88×88로 표시, 이전 MAC1·160 캐시 표시, 진행 바/제목/아티스트 겹침 없음 | host 디코딩·렌더, 운영 Worker(C0009), 실기 저장 후 SD 읽기 로그(C0010) 확인. 패널 육안 미실시 |
 | MEDIA 240 | 240×240 사진/GIF/영상 표시, 영상 실제 FPS(20 MHz/상향 후), 이전 160 파일 확대, 48 KiB JPEG 프레임, 흑백 | host 디코딩·브라우저 변환 통과, 실물 미실시 |
 | 5V_AUX | LOLIN 장착 전 DM13B·74HCT125N 납땜, 극성/단락 확인, USB만 연결해 74HCT125N 14–7번 5 V 측정, 배터리만 연결 시에도 5 V 유지 | 미실시 |
 | GPIO | README와 배선 대조, 예비/USB/UART/flash 핀 충돌 없음 | 코드 검사 통과, 배선 미실시 |
 | strap | 배터리 divider 및 GPIO46 SD CS가 reset/boot 조건을 방해하지 않는지 확인 | 미실시 |
 | LCD | 20MHz 시작, 240×320 방향/색/inversion/테두리/10cm 배선 확인 | 미실시 |
 | redraw | NOW 가사/시계/영상에서 깜빡임, tearing, 버튼 반응 확인 | host layout 확인, 패널 미실시 |
-| 버튼 | bounce, 동시 입력, short/long/repeat, 깨우는 OK 중복 입력 없음 | logic 통과, 실물 미실시 |
+| 버튼 | bounce, 동시 입력, short/long/repeat, 깨우는 OK 중복 입력 없음 | 지연 소비/동시 입력/포화 logic 통과, 실기 큐 누락 카운터 0. 물리 조작 미실시 |
 | I2C | DS3231만/AHT10만/둘 다/없음/SDA stuck 상태에서 reboot loop 없음 | 미실시 |
 | RTC | OSF, 전지 분리, 12/24h, 날짜 경계, UTC 저장/TZ 표시, NTP 복구 | 미실시 |
 | AHT10 | 온습도 기준계 비교, sensor 제거/재연결, stale 표시 | 미실시 |
 | 배터리 | JP2 `BAT_AD` 연결 확인(외부 divider 없음), 멀티미터와 ADC 비교, gain/offset 조정, 3.55/3.25V 경고 hysteresis, 전원 없는 ADC | logic LUT 통과, 실물 미실시 |
-| SD | 정상/없음/mount failure/손상파일/read 중 제거; UI가 살아 있고 타 파일 오염 없음 | 파일 포맷 host 통과, 실물 미실시 |
+| SD | 정상/없음/mount failure/손상파일/read 중 제거; UI가 살아 있고 타 파일 오염 없음 | 파일 포맷 host 통과, 실기 mount/아트·가사 읽기 확인. 제거·오류 주입 미실시 |
 | assets | 한글/영문 LRC, offset/seek/pause/중복/empty/unsynced/누락/큰 파일 | host 통과, 실물 미실시 |
-| AMS | iPhone 최초 pairing, bond 재연결, AMS 늦은 게시, 앱/곡 변경, title/artist/album 누락 | 미실시 |
+| AMS | iPhone 최초 pairing, bond 재연결, AMS 늦은 게시, 앱/곡 변경, title/artist/album 누락 | 실기 AMS ready·메타데이터/곡 전환 로그 확인. 최초 pairing·제어·예외 조작 미실시 |
 | helper | 기본 MTU, UTF-8 분할, 끊긴 transaction, pause/seek, 새 세션, queue overflow | parser/packer 통과, 무선 미실시 |
 | Wi-Fi | AP 없음/암호 오류/재연결/NTP timeout, BLE 동시 사용 시 연속성 | 미실시 |
 | RGB | SK6812 3535 GRB 순서, 5개 chain, brightness 상한(96/255), 74HCT125N 4채널 출력 5 V, 미사용 채널 고정, sleep OFF | 미실시 |
-| 상태 LED | 정상 RED OFF, GREEN 4초 breathing, SD/저전압/OTA 실패 | 미실시 |
 | OFF | settings 저장, worker 반환/파일 close 후 SD 종료, 모든 LED/backlight OFF | 미실시 |
 | wake | GPIO5 LOW만 wake, 나머지 4버튼은 wake하지 않음; hold OK 때 즉시 재수면 loop 없음 | 미실시 |
 | 전류 | USB/배터리 각각 idle/화면/무선/OFF 전류. OFF 중 DM13B·SK6812·74HCT125N 대기 전류(5V_AUX 미차단)와 예상 대기 시간 기록 | 미실시 |
-| signed OTA | 올바른 키/틀린 키/unsigned/손상/초과 크기/timeout, 기존 slot 보존 | compile 및 host 서명/변조 거절 통과, 실물 미실시 |
-| rollback | 검증 전 reset → 이전 이미지, 60초 runtime 후 확정, 전송/flash 중 전원 차단 | SDK 설정 확인, 실물 미실시 |
+| GitHub 업데이트 | 부팅 후 자동 확인, 새 버전 알림, 수동 확인→다운로드+검증→길게 OK 설치, 틀린 서명/손상/초과 크기/timeout, 기존 slot 보존, 60초 부팅 확정 | host 서명·변조·일정·부팅 확정 통과. 무선 설치는 릴리스 게시 후 실물 시험 |
+| rollback | 검증 전 reset → 이전 이미지, 60초 runtime 후 확정, 전송/flash 중 전원 차단 | 사용 SDK 설정·host 확정 조건 확인, 실물 미실시 |
 | NVS | 잘못된 schema/CRC/범위, 저장 실패, 설정 변경/전원 차단 후 재부팅 | validation host 통과, 실물 미실시 |
 | soak | 24~72h 재생/곡 변경/가사/SD/Wi-Fi 혼합; heap 감소 추세, stack/loop/panic 확인 | 미실시 |
 
@@ -100,3 +99,20 @@ degraded mode로 해결할 수 없으므로 전원/레벨/배선은 별도로 �
 이번에는 기기 업로드와 브라우저 포털 상호작용 검사를 수행하지 않았다. 포털 JavaScript
 구문 및 기존 Node 회귀 검사는 통과했다. 63장 렌더는 ESP32 LCD/RTOS/RF 성능 검증을
 대체하지 않는다. Hardware Validation은 계속 **Not performed**, Required는 **Yes**다.
+
+## 2026-10-05 인계 수정과 연결 기기 확인
+
+[C0010](../codex/reports/report_C0010_2026_10_05.md)에 Claude Code의 진단 기록과 Codex의
+수정/검증 범위를 구분한다. 앞 절의 미실시 표시는 해당 날짜 기준 기록이다.
+
+| 경로 | 확인 결과 | 남은 확인 |
+|---|---|---|
+| USB/기동 | 연결된 ESP32-S3에 수정 이미지 업로드, flash hash 검증, Wi-Fi/BLE/SD 상태 확인 | 전원 차단·배터리 기동·장시간 운용 |
+| 자산 깜빡임 | 같은 곡의 revision만 반복 증가하던 원인 수정. 실제 새 곡의 아트 저장 후 한 번 재읽고 안정화되는 로그 확인 | LCD 육안 확인, SD 제거/고장/긴 시간 재생 |
+| 버튼 누락 | 5ms 독립 task와 큐 도입. 600ms/5초 소비 지연·동시 입력·repeat/포화/wake 회귀 통과. 실물 관찰 중 `input_dropped=0` | 실제 가사 화면에서 빠른 연속 버튼·길게 누름·깨우기 체감 확인 |
+| 일본어/부팅 문구 | 실제 C++ 화면 67장과 글자 폭/가나·한자·혼합문자/설정 문구·색상/빈 문구 검사 통과 | LCD에서 일본어 가사와 저장 문구 육안 확인 |
+| 업데이트 일정 | 확인 일정은 부팅 후 30초 1회, 24시간마다, 실패 시 1시간 재시도(host). 릴리스 게시 전에는 확인이 실패하는 것이 정상 | 실제 릴리스 확인, 설치, 60초 부팅 확정, rollback·전원 차단 |
+| 업데이트 host | 실제 `Firmware.cpp`·`AutoUpdate.cpp`·`BootConfirm.cpp`의 manifest·다운로드·서명·설치·일정·부팅 확정 검사 | host transport/flash adapter를 실제 flash 동작으로 계산하지 않음 |
+
+기기의 자격증명과 설정을 임의로 교체하지 않았으며 OTA 전송 성공으로 보고하지 않는다.
+물리 버튼과 LCD를 직접 조작·관찰하지 못한 항목도 통과 처리하지 않는다.

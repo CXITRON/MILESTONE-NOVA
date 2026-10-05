@@ -17,6 +17,13 @@ const ble_uuid128_t amsAttribute = BLE_UUID128_INIT(0xD7, 0xD5, 0xBB, 0x0B, 0x87
                                                     0xD8, 0x46, 0xAB, 0x23, 0x8C, 0xF3, 0xB2, 0xC6);
 const ble_uuid128_t amsRemote = BLE_UUID128_INIT(0xc2, 0x51, 0xca, 0xf7, 0x56, 0x0e, 0xdf, 0xb8,
                                                  0x8a, 0x4a, 0xb1, 0x57, 0xd8, 0x81, 0x3c, 0x9b);
+const char *stageName(int stage) {
+  static constexpr const char *names[]{"off",        "advertising", "securing", "service",
+                                       "characteristics", "descriptors", "subscribe",
+                                       "subscribe-remote", "track", "player", "queue",
+                                       "ready", "helper", "failed"};
+  return stage >= 0 && stage < int(sizeof(names) / sizeof(*names)) ? names[stage] : "?";
+}
 } // namespace
 BleMedia *BleMedia::instance_ = nullptr;
 void BleMedia::enqueue(const Event &e) {
@@ -90,7 +97,7 @@ int BleMedia::characteristic(uint16_t conn, const ble_gatt_error *error, const b
   instance_->enqueue(e);
   return 0;
 }
-int BleMedia::descriptor(uint16_t conn, const ble_gatt_error *error, uint16_t chr,
+int BleMedia::descriptor(uint16_t conn, const ble_gatt_error *error, uint16_t,
                          const ble_gatt_dsc *dsc, void *arg) {
   if (!instance_ || !error)
     return 0;
@@ -102,7 +109,6 @@ int BleMedia::descriptor(uint16_t conn, const ble_gatt_error *error, uint16_t ch
   if (!error->status && dsc) {
     e.kind = Kind::Descriptor;
     e.handle = dsc->handle;
-    e.end = chr;
     e.bytes[0] = ble_uuid_u16(&dsc->uuid.u) == 0x2902;
   }
   instance_->enqueue(e);
@@ -192,7 +198,8 @@ void BleMedia::discover(uint32_t now) {
   stage_ = Stage::Service;
   since_ = lastDiscover_ = now;
   const auto arg = reinterpret_cast<void *>(uintptr_t(++token_));
-  if (ble_gattc_disc_svc_by_uuid(connection_, &amsService.u, service, arg) != 0) {
+  if (const int rc = ble_gattc_disc_svc_by_uuid(connection_, &amsService.u, service, arg)) {
+    log("BLE", "AMS discovery start failed rc=%d", rc);
     stage_ = Stage::Helper;
     retry_ = now;
   }
@@ -258,6 +265,9 @@ void BleMedia::advance(uint32_t now) {
     return;
   }
   if (rc) {
+    // rc -1 means the step's handle was never found (e.g. no AMS service or CCCD).
+    log("BLE", "AMS %s failed rc=%d service=%u entity=%u cccd=%u", stageName(int(stage_)), rc,
+        serviceStart_, entity_, cccd_);
     stage_ = Stage::Helper;
     retry_ = now;
   }
@@ -272,6 +282,7 @@ void BleMedia::process(const Event &e, MediaSession &session, uint32_t now) {
     clearPeer();
     stage_ = Stage::Securing;
     since_ = now;
+    log("BLE", "connected; requesting pairing/encryption");
     helperActive_ = false;
     ams_.reset();
     helper_.reset();
@@ -365,15 +376,22 @@ void BleMedia::process(const Event &e, MediaSession &session, uint32_t now) {
       remote_ = e.handle;
     else if (e.bytes[0] == 3)
       attribute_ = e.handle;
-  } else if (e.kind == Kind::Descriptor) {
-    if (e.bytes[0] && e.end == entity_)
+  } else if (e.kind == Kind::Descriptor && e.bytes[0]) {
+    // Discovery spans the whole service, so NimBLE reports the range start rather than the
+    // owning characteristic; a CCCD belongs to the nearest preceding characteristic value.
+    uint16_t owner = 0;
+    for (const uint16_t value : {entity_, remote_, attribute_})
+      if (value && value < e.handle && value > owner)
+        owner = value;
+    if (owner && owner == entity_)
       cccd_ = e.handle;
-    if (e.bytes[0] && e.end == remote_)
+    else if (owner && owner == remote_)
       remoteCccd_ = e.handle;
   } else if (e.kind == Kind::Done) {
     if (!e.status || e.status == BLE_HS_EDONE)
       advance(now);
     else {
+      log("BLE", "AMS %s error status=0x%x", stageName(int(stage_)), e.status);
       stage_ = Stage::Helper;
       retry_ = now;
     }
@@ -417,11 +435,16 @@ void BleMedia::tick(MediaSession &session, uint32_t now) {
   }
   if (stage_ == Stage::Securing) {
     ble_gap_conn_desc desc{};
-    if (!ble_gap_conn_find(connection_, &desc) && desc.sec_state.encrypted)
+    if (!ble_gap_conn_find(connection_, &desc) && desc.sec_state.encrypted) {
+      log("BLE", "encrypted (bonded=%d); discovering AMS", int(desc.sec_state.bonded));
       discover(now);
-    else if (now - since_ > 15000)
+    }
+    else if (now - since_ > 15000) {
+      log("BLE", "pairing/encryption timed out");
       ble_gap_terminate(connection_, BLE_ERR_REM_USER_CONN_TERM);
+    }
   } else if (stage_ >= Stage::Service && stage_ <= Stage::Queue && now - since_ > 10000) {
+    log("BLE", "AMS %s timed out", stageName(int(stage_)));
     ble_gap_terminate(connection_, BLE_ERR_REM_USER_CONN_TERM);
     ++token_;
     stage_ = Stage::Helper;

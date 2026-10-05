@@ -66,8 +66,9 @@ all('nav button').forEach(b => b.onclick = run(async () => {
                             all('.page').forEach(p => p.hidden = p.id !== b.dataset.page);
                             all('nav button').forEach(n => n.classList.toggle('active', n === b));
                             if (b.dataset.page === 'media') await mediaList();
+                            // children ignores the whitespace text node left in the HTML.
                             if (b.dataset.page === 'settings' &&
-                                !$('#setting-list').childNodes.length)
+                                !$('#setting-list').children.length)
                               await settingsList();
                           }));
 all('[data-mode]').forEach(b => b.onclick = run(async () => {
@@ -78,6 +79,11 @@ all('[data-action]').forEach(b => b.onclick = run(async () => {
                                await action({op: b.dataset.action});
                                toast('요청을 적용했습니다.');
                              }));
+for (const [id, enabled] of [['auto-update-on', true], ['auto-update-off', false]])
+  $('#' + id).onclick = run(async () => {
+    await action({op: 'updateAuto', enabled});
+    toast(enabled ? 'AP 종료 후 새 정식 릴리스를 자동 설치합니다.' : '자동 업데이트를 껐습니다.');
+  });
 async function poll() {
   try {
     const s = await api('/api/status');
@@ -87,6 +93,9 @@ async function poll() {
         `${s.network.connected ? 'Wi-Fi 연결됨' : '설정 AP'} · ${s.sd ? 'SD 준비됨' : 'SD 없음'}`;
     $('#device-message').textContent = s.message;
     $('#diagnostics').textContent = s.diagnostics;
+    $('#auto-update-state').textContent = s.autoUpdate ?
+        '자동 업데이트 켜짐 · 부팅 2분 후 확인, 이후 15분 간격 · 설치 후 자동 재시작' :
+        '자동 업데이트 꺼짐 · 수동 확인과 설치 가능';
     $('#wifi-test').textContent = s.network.test;
     const overview = $('#overview');
     overview.replaceChildren();
@@ -153,76 +162,213 @@ $('#ap-form').onsubmit = run(async e => {
   e.target.password.value = '';
   toast('다음 AP부터 적용됩니다.');
 });
+const corePages = ['시계', 'D-Day', '메시지', '대시보드', '날짜 + 메시지', 'D-Day + 시계',
+                   '시스템', '집중 타이머', '환경'];
 const labels = {
-  lcd_brightness: 'LCD 밝기',
-  rgb_brightness: 'RGB 밝기',
-  heartbeat_brightness: '상태 LED 밝기',
-  message: '메시지',
-  label: '기기 이름',
-  temperature_offset: '온도 보정',
-  humidity_offset: '습도 보정',
-  temperature_low: '온도 낮음',
-  temperature_high: '온도 높음',
-  temperature_critical: '온도 위험',
-  humidity_low: '습도 낮음',
-  humidity_high: '습도 높음',
-  humidity_critical: '습도 위험',
-  fahrenheit: '화씨 표시',
-  sample_ms: '환경 측정 주기 (ms)',
-  log_seconds: '환경 기록 주기 (초)',
-  media_seconds: '미디어 기본 표시 시간 (초)',
-  media_sort: '미디어 정렬 (0 수동 / 1 이름 / 2 역순)',
-  now_layout: 'NOW 레이아웃 (0~3 아트/텍스트, 4 가사, 5 아트+가사)',
-  core_order: 'CORE 순서 (0~8 쉼표)',
-  core_mask: 'CORE 사용 화면 비트 마스크 (1~511)',
+  label: 'D-Day 제목 문구 (D-Day·시계·메시지 화면 상단)',
   dday: 'D-Day 날짜',
-  night_start: '야간 시작 (자정 이후 분)',
-  night_end: '야간 종료 (자정 이후 분)',
-  screen_off_minutes: '자동 화면 끄기 (분, 0 사용 안 함)'
+  dday_text: 'D-Day를 "12일 남음" 형식으로 표시',
+  after_complete: '지난 D-Day를 "완료"로 표시',
+  message: '메시지 문구 (부팅·D-Day·메시지·대시보드 화면)',
+  hour24: '24시간제',
+  seconds: '초 표시',
+  timezone: '시간대 (POSIX TZ, 예: KST-9)',
+  lcd_brightness: 'LCD 밝기',
+  display_inverted: 'LCD 색 반전',
+  luminance: '전체 밝기 보정 (%)',
+  contrast: '대비 보정',
+  screen_off_minutes: '자동 화면 끄기 (분, 0 사용 안 함)',
+  burnin: '번인 방지 (1분마다 1픽셀 이동)',
+  scroll: '긴 글자 흐르게 표시',
+  scroll_speed: '글자 흐름 속도 (px/초)',
+  align_left: '글자 왼쪽 정렬',
+  time_color: '시간 색',
+  date_color: '날짜 색',
+  message_color: '메시지 색',
+  event_color: 'D-Day 색',
+  accent_color: '강조 색',
+  muted_color: '보조 글자 색',
+  profile: '부팅 시 모드',
+  core_start: 'CORE 시작 화면',
+  core_mask: 'CORE 사용 화면',
+  core_order: 'CORE 화면 순서 (번호 쉼표 구분)',
+  cycle: 'CORE 화면 자동 전환',
+  cycle_seconds: '자동 전환 간격 (초)',
+  focus_seconds: '집중 타이머 기본 시간 (초)',
+  now_layout: 'NOW 레이아웃',
+  lyrics_view: '가사 표시와 온라인 가사 조회',
+  artwork_auto: '앨범아트 자동 조회',
+  artwork_cache_mb: '앨범아트 캐시 한도 (MB)',
+  artwork_free_mb: 'SD 최소 여유 공간 (MB)',
+  media_loop: '미디어 반복 재생',
+  media_autoplay: '미디어 자동 재생',
+  media_seconds: '미디어 기본 표시 시간 (초)',
+  media_sort: '미디어 정렬',
+  media_monochrome: '미디어 흑백 표시',
+  environment_enabled: '환경 센서 사용',
+  environment_mask: '환경 화면 표시 항목',
+  fahrenheit: '화씨 표시',
+  temperature_offset: '온도 보정 (°C)',
+  humidity_offset: '습도 보정 (%)',
+  temperature_low: '온도 낮음 기준 (°C)',
+  temperature_high: '온도 높음 기준 (°C)',
+  temperature_critical: '온도 위험 기준 (°C)',
+  humidity_low: '습도 낮음 기준 (%)',
+  humidity_high: '습도 높음 기준 (%)',
+  humidity_critical: '습도 위험 기준 (%)',
+  sample_ms: '환경 측정 주기 (ms)',
+  environment_log: '환경 CSV 기록',
+  log_seconds: '환경 기록 주기 (초)',
+  leds_enabled: 'RGB LED 사용',
+  rgb_brightness: 'RGB 밝기',
+  night_brightness: '야간 RGB 밝기 상한',
+  night_start: '야간 시작',
+  night_end: '야간 종료',
+  wifi_sleep: 'Wi-Fi 절전',
+  boot_sync: '부팅 시 시간 동기화',
+  ntp_seconds: '시간 동기화 주기 (초, 0 사용 안 함)',
+  retry_seconds: 'Wi-Fi 재시도 최대 간격 (초)',
+  lcd_hz: 'LCD SPI 클럭 (Hz)',
+  battery_gain: '배터리 전압 배율 보정',
+  battery_offset: '배터리 전압 오프셋 (V)',
+  thermal_warn: '칩 온도 경고 (°C)',
+  thermal_throttle: '칩 온도 감속 (°C)',
+  thermal_stop: '칩 온도 정지 (°C)'
 };
+const groups = [
+  ['시계 · D-Day · 메시지',
+   ['label', 'dday', 'dday_text', 'after_complete', 'message', 'hour24', 'seconds', 'timezone']],
+  ['화면', ['lcd_brightness', 'display_inverted', 'luminance', 'contrast', 'screen_off_minutes',
+          'burnin', 'scroll', 'scroll_speed', 'align_left']],
+  ['색상', ['time_color', 'date_color', 'message_color', 'event_color', 'accent_color',
+          'muted_color']],
+  ['모드 · CORE 화면', ['profile', 'core_start', 'core_mask', 'core_order', 'cycle', 'cycle_seconds',
+                     'focus_seconds']],
+  ['NOW · 가사 · 앨범아트', ['now_layout', 'lyrics_view', 'artwork_auto', 'artwork_cache_mb',
+                         'artwork_free_mb']],
+  ['MEDIA', ['media_loop', 'media_autoplay', 'media_seconds', 'media_sort', 'media_monochrome']],
+  ['환경 센서', ['environment_enabled', 'environment_mask', 'fahrenheit', 'temperature_offset',
+             'humidity_offset', 'temperature_low', 'temperature_high', 'temperature_critical',
+             'humidity_low', 'humidity_high', 'humidity_critical', 'sample_ms',
+             'environment_log', 'log_seconds']],
+  ['RGB LED · 야간', ['leds_enabled', 'rgb_brightness', 'night_brightness', 'night_start',
+                    'night_end']],
+  ['네트워크 · 시간 동기화', ['wifi_sleep', 'boot_sync', 'ntp_seconds', 'retry_seconds']],
+  ['고급', ['lcd_hz', 'battery_gain', 'battery_offset', 'thermal_warn', 'thermal_throttle',
+          'thermal_stop']]
+];
+const choices = {
+  profile: ['CORE', 'MEDIA', 'NOW'],
+  core_start: corePages,
+  now_layout: ['큰 아트 + 제목/아티스트', '작은 아트 + 상세', '텍스트', '큰 아트 + 제목/앨범',
+               '가사', '아트 + 가사'],
+  media_sort: ['수동', '이름순', '이름 역순']
+};
+const bits = {core_mask: corePages, environment_mask: ['온도', '습도']};
+const hex = n => n.toString(16).padStart(2, '0');
+const toHex = v => '#' + hex(Math.round((v >> 11) * 255 / 31)) +
+    hex(Math.round(((v >> 5) & 63) * 255 / 63)) + hex(Math.round((v & 31) * 255 / 31));
+const fromHex = h => {
+  const n = parseInt(h.slice(1), 16);
+  return ((n >> 19) & 31) << 11 | ((n >> 10) & 63) << 5 | ((n >> 3) & 31);
+};
+// Builds the input for one setting and returns [element, read()] where read() gives the API value.
+function control(spec, value) {
+  const name = spec.name;
+  if (choices[name] || spec.type === 5) {
+    const input = element('select');
+    const items = choices[name] || ['OFF', 'ON'];
+    items.forEach((text, index) => {
+      const option = element('option', choices[name] ? `${index} · ${text}` : text);
+      option.value = String(index);
+      input.append(option);
+    });
+    input.value = String(value);
+    return [input, () => input.value];
+  }
+  if (bits[name]) {
+    const box = element('div', undefined, 'bits'), checks = [];
+    bits[name].forEach((text, index) => {
+      const item = element('label'), check = element('input');
+      check.type = 'checkbox';
+      check.checked = (Number(value) >> index) & 1;
+      item.append(check, ' ' + text);
+      box.append(item);
+      checks.push(check);
+    });
+    return [box, () => String(checks.reduce((n, c, i) => n | (c.checked ? 1 << i : 0), 0))];
+  }
+  const input = element('input');
+  if (name.endsWith('_color')) {
+    input.type = 'color';
+    input.value = toHex(Number(value));
+    return [input, () => String(fromHex(input.value))];
+  }
+  if (name === 'night_start' || name === 'night_end') {
+    input.type = 'time';
+    input.value = String(Math.floor(value / 60)).padStart(2, '0') + ':' +
+        String(value % 60).padStart(2, '0');
+    return [input, () => {
+      const [h, m] = input.value.split(':').map(Number);
+      return String(h * 60 + m);
+    }];
+  }
+  if (spec.type === 6) {
+    input.type = name === 'dday' ? 'date' : 'text';
+    input.maxLength = spec.max - 1;
+  } else {
+    input.type = 'number';
+    input.min = spec.min;
+    input.max = spec.max;
+    input.step = spec.type === 4 ? '0.01' : '1';
+  }
+  input.value = value;
+  return [input, () => input.value];
+}
 async function settingsList() {
   const data = await api('/api/settings'), list = $('#setting-list');
   list.replaceChildren();
-  const specs = [
+  const specs = new Map([
     ...data.specs.filter(s => s.name !== 'ap_mode'), {name: 'dday', type: 6, max: 11},
     {name: 'core_order', type: 6, max: 18}
-  ];
-  for (const spec of specs) {
-    const row = element('div', undefined, 'setting'),
-          label = element('label', labels[spec.name] || spec.name);
-    label.append(element('small', spec.name));
-    const input = element(spec.type === 5 ? 'select' : 'input');
-    input.id = 'set-' + spec.name;
-    label.htmlFor = input.id;
-    if (spec.type === 5) {
-      for (const [value, text] of [['0', 'OFF'], ['1', 'ON']]) {
-        const option = element('option', text);
-        option.value = value;
-        input.append(option);
-      }
-    } else if (spec.type === 6) {
-      input.type = spec.name === 'dday' ? 'date' : 'text';
-      input.maxLength = spec.max - 1;
-    } else {
-      input.type = 'number';
-      input.min = spec.min;
-      input.max = spec.max;
-      input.step = spec.type === 4 ? '0.01' : '1';
+  ].map(s => [s.name, s]));
+  const grouped = new Set(groups.flatMap(([, names]) => names));
+  const rest = [...specs.keys()].filter(n => !grouped.has(n));
+  [...groups, ...(rest.length ? [['기타', rest]] : [])].forEach(([title, names], index) => {
+    const group = element('details', undefined, 'setting-group');
+    group.open = index === 0;
+    group.append(element('summary', title));
+    for (const name of names) {
+      const spec = specs.get(name);
+      if (!spec) continue;
+      const row = element('div', undefined, 'setting'),
+            label = element('label', labels[name] || name);
+      label.append(element('small', name));
+      const [input, read] = control(spec, data.values[name]);
+      input.id = 'set-' + name;
+      label.htmlFor = input.id;
+      row.append(label, input, button('저장', async () => {
+                   await api('/api/settings', {[name]: read()});
+                   toast((labels[name] || name) + ' 저장됨');
+                 }));
+      row.dataset.search = (title + ' ' + (labels[name] || '') + ' ' + name).toLowerCase();
+      group.append(row);
     }
-    input.value = data.values[spec.name];
-    row.append(label, input, button('저장', async () => {
-                 await api('/api/settings', {[spec.name]: input.value});
-                 toast((labels[spec.name] || spec.name) + ' 저장됨');
-               }));
-    row.dataset.search = (labels[spec.name] || '') + ' ' + spec.name;
-    list.append(row);
-  }
+    if (group.querySelector('.setting')) list.append(group);
+  });
 }
-$('#settings-filter').oninput = e =>
-    all('.setting')
-        .forEach(
-            row => row.hidden =
-                !row.dataset.search.toLowerCase().includes(e.target.value.toLowerCase()));
+$('#settings-filter').oninput = e => {
+  const query = e.target.value.trim().toLowerCase();
+  all('.setting-group').forEach(group => {
+    let visible = 0;
+    group.querySelectorAll('.setting').forEach(row => {
+      row.hidden = query && !row.dataset.search.includes(query);
+      visible += !row.hidden;
+    });
+    group.hidden = !visible;
+    if (query) group.open = true;
+  });
+};
 async function mediaList() {
   const entries = await api('/api/media'), list = $('#media-list');
   list.replaceChildren();

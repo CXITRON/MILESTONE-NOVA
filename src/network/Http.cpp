@@ -1,6 +1,8 @@
 #include "Http.h"
 #include <cstring>
 #include <esp_crt_bundle.h>
+#include <new>
+#include <strings.h>
 namespace nova {
 Http::~Http() {
   if (client_) {
@@ -8,9 +10,26 @@ Http::~Http() {
     esp_http_client_cleanup(client_);
   }
 }
-bool Http::open(const char *url, const char *form, unsigned timeoutMs) {
-  if (client_ || !url || strncmp(url, "https://", 8))
+esp_err_t Http::event(esp_http_client_event_t *event) {
+  auto &self = *static_cast<Http *>(event->user_data);
+  if (event->event_id == HTTP_EVENT_ON_HEADER && self.location_ && event->header_key &&
+      !strcasecmp(event->header_key, "Location") && event->header_value) {
+    if (self.location_[0] || strlen(event->header_value) > 2048)
+      self.invalidLocation_ = true;
+    else
+      strcpy(self.location_.get(), event->header_value);
+  }
+  return ESP_OK;
+}
+bool Http::open(const char *url, const char *form, unsigned timeoutMs, RedirectPolicy redirect) {
+  if (client_ || !url || strncmp(url, "https://", 8) ||
+      (redirect && (form || !redirect(url))))
     return false;
+  if (redirect) {
+    location_.reset(new (std::nothrow) char[2049]{});
+    if (!location_)
+      return false;
+  }
   esp_http_client_config_t config{};
   config.url = url;
   config.timeout_ms = timeoutMs;
@@ -19,6 +38,8 @@ bool Http::open(const char *url, const char *form, unsigned timeoutMs) {
   config.buffer_size = 4096;
   config.buffer_size_tx = 2048;
   config.user_agent = "MILESTONE-NOVA/1";
+  config.event_handler = event;
+  config.user_data = this;
   client_ = esp_http_client_init(&config);
   if (!client_)
     return false;
@@ -36,9 +57,23 @@ bool Http::open(const char *url, const char *form, unsigned timeoutMs) {
       return false;
     at += written;
   }
-  length_ = esp_http_client_fetch_headers(client_);
-  status_ = esp_http_client_get_status_code(client_);
-  return status_ == 200;
+  for (unsigned hop = 0;; ++hop) {
+    length_ = esp_http_client_fetch_headers(client_);
+    status_ = esp_http_client_get_status_code(client_);
+    if (status_ == 200)
+      return true;
+    const bool moved = status_ == 301 || status_ == 302 || status_ == 303 ||
+                       status_ == 307 || status_ == 308;
+    if (!redirect || !moved || hop == 4 || invalidLocation_ || !location_[0] ||
+        !redirect(location_.get()))
+      return false;
+    esp_http_client_close(client_);
+    if (esp_http_client_set_url(client_, location_.get()) != ESP_OK)
+      return false;
+    location_[0] = 0;
+    if (esp_http_client_open(client_, 0) != ESP_OK)
+      return false;
+  }
 }
 int Http::read(uint8_t *p, size_t n) {
   return client_ ? esp_http_client_read(client_, reinterpret_cast<char *>(p), n) : -1;

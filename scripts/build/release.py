@@ -7,6 +7,7 @@ import argparse
 import hashlib
 import json
 import os
+import re
 from pathlib import Path
 import subprocess
 import sys
@@ -14,7 +15,8 @@ import tempfile
 from urllib.parse import urlsplit
 
 TARGET = "milestone-nova-s3"
-PREFIX = "/CXITRON/MILESTONE-NOVA/"
+PREFIX = "/CXITRON/MILESTONE-NOVA/releases/download/"
+VERSION = re.compile(r"(?:0|[1-9][0-9]{0,5})\.(?:0|[1-9][0-9]{0,5})\.(?:0|[1-9][0-9]{0,5})")
 
 
 def image_version(data):
@@ -24,8 +26,8 @@ def image_version(data):
             or data[80:112].split(b"\0")[0] != b"MILESTONE-NOVA"):
         raise ValueError("Input must be the unsigned NOVA ESP32-S3 application image")
     version = data[48:80].split(b"\0")[0].decode("ascii")
-    if not version or any(c.isspace() for c in version):
-        raise ValueError("Application descriptor has no valid version")
+    if not VERSION.fullmatch(version):
+        raise ValueError("Stable application version must be major.minor.patch")
     return version
 
 
@@ -34,7 +36,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--input", type=Path, default=root / "build/firmware/Nova.ino.bin")
     parser.add_argument("--key", type=Path, required=True, help="RSA-2048..4096 private PEM")
-    parser.add_argument("--url", required=True, help="Final raw GitHub URL of signed image")
+    parser.add_argument("--url", required=True, help="GitHub Releases download URL under the matching v<version> tag")
     parser.add_argument("--output-dir", type=Path, required=True)
     parser.add_argument("--core", type=Path, default=Path(os.environ.get(
         "NOVA_CORE", Path.home() / ".arduino15/packages/esp32/hardware/esp32/3.3.11")))
@@ -43,17 +45,18 @@ def main():
         from cryptography.hazmat.primitives import hashes, serialization
         from cryptography.hazmat.primitives.asymmetric import padding, rsa
 
-        url = urlsplit(args.url)
-        if (url.scheme != "https" or url.netloc != "raw.githubusercontent.com"
-                or not url.path.startswith(PREFIX) or not url.path.endswith(".bin")
-                or "/../" in url.path or url.query or url.fragment or len(args.url) >= 256):
-            raise ValueError("URL must identify a signed .bin in CXITRON/MILESTONE-NOVA")
         firmware = args.input.read_bytes()
         version = image_version(firmware)
+        url = urlsplit(args.url)
+        expected = PREFIX + "v" + version + "/"
+        image_name = url.path[len(expected):] if url.path.startswith(expected) else ""
+        if (url.scheme != "https" or url.netloc != "github.com"
+                or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,91}\.bin", image_name)
+                or url.query or url.fragment or len(args.url) >= 256):
+            raise ValueError("URL must identify a NOVA GitHub Releases .bin under v" + version)
         key = serialization.load_pem_private_key(args.key.read_bytes(), password=None)
         if not isinstance(key, rsa.RSAPrivateKey) or not 2048 <= key.key_size <= 4096:
             raise ValueError("Expected an RSA-2048..4096 private key")
-        image_name = url.path.rsplit("/", 1)[1]
         args.output_dir.mkdir(parents=True, exist_ok=True)
         paths = [args.output_dir / image_name, args.output_dir / "stable.json"]
         if any(path.exists() for path in paths):

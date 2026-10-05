@@ -2,6 +2,7 @@
 #include "core/Logic.h"
 #include "core/Text.h"
 #include "input/Button.h"
+#include "input/InputEvents.h"
 #include "lyrics/Lyrics.h"
 #include "media/AmsDecoder.h"
 #include "media/HelperProtocol.h"
@@ -23,6 +24,63 @@ void check(bool condition) {
     std::cerr << "Check " << checks << " failed\n";
     std::abort();
   }
+}
+void inputBacklogTests() {
+  InputEvents keys;
+  std::array<bool, 5> pressed{};
+  InputEvent event;
+  keys.begin(pressed, 0);
+  // Producer keeps sampling during a 600 ms render stall; the consumer runs only at the end.
+  for (uint32_t now = 0; now <= 600; now += 5) {
+    pressed[0] = now >= 70 && now < 160;
+    pressed[2] = now >= 250 && now < 340;
+    pressed[4] = now >= 430 && now < 520;
+    keys.sample(pressed, now);
+  }
+  for (Key expected : {Key::Back, Key::Ok, Key::Menu})
+    check(keys.pop(event) && event.key == expected && event.press == Press::Short);
+  check(!keys.pop(event) && keys.dropped() == 0);
+  // Held repeat keys cannot starve an independent short MENU during a five-second stall.
+  pressed = {};
+  keys.begin(pressed, 0);
+  for (uint32_t now = 0; now <= 5000; now += 5) {
+    pressed[1] = now >= 40 && now < 4800;
+    pressed[4] = now >= 3000 && now < 3090;
+    keys.sample(pressed, now);
+  }
+  check(keys.pop(event) && event.key == Key::Prev && event.press == Press::Long);
+  check(keys.pop(event) && event.key == Key::Prev && event.press == Press::Repeat);
+  check(keys.pop(event) && event.key == Key::Menu && event.press == Press::Short);
+  check(!keys.pop(event) && keys.dropped() == 0);
+  // Preserve wake suppression and debounce, including millis wrap and simultaneous buttons.
+  pressed.fill(true);
+  keys.begin(pressed, 0xfffffe00U);
+  keys.sample(pressed, 0xffffff00U);
+  pressed.fill(false);
+  keys.sample(pressed, 0xfffffff0U);
+  keys.sample(pressed, 0x20U);
+  check(!keys.pop(event));
+  pressed.fill(true);
+  keys.sample(pressed, 0x40U);
+  keys.sample(pressed, 0x65U);
+  pressed.fill(false);
+  keys.sample(pressed, 0xa0U);
+  keys.sample(pressed, 0xc0U);
+  for (unsigned i = 0; i < 5; ++i)
+    check(keys.pop(event) && event.key == static_cast<Key>(i) && event.press == Press::Short);
+  check(!keys.pop(event));
+  // A bounded queue reports saturation rather than silently losing discrete presses.
+  keys.begin(pressed, 0);
+  for (uint32_t now = 0; now <= 8000; now += 5) {
+    pressed[2] = now % 160 < 80;
+    keys.sample(pressed, now);
+  }
+  unsigned count = 0;
+  while (keys.pop(event)) {
+    check(event.key == Key::Ok && event.press == Press::Short);
+    ++count;
+  }
+  check(count == 32 && keys.dropped() == 18);
 }
 void textTests() {
   char text[64];
@@ -264,6 +322,7 @@ int main() {
   textTests();
   logicTests();
   buttonTests();
+  inputBacklogTests();
   lyricTests();
   mediaTests();
   amsTests();

@@ -51,7 +51,8 @@ void Ui::render(Canvas &c, const View &v) {
     c.rect(94, 73, 52, 4, c.accent());
     c.text(0, 112, 240, 48, "NOVA", color::white, 3, true);
     c.text(0, 170, 240, 20, "MILESTONE", c.accent(), 1, true);
-    c.text(16, 223, 208, 40, "오늘도 한 걸음", c.muted(), 1, true);
+    if (v.settings)
+      c.text(16, 223, 208, 54, v.settings->message, v.settings->messageColor, 1, true);
     return;
   }
   chrome(c, v);
@@ -76,23 +77,28 @@ void Ui::render(Canvas &c, const View &v) {
   case Screen::Setup:
     c.text(16, 78, 208, 36, "MILESTONE-NOVA-SETUP", color::white, 1, true);
     c.text(16, 128, 208, 24, "AP PASSWORD", c.muted(), 1, true);
-    c.text(16, 155, 208, 60, v.apPassword[0] ? v.apPassword : "OPEN · 암호 없음", c.accent(), 1,
+    c.text(16, 155, 208, 60, v.apPassword[0] ? v.apPassword : "OPEN / 암호 없음", c.accent(), 1,
            true);
     c.text(16, 222, 208, 24, "http://192.168.4.1", color::white, 1, true);
     c.text(16, 254, 208, 22, "BACK으로 AP 종료", c.muted(), 1, true);
     break;
   case Screen::Updates:
   case Screen::Recovery: {
-    static constexpr const char *items[]{"인터넷 버전 확인", "서명 후보 다운로드", "SD 후보 검증",
-                                         "이전 검증 펌웨어 복구"};
-    for (unsigned i = 0; i < 4; ++i) {
-      const int y = 78 + i * 29;
+    static constexpr const char *items[]{"새 버전 확인", "다운로드 + 서명 검증",
+                                         "이전 펌웨어로 복구"};
+    char current[32];
+    snprintf(current, sizeof(current), "현재 v%s", board::version);
+    c.text(112, 39, 112, 20, current, c.muted());
+    for (unsigned i = 0; i < 3; ++i) {
+      const int y = 82 + i * 29;
       if (i == v.recoveryItem)
         c.rect(10, y - 3, 220, 27, color::panel);
       c.text(18, y, 204, 22, items[i], i == v.recoveryItem ? c.accent() : c.muted());
     }
-    c.text(16, 204, 208, 52, v.updateStatus, color::white, 1, true);
-    c.text(16, 260, 208, 26, v.updateReady ? "길게 OK: 설치 확인" : "복구: 항목 선택 후 길게 OK",
+    c.text(16, 176, 208, 80, v.updateStatus, color::white, 1, true);
+    c.text(16, 260, 208, 26,
+           v.updateReady ? "길게 OK: 설치 후 재시작"
+                         : v.recoveryItem == 2 ? "길게 OK: 이전 버전 복구" : "OK: 실행",
            color::warning, 1, true);
     progressBar(c, 289, v.updateProgress, 100);
     break;
@@ -111,7 +117,7 @@ void Ui::render(Canvas &c, const View &v) {
     break;
   }
   if (v.syncStale && v.screen == Screen::Media)
-    c.text(16, 263, 208, 20, "동기 신호 끊김 · 정지", color::warning, 1, true);
+    c.text(16, 263, 208, 20, "동기 신호 끊김 / 정지", color::warning, 1, true);
   if (v.notice && v.notice[0]) {
     c.rect(8, 264, 224, 29, color::panel);
     c.text(14, 268, 212, 20, v.notice, color::warning);

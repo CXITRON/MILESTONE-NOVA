@@ -5,6 +5,5 @@ inline constexpr char artwork[] =
     "https://milestone-artwork.typhoon-individual.workers.dev/v3/artwork";
 // Same gateway: synced LRC text (UTF-8, at most 32 KiB) or 204 when none is known.
 inline constexpr char lyrics[] = "https://milestone-artwork.typhoon-individual.workers.dev/v1/lyrics";
-inline constexpr char manifest[] =
-    "https://raw.githubusercontent.com/CXITRON/MILESTONE-NOVA/main/releases/stable.json";
+inline constexpr char releases[] = "https://github.com/CXITRON/MILESTONE-NOVA/releases";
 } // namespace nova::endpoints

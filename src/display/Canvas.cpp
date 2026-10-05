@@ -68,16 +68,100 @@ void Canvas::glyphLine(u8g2_t *f, u8g2_uint_t x, u8g2_uint_t y, u8g2_uint_t n, u
     c.rect(c.ox_ + int(x) * c.scale_, c.oy_ + int(y) * c.scale_, (dir ? 1 : n) * c.scale_,
            (dir ? n : 1) * c.scale_, c.ink_);
 }
+namespace {
+// Punctuation that neither Unifont face has (common in track titles) is drawn as the closest
+// ASCII shape instead of '?'. Stored text, metadata and track keys are never changed.
+uint32_t asciiLookalike(uint32_t cp) {
+  switch (cp) {
+  case 0x00b7: // middle dot
+  case 0x2022: // bullet
+  case 0x2027:
+  case 0x2219:
+  case 0x22c5:
+  case 0x2010: // hyphens, en/em dashes, horizontal bar, minus
+  case 0x2011:
+  case 0x2012:
+  case 0x2013:
+  case 0x2014:
+  case 0x2015:
+  case 0x2212:
+    return '-';
+  case 0x2018: // single quotes and prime
+  case 0x2019:
+  case 0x201a:
+  case 0x201b:
+  case 0x2032:
+    return '\'';
+  case 0x201c: // double quotes and double prime
+  case 0x201d:
+  case 0x201e:
+  case 0x2033:
+    return '"';
+  case 0x2026: // ellipsis
+    return '.';
+  case 0x00b0: // degree
+    return 'o';
+  case 0x00d7: // multiplication
+    return 'x';
+  case 0x2190:
+    return '<';
+  case 0x2192:
+    return '>';
+  case 0x2191:
+    return '^';
+  case 0x2193:
+    return 'v';
+  case 0x00a0: // spaces
+  case 0x2002:
+  case 0x2003:
+  case 0x2009:
+  case 0x202f:
+    return ' ';
+  default:
+    return '?';
+  }
+}
+} // namespace
+int Canvas::selectGlyph(uint32_t &cp) {
+  // Unifont Japanese omits halfwidth kana. Render their fullwidth equivalents
+  // without changing stored metadata, track keys or lyric text.
+  static constexpr uint16_t halfwidthKana[]{
+      0x3002, 0x300c, 0x300d, 0x3001, 0x30fb, 0x30f2, 0x30a1, 0x30a3, 0x30a5,
+      0x30a7, 0x30a9, 0x30e3, 0x30e5, 0x30e7, 0x30c3, 0x30fc, 0x30a2, 0x30a4,
+      0x30a6, 0x30a8, 0x30aa, 0x30ab, 0x30ad, 0x30af, 0x30b1, 0x30b3, 0x30b5,
+      0x30b7, 0x30b9, 0x30bb, 0x30bd, 0x30bf, 0x30c1, 0x30c4, 0x30c6, 0x30c8,
+      0x30ca, 0x30cb, 0x30cc, 0x30cd, 0x30ce, 0x30cf, 0x30d2, 0x30d5, 0x30d8,
+      0x30db, 0x30de, 0x30df, 0x30e0, 0x30e1, 0x30e2, 0x30e4, 0x30e6, 0x30e8,
+      0x30e9, 0x30ea, 0x30eb, 0x30ec, 0x30ed, 0x30ef, 0x30f3, 0x309b, 0x309c,
+  };
+  if (cp >= 0xff61 && cp <= 0xff9f)
+    cp = halfwidthKana[cp - 0xff61];
+  if (cp > 0xffff)
+    cp = '?';
+  // Prefer Japanese forms for kana/kanji; keep the existing Korean/Latin glyphs.
+  const bool japanese = (cp >= 0x2e80 && cp <= 0x9fff) ||
+                        (cp >= 0xf900 && cp <= 0xfaff) || (cp >= 0xff00 && cp <= 0xffef);
+  const auto *primary = japanese ? u8g2_font_unifont_t_japanese3 : u8g2_font_unifont_t_korean2;
+  const auto *fallback = japanese ? u8g2_font_unifont_t_korean2 : u8g2_font_unifont_t_japanese3;
+  u8g2_SetFont(&font_, primary);
+  int advance = u8g2_GetGlyphWidth(&font_, cp);
+  if (advance <= 0) {
+    u8g2_SetFont(&font_, fallback);
+    advance = u8g2_GetGlyphWidth(&font_, cp);
+  }
+  if (advance <= 0) {
+    cp = asciiLookalike(cp);
+    u8g2_SetFont(&font_, u8g2_font_unifont_t_korean2);
+    advance = u8g2_GetGlyphWidth(&font_, cp);
+  }
+  return advance;
+}
 int Canvas::textWidth(std::string_view text, int scale) {
   size_t p = 0;
   int w = 0;
   while (p < text.size()) {
     auto cp = nextCodepoint(text, p);
-    if (cp > 0xFFFF)
-      cp = '?';
-    int advance = u8g2_GetGlyphWidth(&font_, cp);
-    if (advance <= 0)
-      advance = 8;
+    const int advance = selectGlyph(cp);
     w += advance * scale;
   }
   return w;
@@ -101,9 +185,7 @@ void Canvas::text(int x, int y, int w, int h, std::string_view value, uint16_t c
       auto cp = nextCodepoint(value, next);
       if (cp == '\n')
         break;
-      int advance = cp <= 0xFFFF ? u8g2_GetGlyphWidth(&font_, cp) : 0;
-      if (advance <= 0)
-        advance = 8;
+      const int advance = selectGlyph(cp);
       if (width + advance * scale_ > w)
         break;
       width += advance * scale_;
@@ -115,11 +197,7 @@ void Canvas::text(int x, int y, int w, int h, std::string_view value, uint16_t c
     size_t p = start;
     while (p < pos) {
       auto cp = nextCodepoint(value, p);
-      int advance = cp <= 0xFFFF ? u8g2_GetGlyphWidth(&font_, cp) : 0;
-      if (advance <= 0) {
-        cp = '?';
-        advance = 8;
-      }
+      const int advance = selectGlyph(cp);
       ox_ = left;
       oy_ = row;
       u8g2_DrawGlyph(&font_, 0, 14, cp);
@@ -158,11 +236,7 @@ void Canvas::marquee(int x, int y, int w, std::string_view value, uint16_t color
   size_t pos = 0;
   while (pos < value.size()) {
     auto cp = nextCodepoint(value, pos);
-    int advance = cp <= 0xffff ? u8g2_GetGlyphWidth(&font_, cp) : 0;
-    if (advance <= 0) {
-      cp = '?';
-      advance = 8;
-    }
+    const int advance = selectGlyph(cp);
     ox_ = left;
     oy_ = y;
     u8g2_DrawGlyph(&font_, 0, 14, cp);

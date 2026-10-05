@@ -1,0 +1,20 @@
+#pragma once
+namespace nova {
+// NOVA RSA-4096 public release key prepared in C0004. Never embed the private key.
+// DER SHA-256: 85b995a2617c54aef4df95db5a10786d491b283c90dcad25d8c25ef9c8dba5e0
+inline constexpr char releasePublicKey[] = R"pem(-----BEGIN PUBLIC KEY-----
+MIICIjANBgkqhkiG9w0BAQEFAAOCAg8AMIICCgKCAgEA4EpVj5UJXxVaadpCSPet
+VBQq33h3oemKk8DYDEA9IbDJrxB7OTmQYXDkpFCiE7fd5N8WDdej5/4FHx9mccrJ
+C0Dhz5IZ0Mm5fO8AC5yVNvQc6oejH6tIu1vrTxgvGHmgIbrvMljZOLuSMJ8y989K
+b+5gI6Z9FUImdIyB0DwQLtV4t8CKiRkleA4vVI47VLjT4AR7doJRUIXf2amQuUV/
+GFtWSf2YzL22RTLTt2ZhoVgGpAqaeMhxixqs9IFNTVQujmsTQj7YCyI4JwnqDYjd
+qN0vPRyxM5pKQST0ihn9R2thsNgtMVyDl+rA8kAaXRekzlgDxH3NDYfY7oEVq7f/
+6ABvRQM+r4VYF32h0VGIfu3HxyW6VU2I8jQ9x84zX5zBH3JeNh/jCD8jTG9zureW
+piEC1TPk/SQB8xvU2WUpKSBkje594CPnSZf/ueq9GnsFJeyi9J5FukYj5X9/IQdG
+xYZIhnEFVQCtCq9rVwLhwBKzJdW0zPYmrFBD006Yr9Z1ODjl3o4lnK9mBwrYgogr
+cvRf8WtZ1dKdpwEZ6Qhr7aVAyN7XmGszDpRvNaROA63f4Lgt7tH+J6BLMMrNR4cW
+xIbQ1eTulYmF5mXx2Ham4sLTLT8IqglD6Bo2D8w5NCa2iMv1AJPC8T2xHcxxhJE4
+aXDCxYPtWv+RLC+LB/KHsycCAwEAAQ==
+-----END PUBLIC KEY-----
+)pem";
+} // namespace nova

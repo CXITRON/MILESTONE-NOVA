@@ -32,6 +32,7 @@ public:
   int textWidth(std::string_view value, int scale = 1);
 
 private:
+  int selectGlyph(uint32_t &codepoint);
   static void glyphLine(u8g2_t *font, u8g2_uint_t x, u8g2_uint_t y, u8g2_uint_t len, uint8_t dir);
   uint16_t *pixels_ = nullptr;
   struct FontContext : u8g2_t {

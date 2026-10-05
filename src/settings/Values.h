@@ -9,6 +9,7 @@ struct Settings {
   uint32_t focusSeconds = 1500;
   uint16_t ddayYear = 2027;
   uint8_t ddayMonth = 1, ddayDay = 1;
+  // heartbeatBrightness is unused (status LEDs removed) but kept for the stored NVS layout.
   uint8_t lcdBrightness = 160, rgbBrightness = 24, heartbeatBrightness = 24;
   bool lyricsView = true, displayInverted = true;
   float batteryGain = 1.0f, batteryOffset = 0.0f;
@@ -48,6 +49,8 @@ struct WifiProfile {
 struct Secrets {
   char ssid[33]{};
   char password[65]{};
+  // Unused since the app only updates from signed GitHub releases; kept so the stored Secrets
+  // record (Wi-Fi profiles) keeps its size and stays readable.
   char otaPassword[65]{};
   char otaPublicKey[1024]{};
   char apPassword[65]{};

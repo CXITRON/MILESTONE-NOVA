@@ -1,8 +1,11 @@
 #include "Firmware.h"
+#include "Release.h"
+#include "Trust.h"
 #include "../core/Text.h"
 #include "../network/Endpoints.h"
 #include "../network/Http.h"
 #include <SHA2Builder.h>
+#include <Preferences.h>
 #include <Update.h>
 #include <algorithm>
 #include <cJSON.h>
@@ -13,9 +16,9 @@
 #include <esp_ota_ops.h>
 #include <mbedtls/pk.h>
 namespace nova {
-void Firmware::begin(Storage &s, const char *key) {
+void Firmware::begin(Storage &s, const char *override) {
   storage_ = &s;
-  cleanUtf8(key_, sizeof(key_), key);
+  cleanUtf8(key_, sizeof(key_), override && override[0] ? override : releasePublicKey);
   mutex_ = xSemaphoreCreateMutex();
   bytes_ = static_cast<uint8_t *>(heap_caps_malloc(8192, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
 }
@@ -35,9 +38,19 @@ void Firmware::status(char *out, size_t capacity) {
   cleanUtf8(out, capacity, status_);
   xSemaphoreGive(mutex_);
 }
+void Firmware::latest(char *out, size_t capacity) {
+  if (!mutex_) {
+    cleanUtf8(out, capacity, "");
+    return;
+  }
+  xSemaphoreTake(mutex_, portMAX_DELAY);
+  cleanUtf8(out, capacity, url_[0] ? version_ : "");
+  xSemaphoreGive(mutex_);
+}
 bool Firmware::request(Work work) {
   if (!mutex_ || !bytes_ || busy() || work == Work::None ||
-      (work == Work::Install && state_ != State::Ready) || (work == Work::Download && !url_[0]))
+      ((work == Work::Install || work == Work::AutoInstall) && state_ != State::Ready) ||
+      (work == Work::Download && !url_[0]))
     return false;
   if (work == Work::Install)
     message("Installing verified candidate");
@@ -47,11 +60,15 @@ bool Firmware::request(Work work) {
 bool Firmware::check() {
   url_[0] = 0;
   size_ = 0;
+  preparedSize_ = 0;
+  releaseCandidate_ = false;
   Http http;
   uint8_t data[2049];
   size_t at = 0;
-  if (!http.open(endpoints::manifest)) {
-    message("NOVA release manifest unavailable");
+  char manifest[192];
+  snprintf(manifest, sizeof(manifest), "%s/latest/download/stable.json", endpoints::releases);
+  if (!http.open(manifest, nullptr, 8000, releaseRedirect)) {
+    message("릴리스 정보를 받지 못했습니다 (Wi-Fi/게시 여부 확인)");
     return false;
   }
   while (at < sizeof(data) - 1) {
@@ -69,19 +86,24 @@ bool Firmware::check() {
     return false;
   }
   data[at] = 0;
-  auto *root = cJSON_Parse(reinterpret_cast<char *>(data));
+  auto *root = strlen(reinterpret_cast<char *>(data)) == at
+                   ? cJSON_ParseWithLengthOpts(reinterpret_cast<char *>(data), at + 1, nullptr, true)
+                   : nullptr;
   if (!root) {
     message("Release manifest is not valid JSON");
     return false;
   }
-  auto *target = cJSON_GetObjectItem(root, "target"),
-       *version = cJSON_GetObjectItem(root, "version"), *url = cJSON_GetObjectItem(root, "url"),
-       *size = cJSON_GetObjectItem(root, "size"), *hash = cJSON_GetObjectItem(root, "sha256");
+  auto *target = cJSON_GetObjectItemCaseSensitive(root, "target"),
+       *version = cJSON_GetObjectItemCaseSensitive(root, "version"),
+       *url = cJSON_GetObjectItemCaseSensitive(root, "url"),
+       *size = cJSON_GetObjectItemCaseSensitive(root, "size"),
+       *hash = cJSON_GetObjectItemCaseSensitive(root, "sha256");
+  int order = 0;
   bool ok = cJSON_IsString(target) && !strcmp(target->valuestring, "milestone-nova-s3") &&
             cJSON_IsString(version) && strlen(version->valuestring) < sizeof(version_) &&
+            compareReleaseVersions(version->valuestring, board::version, order) &&
             cJSON_IsString(url) && strlen(url->valuestring) < sizeof(url_) &&
-            !strncmp(url->valuestring, "https://raw.githubusercontent.com/CXITRON/MILESTONE-NOVA/",
-                     strlen("https://raw.githubusercontent.com/CXITRON/MILESTONE-NOVA/")) &&
+            releaseAssetUrl(url->valuestring, version->valuestring) &&
             cJSON_IsNumber(size) && size->valuedouble >= 1024 && size->valuedouble <= 6291456 &&
             size->valuedouble == uint32_t(size->valuedouble) && cJSON_IsString(hash) &&
             strlen(hash->valuestring) == 64;
@@ -90,21 +112,28 @@ bool Firmware::check() {
       if (!((*p >= '0' && *p <= '9') || (*p >= 'a' && *p <= 'f')))
         ok = false;
   }
-  if (ok) {
+  if (ok && order > 0) {
     strcpy(url_, url->valuestring);
     strcpy(version_, version->valuestring);
     strcpy(hash_, hash->valuestring);
     size_ = size->valuedouble;
-    message(version_);
+    char text[96];
+    snprintf(text, sizeof(text), "새 버전 v%s 사용 가능 (현재 v%s)", version_, board::version);
+    message(text);
+  } else if (ok) {
+    char text[64];
+    snprintf(text, sizeof(text), "최신 버전입니다 (v%s)", board::version);
+    message(text);
   }
   cJSON_Delete(root);
   if (!ok)
-    message("Invalid NOVA manifest");
+    message("올바르지 않은 릴리스 정보");
   return ok;
 }
 bool Firmware::download() {
   Http http;
-  if (!http.open(url_) || (http.length() >= 0 && http.length() != size_)) {
+  if (!http.open(url_, nullptr, 8000, releaseRedirect) ||
+      (http.length() >= 0 && http.length() != size_)) {
     message("Download unavailable or wrong size");
     return false;
   }
@@ -118,6 +147,12 @@ bool Firmware::download() {
     message(job.error);
     return false;
   }
+  const auto fail = [this, &job](const char *reason) {
+    message(reason);
+    job.op = FileOp::UploadAbort;
+    storage_->execute(job);
+    return false;
+  };
   uint8_t *bytes = bytes_;
   uint32_t offset = 0;
   const uint32_t started = millis();
@@ -125,13 +160,11 @@ bool Firmware::download() {
   hash.begin();
   while (offset < size_) {
     if (millis() - started > 300000) {
-      message("Download timeout; current firmware retained");
-      return false;
+      return fail("Download timeout; current firmware retained");
     }
     const int n = http.read(bytes, std::min<uint32_t>(8192, size_ - offset));
     if (n <= 0) {
-      message("Download interrupted; candidate not selected");
-      return false;
+      return fail("Download interrupted; candidate not selected");
     }
     hash.add(bytes, n);
     job.op = FileOp::UploadChunk;
@@ -140,8 +173,7 @@ bool Firmware::download() {
     job.offset = offset;
     job.checksum = crc32(bytes, n);
     if (!storage_->execute(job)) {
-      message(job.error);
-      return false;
+      return fail(job.error);
     }
     offset += n;
     progress_ = uint64_t(offset) * 100 / size_;
@@ -151,17 +183,16 @@ bool Firmware::download() {
   const int remaining = http.read(&extra, 1);
   hash.calculate();
   if (remaining != 0 || !http.complete() || hash.toString() != hash_) {
-    message("Download SHA256 mismatch");
-    return false;
+    return fail("Download SHA256 mismatch");
   }
   job.op = FileOp::UploadCommit;
   if (!storage_->execute(job)) {
-    message(job.error);
-    return false;
+    return fail(job.error);
   }
-  return prepare();
+  return prepare(true);
 }
-bool Firmware::prepare() {
+bool Firmware::prepare(bool release) {
+  releaseCandidate_ = false;
   mbedtls_pk_context key;
   mbedtls_pk_init(&key);
   const bool validKey = key_[0] &&
@@ -171,7 +202,7 @@ bool Firmware::prepare() {
                         mbedtls_pk_get_bitlen(&key) >= 2048 && mbedtls_pk_get_bitlen(&key) <= 4096;
   mbedtls_pk_free(&key);
   if (!validKey) {
-    message("Provision a NOVA RSA public key first");
+    message("Built-in release key invalid");
     return false;
   }
   FileJob job;
@@ -197,12 +228,19 @@ bool Firmware::prepare() {
   memcpy(&desc, bytes + sizeof(header) + sizeof(esp_image_segment_header_t), sizeof(desc));
   if (header.magic != ESP_IMAGE_HEADER_MAGIC || header.chip_id != ESP_CHIP_ID_ESP32S3 ||
       desc.magic_word != ESP_APP_DESC_MAGIC_WORD ||
-      strncmp(desc.project_name, "MILESTONE-NOVA", sizeof(desc.project_name))) {
+      strncmp(desc.project_name, "MILESTONE-NOVA", sizeof(desc.project_name)) ||
+      !memchr(desc.version, 0, sizeof(desc.version))) {
     message("Candidate is not a NOVA ESP32-S3 image");
     return false;
   }
+  if (release && strcmp(desc.version, version_)) {
+    message("Release version does not match signed image");
+    return false;
+  }
   SHA256Builder hash;
+  SHA256Builder entire;
   hash.begin();
+  entire.begin();
   for (uint32_t at = 0; at < total - 512;) {
     job.offset = at;
     job.length = std::min<uint32_t>(8192, total - 512 - at);
@@ -211,6 +249,7 @@ bool Firmware::prepare() {
       return false;
     }
     hash.add(bytes, job.actual);
+    entire.add(bytes, job.actual);
     at += job.actual;
     progress_ = uint64_t(at) * 100 / total;
     vTaskDelay(1);
@@ -222,6 +261,12 @@ bool Firmware::prepare() {
     message("Candidate signature footer read failed");
     return false;
   }
+  entire.add(bytes, 512);
+  entire.calculate();
+  if (release && entire.toString() != hash_) {
+    message("SD candidate no longer matches the release");
+    return false;
+  }
   UpdaterRSAVerifier verifier(reinterpret_cast<const uint8_t *>(key_), strlen(key_) + 1,
                               HASH_SHA256);
   if (!verifier.verify(&hash, bytes, 512)) {
@@ -230,7 +275,8 @@ bool Firmware::prepare() {
   }
   hash.getBytes(preparedHash_);
   preparedSize_ = total;
-  message("Signature valid. Hold OK on device to install");
+  releaseCandidate_ = release;
+  message("서명 확인 완료 / 길게 OK로 설치");
   return true;
 }
 bool Firmware::install() {
@@ -238,7 +284,7 @@ bool Firmware::install() {
   uint8_t expected[32];
   memcpy(expected, preparedHash_, 32);
   const uint32_t size = preparedSize_;
-  if (!prepare() || size != preparedSize_ || memcmp(expected, preparedHash_, 32)) {
+  if (!prepare(releaseCandidate_) || size != preparedSize_ || memcmp(expected, preparedHash_, 32)) {
     message("Candidate changed; confirm again");
     return false;
   }
@@ -274,6 +320,31 @@ bool Firmware::install() {
   }
   message("Verified; restarting");
   return true;
+}
+bool Firmware::autoInstall() {
+  if (!releaseCandidate_) {
+    message("Automatic install requires a verified GitHub release");
+    return false;
+  }
+  // Persist before flash. After rollback, the same release must not start a reboot loop.
+  Preferences p;
+  if (!p.begin("nova-update", false)) {
+    message("Cannot record automatic update attempt");
+    return false;
+  }
+  if (p.getString("attempt", "") == hash_) {
+    p.end();
+    message("Release already attempted; manual retry required");
+    return false;
+  }
+  const bool saved = p.putString("attempt", hash_) == strlen(hash_) &&
+                     p.getString("attempt", "") == hash_;
+  p.end();
+  if (!saved) {
+    message("Cannot record automatic update attempt");
+    return false;
+  }
+  return install();
 }
 bool Firmware::rollback() {
   const auto *previous = esp_ota_get_next_update_partition(nullptr);
@@ -312,16 +383,19 @@ void Firmware::process() {
   case Work::Install:
     ok = install();
     break;
+  case Work::AutoInstall:
+    ok = autoInstall();
+    break;
   case Work::Rollback:
     ok = rollback();
     break;
   default:
     break;
   }
-  state_ = !ok                                         ? State::Failed
-           : w == Work::Check                          ? State::Available
-           : w == Work::Install || w == Work::Rollback ? State::Success
-                                                       : State::Ready;
+  state_ = !ok ? State::Failed
+           : w == Work::Check ? (url_[0] ? State::Available : State::Current)
+           : w == Work::Install || w == Work::AutoInstall || w == Work::Rollback ? State::Success
+                                                                                : State::Ready;
   work_ = Work::None;
 }
 } // namespace nova

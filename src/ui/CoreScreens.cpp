@@ -93,8 +93,9 @@ void diagnostic(Canvas &c, const View &v) {
     row(c, 206, "POSITION", v.media && v.media->positionKnown() ? "Known" : "Unknown");
     break;
   case 10:
-    row(c, 86, "OTA", v.otaStatus);
-    snprintf(value, sizeof(value), "%u %%", v.otaPercent);
+    snprintf(value, sizeof(value), "v%s", board::version);
+    row(c, 86, "VERSION", value);
+    snprintf(value, sizeof(value), "%u %%", v.updateProgress);
     row(c, 126, "PROGRESS", value);
     c.text(16, 168, 208, 90, v.updateStatus, color::white);
     break;
@@ -171,7 +172,7 @@ void coreScreen(Canvas &c, const View &v) {
     c.text(16, 127, 208, 22, date, s.dateColor, 1, true);
     c.text(16, 164, 208, 42, dday, s.eventColor, 2, true);
     message(c, v, 216);
-    snprintf(text, sizeof(text), v.environmentValid ? "%.1f C · %.0f %%" : "AHT10 대기",
+    snprintf(text, sizeof(text), v.environmentValid ? "%.1f C / %.0f %%" : "AHT10 대기",
              v.temperature, v.humidity);
     c.text(16, 257, 208, 22, text, s.mutedColor, 1, true);
     break;

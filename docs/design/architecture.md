@@ -1,6 +1,6 @@
 # MILESTONE NOVA 아키텍처
 
-작성: 2026-09-23 · 수정: 2026-09-27 · Request U0001 재작업
+작성: 2026-09-23 · 수정: 2026-10-05 · Request U0001 재작업
 
 ## 범위와 빌드
 
@@ -14,13 +14,13 @@ PSRAM), U8g2 2.36.19, Adafruit NeoPixel 1.15.5를 사용한다. staging sketch�
 
 | 소유자 | 책임 | 다른 실행 문맥과의 경계 |
 |---|---|---|
-| Arduino loop | 앱 상태, 입력, 미디어 clock, 가사 timeline, I2C, ADC, UI, LCD, LED, NVS | BLE에서 고정 길이 이벤트 수신 |
+| Arduino loop | 앱 상태, 입력 이벤트 처리, 미디어 clock, 가사 timeline, I2C, ADC, UI, LCD, LED, NVS | 입력/BLE에서 고정 길이 이벤트 수신 |
+| Input worker (2 KiB stack, priority 2) | 5ms GPIO sampling·debounce·long/repeat 생성 | 짧은 critical section으로 32개 이벤트 큐 공유. UI/SD/NVS 접근 없음 |
 | SD worker (10 KiB stack) | SD SPI, 미디어 decode/index, catalog, 업로드/checkpoint, 로그 journal | 파일 작업 직렬화. 단일 asset 결과 대여/반환, 세대 번호로 오래된 결과 폐기 |
 | Service worker (12 KiB stack) | HTTP/DNS, HTTPS 아트/업데이트, 환경 로그 큐 | App command/ack + 잠금으로 복사한 snapshot. SD는 Storage::execute로만 접근 |
-| 로컬 OTA worker (12 KiB stack) | 서명 검증, OTA 수신/flash 쓰기 | atomic 상태·진행률. LCD/SD/NVS 접근 금지 |
 | NimBLE host | 연결, 보안, GATT 요청/알림 | 콜백에서 파일·LCD·앱 상태 변경 금지. bounded queue만 사용 |
 
-작업 코어를 고정하지 않는다. Arduino framework 외 추가 task는 SD·service·로컬 OTA 세 개다(OTA는 유효한 키/암호가 있을 때 생성). task를 반복 생성/삭제하지 않는다. BLE 객체는 수명 전체에 유지하고
+작업 코어를 고정하지 않는다. Arduino framework 외 추가 task는 input·SD·service 세 개다. 릴리스 확인/다운로드/설치는 service worker가 수행한다. task를 반복 생성/삭제하지 않는다. BLE 객체는 수명 전체에 유지하고
 연결/광고를 정지하는 방식으로 전원 전환한다. 보드 간 통신은 존재하지 않는다.
 
 ## 모듈 경계
@@ -28,14 +28,14 @@ PSRAM), U8g2 2.36.19, Adafruit NeoPixel 1.15.5를 사용한다. staging sketch�
 - `board`: 단일 GPIO 정의, 컴파일 시 중복/예약 핀 검사.
 - `core`: UTF-8, 날짜, battery LUT, focus timer. 설정 검증과 버튼 상태기계는
   각각 `settings`, `input`에 둔다.
-- `display`: ST7789 SPI와 RGB565 canvas. U8g2 글꼴 decoder로 한/영 혼합 렌더링.
+- `display`: ST7789 SPI와 RGB565 canvas. Korean2/Japanese3 글꼴 선택으로 한/일/영 혼합 렌더링.
 - `ui`: 모드/메뉴 탐색, CORE 9종·NOW 6개 레이아웃·MEDIA·설정·AP·업데이트·복구·진단.
-- `media`: metadata, authoritative position anchor, pause/seek/resume/disconnect.
+- `media`: metadata, authoritative position anchor, pause/seek/resume/disconnect, `TrackAssets`의 로컬 읽기/자동 조회 상태.
 - `lyrics`: parser, binary-search timeline, Worker 온라인 조회/local cache, renderer 분리.
 - `storage`: SD owner, 원자 교체·A/B catalog·재개 checkpoint·로그 journal,
   JPEG/BMP/MSM/RGB565 decoder와 시간 기준 frame 선택. UI 스레드는 SD를 열지 않는다.
 - `sensors`: DS3231과 AHT10, I2C timeout, 비동기 AHT conversion, battery filtering.
-- `network`: AP+STA, Wi-Fi 8 프로필/시험/NTP, 인증서 검증 HTTPS, 로컬 OTA.
+- `network`: AP+STA, Wi-Fi 8 프로필/시험/NTP, 인증서 검증 HTTPS.
 - `artwork`: Worker JPEG 200/MAC1 호환 조회, 곡별 캐시/사용자 보호/한도 초과 시 LRU.
 - `portal`: offline 자산과 API. 부팅 시 한 번 만든 worker에서 모든 HTTP 요청을 직렬 처리.
 - `update`: NOVA manifest와 서명 후보/물리 확인 설치/이전 검증 partition 복구.
@@ -67,6 +67,10 @@ raw 입력 32 KiB와 parsed 결과를 사용하고, UI는 generation이 일치�
 SD 저장은 `LyricsSave`에서 기존 파일 부재를 다시 확인한다. 기존 파일은 보호하고
 단순 쓰기 실패 시에는 RAM 가사를 표시한다. 가사 표시를 끄면 새 온라인 조회도 중단한다.
 AP/OFF 요청이 앞선 아트 HTTPS 처리 중 들어와도 그 뒤 새 가사 조회를 시작하지 않는다.
+`TrackAssets`는 실제 곡 변경과 같은 곡의 SD 재읽기를 구분한다. 재읽기 동안 기존
+buffer를 표시하며, 해당 generation의 결과가 도착해야 교체/삭제를 반영한다. 자산 읽기
+대기 중에는 자동 조회하지 않는다. SD revision만으로 아트 재시도 간격이나 가사 자동
+시도 기록을 초기화하지 않고, 사용자의 명시적 재조회는 즉시 재시도할 수 있다.
 
 ## 화면과 메모리
 
@@ -139,7 +143,7 @@ legacy 다중 이미지, ZERO 승인, SAFE factory 프로토콜은 계승하지 
 
 실제 ESP32-S3 compile, host sanitizers, parser/UTF-8/날짜/설정/핀/버튼/배터리/
 재생 및 타이머 상태 테스트. 실물 연결, TFT 색/방향/클럭, SD 제거, AMS pairing,
-RF 공존, signed OTA 중단, 전류 및 장시간 soak는 별도 hardware checklist로 기록한다.
+RF 공존, 업데이트 설치 중단, 전류 및 장시간 soak는 별도 hardware checklist로 기록한다.
 
 ## 기술 근거
 

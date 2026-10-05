@@ -69,6 +69,7 @@ bool SettingsStore::load(Settings &s, Secrets &secrets) {
   Preferences p;
   if (!p.begin("nova", false))
     return false;
+  autoUpdate_ = p.getBool("update-auto", false);
   hasSettings_ = loadRecord(p, s, validSettings);
   if (!hasSettings_) {
     struct Old {
@@ -145,10 +146,23 @@ bool SettingsStore::reset(bool credentials) {
   Preferences p;
   bool ok = p.begin("nova", false) && p.clear();
   p.end();
+  if (ok)
+    autoUpdate_ = false;
   if (credentials) {
     ok = (p.begin("nova-secrets", false) && p.clear()) && ok;
     p.end();
   }
+  return ok;
+}
+bool SettingsStore::saveAutoUpdate(bool enabled) {
+  Preferences p;
+  if (!p.begin("nova", false))
+    return false;
+  const bool ok = p.putBool("update-auto", enabled) == 1 &&
+                  p.getBool("update-auto", !enabled) == enabled;
+  p.end();
+  if (ok)
+    autoUpdate_ = enabled;
   return ok;
 }
 } // namespace nova

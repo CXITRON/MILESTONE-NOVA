@@ -52,7 +52,7 @@ bool Storage::execute(FileJob &j) {
   return j.ok;
 }
 Http::~Http() = default;
-bool Http::open(const char *, const char *form, unsigned timeoutMs) {
+bool Http::open(const char *, const char *form, unsigned timeoutMs, RedirectPolicy) {
   ++httpRequests;
   httpForm = form ? form : "";
   httpAt = 0;
@@ -462,6 +462,19 @@ int main(int argc, char **argv) {
   assert(StorageTestAccess::run(resumed, job));
   assert(resumed.assetRevision() == beforeLyrics + 1);
   assert(read("/lyrics/test.lrc").size() == 4);
+  job.op = FileOp::Remove;
+  assert(StorageTestAccess::run(resumed, job));
+  const auto afterRemoval = resumed.assetRevision();
+  assert(afterRemoval == beforeLyrics + 2);
+  assert(StorageTestAccess::run(resumed, job));
+  assert(resumed.assetRevision() == afterRemoval); // Removing a missing marker is not a change.
+  strcpy(job.path, "/artwork/1234567890abcdef.nvi");
+  assert(!SD.exists(job.path));
+  assert(StorageTestAccess::run(resumed, job));
+  assert(SD.exists("/artwork/1234567890abcdef.missing"));
+  assert(resumed.assetRevision() == afterRemoval + 1);
+  assert(StorageTestAccess::run(resumed, job));
+  assert(resumed.assetRevision() == afterRemoval + 1);
   job = {};
   job.op = FileOp::MediaDelete;
   job.id = 0;

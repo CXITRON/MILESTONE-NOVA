@@ -24,6 +24,13 @@ void Network::configure(const Secrets &s, const Settings &v) {
   bootSync_ = v.bootSync;
   WiFi.setSleep(v.wifiSleep);
 }
+namespace {
+// `now` is read at the start of a loop pass and may predate a connect() made later in that pass;
+// a negative difference counts as no time elapsed instead of wrapping to a huge value.
+uint32_t elapsed(uint32_t now, uint32_t since) {
+  return int32_t(now - since) > 0 ? now - since : 0;
+}
+} // namespace
 void Network::connect(const WifiProfile &p) {
   WiFi.disconnect(false, false);
   WiFi.mode(ap_ ? WIFI_AP_STA : WIFI_STA);
@@ -111,7 +118,7 @@ void Network::saveResult(bool saved) {
 }
 bool Network::connected() const { return !off_ && WiFi.status() == WL_CONNECTED; }
 bool Network::settled(uint32_t now) const {
-  return !configured_ || connected() || now - started_ >= 15000;
+  return !configured_ || connected() || elapsed(now, started_) >= 15000;
 }
 const char *Network::status() const {
   return connected()    ? "Connected"
@@ -153,7 +160,7 @@ void Network::tick(uint32_t now, bool ble) {
         e.auth = WiFi.encryptionType(i);
         e.supported = e.auth == WIFI_AUTH_OPEN || e.auth == WIFI_AUTH_WPA_PSK ||
                       e.auth == WIFI_AUTH_WPA2_PSK || e.auth == WIFI_AUTH_WPA_WPA2_PSK ||
-                      e.auth == WIFI_AUTH_WPA2_ENTERPRISE;
+                      e.auth == WIFI_AUTH_WPA2_WPA3_PSK || e.auth == WIFI_AUTH_WPA2_ENTERPRISE;
       }
       scanning_ = false;
       WiFi.scanDelete();
@@ -168,7 +175,7 @@ void Network::tick(uint32_t now, bool ble) {
     if (testing_) {
       if (!stable_)
         stable_ = now;
-      else if (now - stable_ >= 2000) {
+      else if (elapsed(now, stable_) >= 2000) {
         testing_ = false;
         attempting_ = false;
         saved_ = true;
@@ -177,13 +184,14 @@ void Network::tick(uint32_t now, bool ble) {
     } else
       attempting_ = false;
     retry_ = 30000;
-    if ((!ntp_ && bootSync_) || (ntpSeconds_ && now - lastNtp_ >= uint64_t(ntpSeconds_) * 1000))
+    if ((!ntp_ && bootSync_) ||
+        (ntpSeconds_ && elapsed(now, lastNtp_) >= uint64_t(ntpSeconds_) * 1000))
       timeSync();
     return;
   }
   ntp_ = false;
   stable_ = 0;
-  if (attempting_ && now - attempt_ >= 15000) {
+  if (attempting_ && elapsed(now, attempt_) >= 15000) {
     WiFi.disconnect(false, false);
     attempting_ = false;
     attempt_ = now;
@@ -193,7 +201,8 @@ void Network::tick(uint32_t now, bool ble) {
     } else if (count_)
       index_ = (index_ + 1) % count_;
   }
-  if (configured_ && !attempting_ && !testing_ && !scanning_ && !ble && now - attempt_ >= retry_) {
+  if (configured_ && !attempting_ && !testing_ && !scanning_ && !ble &&
+      elapsed(now, attempt_) >= retry_) {
     connect(profiles_[index_]);
     retry_ = std::min<uint32_t>(retry_ * 2, retrySeconds_ * 1000);
   }
