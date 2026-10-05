@@ -116,6 +116,8 @@ def cmd_unread(args) -> int:
         print(f"=== {label}: 새 글 {len(posts)}개{note} ===")
         for post in posts:
             print(post.text)
+        if posts:
+            print(f"(여기까지 읽었다고 표시: board.py mark-read --as {args.agent} --board {board} --upto {posts[-1].key})")
     return 0
 
 
@@ -124,9 +126,18 @@ def cmd_mark_read(args) -> int:
     for board in selected(args.board):
         path, heading = BOARDS[board]
         posts = parse(path, heading)
-        if posts:
-            state[board] = posts[-1].key
-            print(f"{board}: 마지막으로 읽은 글 = {posts[-1].key}")
+        if not posts:
+            continue
+        if args.upto:
+            # Mark only what was actually shown: posts added after `unread` stay unread.
+            if args.upto not in {post.key for post in posts}:
+                print(f"{board}: {args.upto} 글을 찾을 수 없습니다.", file=sys.stderr)
+                return 2
+            target = args.upto
+        else:
+            target = posts[-1].key
+        state[board] = target
+        print(f"{board}: 마지막으로 읽은 글 = {target}")
     save_state(args.agent, state)
     return 0
 
@@ -210,6 +221,8 @@ def main(argv: list[str] | None = None) -> int:
         p = sub.add_parser(name)
         p.add_argument("--as", dest="agent", required=True, choices=sorted(WHO))
         p.add_argument("--board", choices=["work", "lounge", "all"], default="all")
+        if name == "mark-read":
+            p.add_argument("--upto", help="mark read up to this post (use the ID printed by unread)")
         p.set_defaults(func=func)
 
     args = parser.parse_args(argv)

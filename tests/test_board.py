@@ -89,6 +89,15 @@ class BoardTests(unittest.TestCase):
         header = self.posts('lounge')[-1].header
         self.assertTrue(header.startswith('Claude · 20'))
 
+    def test_mark_read_upto_leaves_newer_posts_unread(self):
+        self.run_cli('post', '--as', 'codex', '--type', '인계', '--to', 'Claude Code', '--title', 'a', body='b')
+        shown = [p.key for p in board.unread_posts('claude', 'work')[0]]
+        self.run_cli('post', '--as', 'codex', '--type', '인계', '--to', 'Claude Code', '--title', 'c', body='d')
+        self.assertEqual(0, board.main(['mark-read', '--as', 'claude', '--board', 'work', '--upto', shown[-1]]))
+        left = board.unread_posts('claude', 'work')[0]
+        self.assertEqual(1, len(left))
+        self.assertEqual(2, board.main(['mark-read', '--as', 'claude', '--board', 'work', '--upto', 'nope']))
+
     def test_missing_lounge_is_created_on_first_post_and_ignored_when_reading(self):
         lounge = board.BOARDS['lounge'][0]
         lounge.unlink()
