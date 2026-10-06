@@ -148,6 +148,14 @@
             <option value="30">30</option>
           </select>
         </label>
+        <label>
+          동기 영상 화질 (낮을수록 기기에서 빨리 풀려 프레임이 올라갑니다)
+          <select id="sync-quality">
+            <option value="0.5">낮음 (가장 빠름)</option>
+            <option value="0.65" selected>보통</option>
+            <option value="0.8">높음 (이전 방식)</option>
+          </select>
+        </label>
         <div class="actions">
           <button id="prepare-sync">SD 동기 영상 준비·업로드</button>
           <button id="start-sync" class="primary">동기 재생 연결</button>

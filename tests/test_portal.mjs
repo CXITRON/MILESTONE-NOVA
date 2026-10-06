@@ -253,7 +253,7 @@ console.log(
   const source = await (await import('node:fs/promises')).readFile(new URL('../assets/portal/app.js', import.meta.url), 'utf8');
   const call = source.match(/await convert\(file, store,\s*\{path: outputPath\(file, true\)[^}]*\}\)/s);
   assert(call, 'sync convert call not found');
-  assert(/fps: syncFps, signal,/.test(call[0]), 'sync convert call must pass fps and signal');
+  assert(/fps: syncFps, quality: syncQuality, signal,/.test(call[0]), 'sync convert call must pass fps, quality and signal');
   for (const line of source.split('\n'))
     if (/\bsignal,\s*$/.test(line) === false && /\/\/.*\bsignal,/.test(line))
       assert.fail('a line comment swallows "signal," here: ' + line.trim());

@@ -1018,6 +1018,8 @@ void App::tick() {
   render(now);
   renderUs_ += uint64_t(esp_timer_get_time() - phaseRender);
   // Video frames go out in one pass: a frame spread over several loops shows as a sweeping seam.
+  // Media frames cover rows 30..269: strips 4..32 are entirely video (strip 3 and 33 also hold UI rows).
+  display_.forceStrips(screen_ == Screen::Media ? 4 : -1, 32);
   display_.flush(screen_ == Screen::Media ? 60000 : 4000);
   shutdown(millis());
   tickUs_ += uint64_t(esp_timer_get_time() - tickStartUs);

@@ -49,5 +49,24 @@ int main() {
   display.canvas().clear(0x1234);
   display.present(); display.flush(60000);
   assert(transfers.size() == 40 && !display.busy());
+  // Forced strips are always sent and not remembered; leaving forced mode resends everything once.
+  while (display.busy()) display.flush();
+  display.canvas().clear(0x2222);
+  display.present(); display.flush(60000);
+  assert(!display.busy());
+  transfers.clear(); startRows.clear();
+  display.forceStrips(4, 6);
+  display.present(); display.flush(60000);
+  assert(transfers.size() == 3 && startRows[0] == 32 && startRows[2] == 48); // Unchanged, still sent.
+  transfers.clear(); startRows.clear();
+  display.present(); display.flush(60000);
+  assert(transfers.size() == 3); // Forced again; nothing else changed.
+  transfers.clear(); startRows.clear();
+  display.forceStrips(-1, -1);
+  display.present(); display.flush(60000);
+  assert(transfers.size() == 40 && !display.busy()); // One full resend after leaving video.
+  transfers.clear();
+  display.present(); display.flush(60000);
+  assert(transfers.empty()); // Back to dirty-strip behaviour.
   std::cout << "Display batching, frame integrity, dirty strips, wrap and sleep passed\n";
 }

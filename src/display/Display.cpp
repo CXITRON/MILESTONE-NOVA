@@ -64,6 +64,11 @@ void Display::present() {
   if (ready_ && !pending_) {
     strip_ = 0;
     pending_ = true;
+    // Forced strips never refreshed the remembered copy; resend all once so nothing stays stale.
+    if (sentStale_ && forcedFirst_ < 0) {
+      initial_ = true;
+      sentStale_ = false;
+    }
   }
 }
 void Display::flush(uint32_t sliceUs) {
@@ -75,10 +80,12 @@ void Display::flush(uint32_t sliceUs) {
   // This reduces the visible rolling update; it is not panel TE/vblank synchronization.
   const uint32_t started = micros();
   while (strip_ < board::height / 8) {
-    const unsigned row = strip_++ * 8;
+    const unsigned index = strip_++;
+    const unsigned row = index * 8;
     const size_t start = row * board::width;
     auto *current = canvas_.pixels() + start;
-    if (!initial_ && !memcmp(current, sent_ + start, pixels * 2))
+    const bool forced = int(index) >= forcedFirst_ && int(index) <= forcedLast_ && forcedFirst_ >= 0;
+    if (!forced && !initial_ && !memcmp(current, sent_ + start, pixels * 2))
       continue;
     const uint8_t columns[]{0, 0, 0, 239};
     const uint8_t rows[]{uint8_t(row >> 8), uint8_t(row), uint8_t((row + 7) >> 8),
@@ -92,7 +99,10 @@ void Display::flush(uint32_t sliceUs) {
     spi_.writePixels(current, pixels * 2);
     digitalWrite(board::lcdCs, HIGH);
     spi_.endTransaction();
-    memcpy(sent_ + start, current, pixels * 2);
+    if (forced)
+      sentStale_ = true;
+    else
+      memcpy(sent_ + start, current, pixels * 2);
     if (uint32_t(micros() - started) >= sliceUs)
       break;
   }

@@ -585,8 +585,9 @@ $('#prepare-sync').onclick =
           $('#sync-state').textContent = '변환 중 0%';
           // The picker may be missing when the page is an older cached copy; default to 20.
           const syncFps = Number($('#sync-fps')?.value) || 20;
+          const syncQuality = Number($('#sync-quality')?.value) || .65;
           await convert(file, store,
-                        {path: outputPath(file, true), fps: syncFps, signal,
+                        {path: outputPath(file, true), fps: syncFps, quality: syncQuality, signal,
                          progress: syncProgress('1/2 브라우저 변환')});
           $('#sync-progress').value = 0;
           // The device validates every frame before replying; it cannot answer polls meanwhile.

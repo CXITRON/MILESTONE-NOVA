@@ -65,10 +65,10 @@ function header(frames, fps) {
   v.setUint32(12, frames, true);
   return b;
 }
-async function jpeg(canvas) {
-  let blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg', .8));
+async function jpeg(canvas, quality = .8) {
+  let blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg', quality));
   if (!blob || blob.size > MAX_FRAME)
-    blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg', .55));
+    blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg', Math.min(quality, .55)));
   if (!blob || blob.size > MAX_FRAME) throw new Error('JPEG 프레임이 허용 크기를 초과했습니다.');
   const pixels = new Uint8Array(await blob.arrayBuffer()), out = new Uint8Array(pixels.length + 8),
         v = new DataView(out.buffer);
@@ -77,7 +77,7 @@ async function jpeg(canvas) {
   out.set(pixels, 8);
   return out;
 }
-export async function convert(file, store, {path, fps = 20, signal, progress}) {
+export async function convert(file, store, {path, fps = 20, quality = .8, signal, progress}) {
   if (!file) throw new Error('파일을 선택하세요.');
   if (/\.(nvi|nvv|njv|mvj|msm|bmp)$/i.test(file.name))
     return store.fromFile(file, path, signal, progress);
@@ -97,7 +97,7 @@ export async function convert(file, store, {path, fps = 20, signal, progress}) {
         end += next.delay;
       }
       imageBytes(next.canvas, canvas);
-      await store.write(await jpeg(canvas));
+      await store.write(await jpeg(canvas, quality));
       progress((i + 1) / count);
     }
     return store.finish();
@@ -131,7 +131,7 @@ export async function convert(file, store, {path, fps = 20, signal, progress}) {
         await seeked;
       }
       imageBytes(video, canvas);
-      await store.write(await jpeg(canvas));
+      await store.write(await jpeg(canvas, quality));
       progress((i + 1) / count);
     }
     return store.finish();

@@ -13,6 +13,13 @@ public:
   // Sends pending strips until the time budget is spent. A video frame passes a budget larger than
   // a full-screen transfer so one frame is written in one pass instead of across several loops.
   void flush(uint32_t sliceUs = 4000);
+  // Video: send these 8-row strips every frame without comparing or remembering them. Comparing a
+  // 115 KB frame against the previous one costs about as much as it saves while a video plays.
+  // A negative `first` ends forcing; the next frame then resends everything once.
+  void forceStrips(int first, int last) {
+    forcedFirst_ = first;
+    forcedLast_ = last;
+  }
   bool busy() const { return pending_; }
   bool ready() const { return ready_; }
   // Completed frames and total microseconds spent inside flush(), for playback diagnostics.
@@ -27,6 +34,8 @@ private:
   Canvas canvas_;
   uint16_t *sent_ = nullptr;
   unsigned strip_ = 0;
+  int forcedFirst_ = -1, forcedLast_ = -1;
+  bool sentStale_ = false;
   uint32_t frames_ = 0;
   uint64_t flushUs_ = 0;
   bool ready_ = false, pending_ = false, initial_ = true;
