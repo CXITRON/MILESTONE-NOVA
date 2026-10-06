@@ -21,6 +21,7 @@ struct AssetResult {
   AssetRequest request;
   bool lyricsPresent = false, artPresent = false, error = false, blocked = false;
   uint32_t durationMs = 0, frame = 0;
+  uint32_t readUs = 0, jpegUs = 0, totalUs = 0;  // Media frames only: where the worker's time went.
   size_t lyricsBytes = 0;
   char lyrics[maxLyricsBytes + 1]{};
   // Track results use artSide x artSide; media results use mediaSide x mediaSide.

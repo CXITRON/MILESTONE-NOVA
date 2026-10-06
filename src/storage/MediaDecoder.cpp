@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <cstring>
 #include <esp_heap_caps.h>
+#include <esp_timer.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
 namespace nova {
@@ -205,6 +206,7 @@ bool MediaDecoder::open(const char *path) {
   return true;
 }
 bool MediaDecoder::record(uint32_t n) {
+  const int64_t started = esp_timer_get_time();
   uint8_t index[8];
   if (!index_.seek(16 + uint64_t(n) * 8) || index_.read(index, 8) != 8 ||
       !file_.seek(read32(index)))
@@ -214,8 +216,13 @@ bool MediaDecoder::record(uint32_t n) {
     if (file_.read(h, 8) != 8)
       return false;
     const uint32_t bytes = read32(h);
-    return bytes >= 4 && bytes <= maxJpegFrame && file_.read(encoded_, bytes) == bytes &&
-           crc32(encoded_, bytes) == read32(h + 4) && jpeg(bytes, info_.width, info_.height);
+    const bool read = bytes >= 4 && bytes <= maxJpegFrame && file_.read(encoded_, bytes) == bytes &&
+                      crc32(encoded_, bytes) == read32(h + 4);
+    const int64_t decoding = esp_timer_get_time();
+    readUs_ = uint32_t(decoding - started);
+    const bool ok = read && jpeg(bytes, info_.width, info_.height);
+    jpegUs_ = uint32_t(esp_timer_get_time() - decoding);
+    return ok;
   }
   if (file_.read(encoded_, 5) != 5)
     return false;

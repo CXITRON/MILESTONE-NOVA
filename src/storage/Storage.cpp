@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <cstring>
 #include <esp_heap_caps.h>
+#include <esp_timer.h>
 #include <new>
 namespace nova {
 namespace {
@@ -233,6 +234,7 @@ void Storage::readTrack(AssetResult &r) {
 }
 void Storage::readMedia(AssetResult &r) {
   const char *path = r.request.name;
+  const int64_t started = esp_timer_get_time();
   if (!decoder_.frame(path, r.request.position, r.pixels, r.durationMs, board::mediaSide)) {
     if (decoder_.validate(path, progress_, validationCancelled_))
       r.artPresent =
@@ -240,6 +242,9 @@ void Storage::readMedia(AssetResult &r) {
   } else
     r.artPresent = true;
   r.error = !r.artPresent;
+  r.readUs = decoder_.readUs();
+  r.jpegUs = decoder_.jpegUs();
+  r.totalUs = uint32_t(esp_timer_get_time() - started);
 }
 bool Storage::execute(FileJob &job) {
   job.ok = false;

@@ -14,8 +14,12 @@ public:
   bool frame(const char *path, uint32_t position, uint16_t *pixels, uint32_t &duration,
              unsigned side);
   const char *error() const { return error_; }
+  // Microseconds the latest video frame spent on SD reads (index, header, data, CRC) and JPEG decoding.
+  uint32_t readUs() const { return readUs_; }
+  uint32_t jpegUs() const { return jpegUs_; }
 
 private:
+  uint32_t readUs_ = 0, jpegUs_ = 0;
   bool open(const char *path);
   bool jpeg(size_t bytes, unsigned width, unsigned height);
   bool record(uint32_t index);

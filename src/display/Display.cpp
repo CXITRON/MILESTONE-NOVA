@@ -96,9 +96,11 @@ void Display::flush(uint32_t sliceUs) {
     if (uint32_t(micros() - started) >= sliceUs)
       break;
   }
+  flushUs_ += uint32_t(micros() - started);
   if (strip_ >= board::height / 8) {
     pending_ = false;
     initial_ = false;
+    ++frames_;
   }
 }
 } // namespace nova

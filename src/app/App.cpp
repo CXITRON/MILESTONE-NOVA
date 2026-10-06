@@ -519,6 +519,9 @@ void App::assets(uint32_t now) {
       const bool first = !mediaValid_;
       if (mediaPixels_ && result->artPresent) {
         ++mediaFrames_;
+        mediaReadUs_ += result->readUs;
+        mediaJpegUs_ += result->jpegUs;
+        mediaTotalUs_ += result->totalUs;
         memcpy(mediaPixels_, result->pixels, rawBytes(board::mediaSide));
         mediaValid_ = true;
         if (first && !playback_.synchronized()) {
@@ -971,14 +974,25 @@ void App::tick() {
   }
   // Delivered video frames per second while playing: shows what the pipeline really sustains.
   if (playback_.playing() && now - mediaFpsAt_ >= 5000) {
-    if (mediaFpsAt_ && mediaFrames_)
-      log("MEDIA", "playback %.1f frames/s%s", mediaFrames_ * 1000.0f / (now - mediaFpsAt_),
-          playback_.synchronized() ? " (sync)" : "");
+    if (mediaFpsAt_ && mediaFrames_) {
+      const uint32_t shown = display_.frames() - mediaShownAt_;
+      const float n = float(mediaFrames_);
+      log("MEDIA",
+          "playback %.1f frames/s%s | screen %.1f/s flush %.1f ms | worker read %.1f jpeg %.1f total %.1f ms",
+          mediaFrames_ * 1000.0f / (now - mediaFpsAt_), playback_.synchronized() ? " (sync)" : "",
+          shown * 1000.0f / (now - mediaFpsAt_),
+          shown ? (display_.flushUs() - mediaFlushAt_) / 1000.0f / shown : 0.0f,
+          mediaReadUs_ / 1000.0f / n, mediaJpegUs_ / 1000.0f / n, mediaTotalUs_ / 1000.0f / n);
+    }
     mediaFpsAt_ = now;
     mediaFrames_ = 0;
+    mediaReadUs_ = mediaJpegUs_ = mediaTotalUs_ = 0;
+    mediaShownAt_ = display_.frames();
+    mediaFlushAt_ = display_.flushUs();
   } else if (!playback_.playing()) {
     mediaFpsAt_ = 0;
     mediaFrames_ = 0;
+    mediaReadUs_ = mediaJpegUs_ = mediaTotalUs_ = 0;
   }
   if (now - lastLog_ >= 60000) {
     lastLog_ = now;

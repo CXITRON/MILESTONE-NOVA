@@ -15,6 +15,9 @@ public:
   void flush(uint32_t sliceUs = 4000);
   bool busy() const { return pending_; }
   bool ready() const { return ready_; }
+  // Completed frames and total microseconds spent inside flush(), for playback diagnostics.
+  uint32_t frames() const { return frames_; }
+  uint64_t flushUs() const { return flushUs_; }
   Canvas &canvas() { return canvas_; }
 
 private:
@@ -24,6 +27,8 @@ private:
   Canvas canvas_;
   uint16_t *sent_ = nullptr;
   unsigned strip_ = 0;
+  uint32_t frames_ = 0;
+  uint64_t flushUs_ = 0;
   bool ready_ = false, pending_ = false, initial_ = true;
 };
 } // namespace nova
