@@ -519,6 +519,7 @@ void App::assets(uint32_t now) {
       const bool first = !mediaValid_;
       if (mediaPixels_ && result->artPresent) {
         ++mediaFrames_;
+        mediaFresh_ = true;
         mediaReadUs_ += result->readUs;
         mediaJpegUs_ += result->jpegUs;
         mediaTotalUs_ += result->totalUs;
@@ -725,6 +726,16 @@ void App::render(uint32_t now) {
   if (!display_.ready() || display_.busy() || peripheralsOff_ ||
       now - rendered_ < (screen_ == Screen::Media ? 33U : 100U))
     return;
+  // While video plays the loop used to redraw and resend the same picture between decoded frames
+  // (12 screen frames/s for 7 new ones), which kept it busy enough to consume new frames late.
+  // Redraw on a new frame, a screen change, or at least four times a second for the bar and text.
+  if (screen_ != renderedScreen_) {
+    mediaFresh_ = true;
+    renderedScreen_ = screen_;
+  }
+  if (screen_ == Screen::Media && !mediaFresh_ && now - rendered_ < 250)
+    return;
+  mediaFresh_ = false;
   rendered_ = now;
   network_.address(address_, sizeof(address_));
   View v;
