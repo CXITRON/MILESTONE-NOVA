@@ -50,6 +50,17 @@ void Canvas::rect(int x, int y, int w, int h, uint16_t color) {
 void Canvas::image(int x, int y, int w, int h, const uint16_t *data, bool monochrome) {
   if (!data)
     return;
+  if (!monochrome) {
+    // Video frames land here every frame: clip once and copy whole rows instead of per-pixel writes.
+    if (!pixels_)
+      return;
+    const int startX = std::max(x, x0_), endX = std::min(x + w, x1_);
+    const int startY = std::max(y, y0_), endY = std::min(y + h, y1_);
+    for (int row = startY; row < endY && startX < endX; ++row)
+      memcpy(pixels_ + row * board::width + startX, data + (row - y) * w + (startX - x),
+             size_t(endX - startX) * sizeof(uint16_t));
+    return;
+  }
   for (int row = 0; row < h; ++row)
     for (int col = 0; col < w; ++col) {
       uint16_t p = data[row * w + col];

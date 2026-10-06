@@ -1,3 +1,4 @@
+#include <cstring>
 #include "Ui.h"
 #include <algorithm>
 #include <cstdio>
@@ -124,22 +125,31 @@ void Ui::render(Canvas &c, const View &v) {
   }
   if (v.settings) {
     auto *pixels = c.pixels();
-    for (unsigned i = 0; i < board::width * board::height; ++i) {
-      uint16_t p = pixels[i];
-      if (v.settings->luminance != 100 || v.settings->contrast) {
-        const auto tone = [&](int value, int max) {
-          int channel = value * 255 / max;
-          channel = (channel - 128) * (100 + v.settings->contrast) / 100 + 128;
-          return std::clamp(channel * int(v.settings->luminance) / 100, 0, 255) * max / 255;
-        };
-        p = (tone(p >> 11, 31) << 11) | (tone((p >> 5) & 63, 63) << 5) | tone(p & 31, 31);
+    if (v.settings->luminance != 100 || v.settings->contrast) {
+      // Same math as before, but evaluated once per channel value instead of once per pixel:
+      // a 76,800-pixel loop with three integer divisions per pixel cost tens of ms per frame.
+      const auto tone = [&](int value, int max) {
+        int channel = value * 255 / max;
+        channel = (channel - 128) * (100 + v.settings->contrast) / 100 + 128;
+        return std::clamp(channel * int(v.settings->luminance) / 100, 0, 255) * max / 255;
+      };
+      uint16_t red[32], green[64], blue[32];
+      for (int i = 0; i < 32; ++i) {
+        red[i] = uint16_t(tone(i, 31) << 11);
+        blue[i] = uint16_t(tone(i, 31));
       }
-      pixels[i] = p;
+      for (int i = 0; i < 64; ++i)
+        green[i] = uint16_t(tone(i, 63) << 5);
+      for (unsigned i = 0; i < board::width * board::height; ++i) {
+        const uint16_t p = pixels[i];
+        pixels[i] = red[p >> 11] | green[(p >> 5) & 63] | blue[p & 31];
+      }
     }
     if (v.settings->burnin && (v.now / 60000) % 2) {
+      // Shift the whole frame one pixel down and right; row copies instead of per-pixel moves.
       for (int y = board::height - 1; y > 0; --y)
-        for (int x = board::width - 1; x > 0; --x)
-          pixels[y * board::width + x] = pixels[(y - 1) * board::width + x - 1];
+        memmove(pixels + y * board::width + 1, pixels + (y - 1) * board::width,
+                (board::width - 1) * sizeof(uint16_t));
       for (int x = 0; x < board::width; ++x)
         pixels[x] = color::background;
       for (int y = 0; y < board::height; ++y)
