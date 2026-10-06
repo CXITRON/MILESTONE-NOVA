@@ -76,7 +76,7 @@ bool Storage::begin(Settings &s, Secrets &secrets, bool importSettings) {
   pinMode(board::sdCs, OUTPUT);
   digitalWrite(board::sdCs, HIGH);
   spi_.begin(board::sdSck, board::sdMiso, board::sdMosi, board::sdCs);
-  mounted_ = SD.begin(board::sdCs, spi_, board::sdHz);
+  mounted_ = mountCard();
   if (!mounted_)
     log("SD", "unavailable; worker allows later remount");
   if (mounted_) {

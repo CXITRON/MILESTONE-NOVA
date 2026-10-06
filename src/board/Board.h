@@ -25,7 +25,9 @@ inline constexpr int uartTx = 43, uartRx = 44, sdCs = 46;
 inline constexpr int width = 240, height = 320, rgbCount = 5;
 // Square pixel sides: NOW artwork and full-width local MEDIA.
 inline constexpr unsigned artSide = 200, mediaSide = 240;
-inline constexpr uint32_t lcdHz = 20000000, sdHz = 10000000, i2cHz = 100000;
+// The SD slot is on the board, so its traces are short: try 20 MHz first and fall back to the
+// 10 MHz that was used until now if the card refuses to mount at the faster clock.
+inline constexpr uint32_t lcdHz = 20000000, sdHz = 20000000, sdSafeHz = 10000000, i2cHz = 100000;
 // ST7789V MADCTL for the mounted panel: MY|MX (0xC0) rotates 180 degrees so the image is upright.
 inline constexpr uint8_t lcdMadctl = 0xC0;
 // SK6812 data enters the rightmost LED, so chain index 0 is the right end.

@@ -10,6 +10,27 @@ int main() {
   assert(e.effect() == LightEffect::Boot);
   e.render(2000, 100, s);
   assert(e.effect() == LightEffect::Idle);
+  // Core date/clock and D-day screens are lit even at the low brightness limits (6 at night, 7).
+  {
+    LightEffects core;
+    LightState c;
+    c.core = true;
+    core.render(0, 6, c);
+    for (const unsigned limit : {6u, 7u, 24u}) {
+      for (const bool dday : {false, true}) {
+        c.dday = dday;
+        for (uint32_t now = 2000; now < 8000; now += 250) {
+          const auto frame = core.render(now, uint8_t(limit), c);
+          assert(core.effect() == (dday ? LightEffect::DDay : LightEffect::Clock));
+          unsigned lit = 0;
+          for (const auto &pixel : frame) lit += pixel.r || pixel.g || pixel.b;
+          assert(lit == frame.size());  // Every LED shows something, never all dark.
+        }
+      }
+    }
+    c.dday = false;
+    for (const auto &pixel : core.render(9000, 0, c)) assert(!pixel.r && !pixel.g && !pixel.b);  // LEDs off
+  }
   s.now = s.connected = s.playing = s.track = true;
   s.trackGeneration = 1;
   // No artwork (offline, disabled, blocked, missing metadata) is not a failure.

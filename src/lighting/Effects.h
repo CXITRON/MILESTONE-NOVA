@@ -10,13 +10,14 @@ struct LightState {
   bool media = false, playing = false, now = false, connected = false;
   bool timerRunning = false, timerPaused = false, timerFinished = false;
   bool track = false, artLoading = false, artValid = false, artFailed = false;
+  bool core = false, dday = false;  // CORE profile, and its D-day screen.
   uint32_t trackGeneration = 0;
   unsigned progress = 0;
 };
 enum class LightEffect : uint8_t {
   Off, Critical, Warning, Update, Boot, SyncLost, Ap, TimerDone,
   ArtMissing, ArtReady, ArtLoading, Sync, Media, Music, Paused,
-  Connecting, Timer, TimerPaused, Idle
+  Connecting, Timer, TimerPaused, Clock, DDay, Idle
 };
 // Pure, allocation-free state/animation logic. Physical LED order belongs to Rgb.
 class LightEffects {

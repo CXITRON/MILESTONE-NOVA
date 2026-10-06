@@ -59,6 +59,7 @@ private:
   bool readExact(File &, uint8_t *, size_t);
   void fileJob(FileJob &);
   bool scan();
+  bool mountCard();
   bool saveCatalog();
   void publishCatalog();
   bool saveTransfer();

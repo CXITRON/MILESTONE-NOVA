@@ -27,6 +27,19 @@ bool automaticArtworkAllowed(const char *path) {
   return true;
 }
 } // namespace
+bool Storage::mountCard() {
+  for (const uint32_t hz : {board::sdHz, board::sdSafeHz}) {
+    if (SD.begin(board::sdCs, spi_, hz)) {
+      log("SD", "card clock %lu MHz", static_cast<unsigned long>(hz / 1000000));
+      return true;
+    }
+    SD.end(); // A failed attempt leaves the driver half-initialised.
+    if (hz == board::sdSafeHz)
+      break;
+    log("SD", "mount at %lu MHz failed; retrying slower", static_cast<unsigned long>(hz / 1000000));
+  }
+  return false;
+}
 bool Storage::atomicWrite(const char *path, const uint8_t *data, size_t bytes) {
   if (!safeStoragePath(path) || !data)
     return false;
@@ -420,7 +433,7 @@ void Storage::fileJob(FileJob &j) {
     decoder_.close();
     uploadFile_.close();
     SD.end();
-    mounted_ = SD.begin(board::sdCs, spi_, board::sdHz);
+    mounted_ = mountCard();
     upload_ = UploadRecord{};
     catalog_->count = 0;
     catalogSequence_ = 0;

@@ -40,6 +40,8 @@ LightFrame LightEffects::render(uint32_t now, uint8_t limit, const LightState &s
   else if (s.now) effect_ = s.playing ? LightEffect::Music : LightEffect::Paused;
   else if (s.timerRunning) effect_ = LightEffect::Timer;
   else if (s.timerPaused) effect_ = LightEffect::TimerPaused;
+  else if (s.core && s.dday) effect_ = LightEffect::DDay;
+  else if (s.core) effect_ = LightEffect::Clock;
   else effect_ = LightEffect::Idle;
 
   LightFrame frame{};
@@ -48,6 +50,8 @@ LightFrame LightEffects::render(uint32_t now, uint8_t limit, const LightState &s
     float r = 0, g = 0, b = 0, a = 0;
     const float wave = .15f + .65f * (1 + std::sin(float(now % 4000) *
                                                     6.2831853f / 4000 - i * .9f)) * .5f;
+    const float slow = (1 + std::sin(float(now % 6000) * 6.2831853f / 6000 - i * .7f)) * .5f;
+    const float slowWarm = (1 + std::sin(float(now % 4500) * 6.2831853f / 4500 - i * .5f)) * .5f;
     const bool edge = i == 0 || i + 1 == frame.size();
     const bool center = i == frame.size() / 2;
     const bool chase = (now / 180) % frame.size() == i;
@@ -78,11 +82,19 @@ LightFrame LightEffects::render(uint32_t now, uint8_t limit, const LightState &s
     case LightEffect::Connecting: b = 1; a = center ? .08f + .25f * breath : 0; break;
     case LightEffect::Timer: g = 1; b = .1f; a = .08f + .35f * breath; break;
     case LightEffect::TimerPaused: r = 1; g = .5f; a = center ? .12f : 0; break;
+    // Calm, always visible ambience for the date/clock screens. The old `.07` alpha rounded to
+    // zero at the usual brightness limits (night limit 6, user limit 7), so these LEDs stayed dark.
+    case LightEffect::Clock: g = .7f; b = .55f; a = .22f + .3f * slow; break;
+    case LightEffect::DDay: r = 1; g = .42f; b = .05f; a = .22f + .3f * slowWarm; break;
     case LightEffect::Idle: g = .7f; b = .4f; a = .07f; break;
     }
-    frame[i] = {uint8_t(limit * std::clamp(r * a, 0.0f, 1.0f)),
-                uint8_t(limit * std::clamp(g * a, 0.0f, 1.0f)),
-                uint8_t(limit * std::clamp(b * a, 0.0f, 1.0f))};
+    // Round, and never let a lit channel fall to zero: truncation turned every dim effect off
+    // at low brightness limits.
+    const auto level = [&](float c) -> uint8_t {
+      const float v = limit * std::clamp(c, 0.0f, 1.0f);
+      return v <= 0 ? 0 : uint8_t(std::max(1.0f, std::round(v)));
+    };
+    frame[i] = {level(r * a), level(g * a), level(b * a)};
   }
   return frame;
 }

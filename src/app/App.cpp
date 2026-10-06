@@ -951,6 +951,8 @@ void App::tick() {
     lights.timerRunning = timer_.state() == FocusTimer::State::Running;
     lights.timerPaused = timer_.state() == FocusTimer::State::Paused;
     lights.timerFinished = timer_.state() == FocusTimer::State::Finished;
+    lights.core = navigation_.profile() == Profile::Core;
+    lights.dday = screen_ == Screen::DDay;
     lights.track = session_.track().key[0];
     lights.trackGeneration = session_.generation(); // SD revisions are not new songs.
     lights.artLoading = trackAssets_.artPending;
