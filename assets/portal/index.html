@@ -140,6 +140,14 @@
           소리와 영상의 원본
           <input id="sync-file" type="file" accept="video/*">
         </label>
+        <label>
+          동기 영상 FPS (높을수록 부드럽지만 파일이 커지고 업로드·검증이 오래 걸립니다)
+          <select id="sync-fps">
+            <option value="20" selected>20</option>
+            <option value="24">24</option>
+            <option value="30">30</option>
+          </select>
+        </label>
         <div class="actions">
           <button id="prepare-sync">SD 동기 영상 준비·업로드</button>
           <button id="start-sync" class="primary">동기 재생 연결</button>

@@ -518,6 +518,7 @@ void App::assets(uint32_t now) {
                result->request.generation == mediaGeneration_) {
       const bool first = !mediaValid_;
       if (mediaPixels_ && result->artPresent) {
+        ++mediaFrames_;
         memcpy(mediaPixels_, result->pixels, rawBytes(board::mediaSide));
         mediaValid_ = true;
         if (first && !playback_.synchronized()) {
@@ -967,6 +968,17 @@ void App::tick() {
     const time_t epoch = time(nullptr);
     if (epoch >= 1704067200)
       rtc_.write(epoch);
+  }
+  // Delivered video frames per second while playing: shows what the pipeline really sustains.
+  if (playback_.playing() && now - mediaFpsAt_ >= 5000) {
+    if (mediaFpsAt_ && mediaFrames_)
+      log("MEDIA", "playback %.1f frames/s%s", mediaFrames_ * 1000.0f / (now - mediaFpsAt_),
+          playback_.synchronized() ? " (sync)" : "");
+    mediaFpsAt_ = now;
+    mediaFrames_ = 0;
+  } else if (!playback_.playing()) {
+    mediaFpsAt_ = 0;
+    mediaFrames_ = 0;
   }
   if (now - lastLog_ >= 60000) {
     lastLog_ = now;
