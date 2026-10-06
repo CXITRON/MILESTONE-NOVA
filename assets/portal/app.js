@@ -584,7 +584,7 @@ $('#prepare-sync').onclick =
           $('#sync-progress').value = 0;
           $('#sync-state').textContent = '변환 중 0%';
           await convert(file, store,
-                        {path: outputPath(file, true), fps: Number($('#sync-fps').value) || 20, signal,
+                        {path: outputPath(file, true), fps: Number($('#sync-fps')?.value) || 20,  // The page may be an older cached copy without the picker. signal,
                          progress: syncProgress('1/2 브라우저 변환')});
           $('#sync-progress').value = 0;
           // The device validates every frame before replying; it cannot answer polls meanwhile.

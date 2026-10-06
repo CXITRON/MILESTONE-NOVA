@@ -118,9 +118,24 @@ bool deltaFrame(const uint8_t *p, size_t n, uint8_t *frame, size_t cap, bool fir
 void scale565(const uint16_t *in, unsigned w, unsigned h, uint16_t *out, unsigned side) {
   if (!in || !out || !w || !h || !side)
     return;
-  for (unsigned y = 0; y < side; ++y)
+  if (w == side && h == side) { // The video path: nothing to sample, only a copy.
+    memcpy(out, in, size_t(side) * side * sizeof(uint16_t));
+    return;
+  }
+  // 32-bit math only: a 64-bit division per pixel cost ~28 ms for a 240x240 frame on the ESP32-S3.
+  // Sizes are small (side and w are at most a few hundred), so y * h and x * w fit comfortably.
+  constexpr unsigned maxSide = 512;
+  if (side > maxSide)
+    return;
+  uint16_t columns[maxSide];
+  for (unsigned x = 0; x < side; ++x)
+    columns[x] = uint16_t(uint32_t(x) * w / side);
+  for (unsigned y = 0; y < side; ++y) {
+    const uint16_t *row = in + size_t(uint32_t(y) * h / side) * w;
+    uint16_t *dst = out + size_t(y) * side;
     for (unsigned x = 0; x < side; ++x)
-      out[y * side + x] = in[(uint64_t(y) * h / side) * w + uint64_t(x) * w / side];
+      dst[x] = row[columns[x]];
+  }
 }
 void resample565(const uint16_t *in, unsigned w, unsigned h, uint16_t *out, unsigned side) {
   if (!in || !out || !w || !h || !side)
