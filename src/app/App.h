@@ -94,7 +94,9 @@ private:
   uint32_t lyricsRetryDue_ = 0;
   unsigned artConnectFails_ = 0, lyricsConnectFails_ = 0;
   uint32_t mediaReadUs_ = 0, mediaJpegUs_ = 0, mediaTotalUs_ = 0, mediaShownAt_ = 0;
-  uint64_t mediaFlushAt_ = 0;
+  uint64_t mediaFlushAt_ = 0, mediaLatencyUs_ = 0, tickUs_ = 0, assetsUs_ = 0, renderUs_ = 0;
+  int64_t mediaRequestUs_ = 0;
+  uint8_t workerCore_ = 0;
   uint32_t mediaFrames_ = 0, mediaFpsAt_ = 0, nvsUsageAt_ = 0, saveFailureAt_ = 0, artFailureAt_ = 0, lyricsFailureAt_ = 0, lastWifiDrops_ = 0, lastWifiFailures_ = 0, lastWifiDropAt_ = 0;
   char notice_[128]{}, address_[24]{};
 };

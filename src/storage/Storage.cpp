@@ -245,6 +245,7 @@ void Storage::readMedia(AssetResult &r) {
   r.readUs = decoder_.readUs();
   r.jpegUs = decoder_.jpegUs();
   r.totalUs = uint32_t(esp_timer_get_time() - started);
+  r.core = uint8_t(xPortGetCoreID());
 }
 bool Storage::execute(FileJob &job) {
   job.ok = false;

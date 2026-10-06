@@ -246,3 +246,15 @@ assert(!await matchesSource(
     prepared, new File([new Uint8Array([1, 2, 3])], 'movie.mp4', {lastModified: 124})));
 console.log(
     'Portal CRC, bounded writer, failed transactions, resume/abort/invalid offsets, GIF, source identity and serialized Sync passed');
+
+// A trailing // comment once swallowed the rest of the call (`signal,`) and broke conversion on the
+// device while `node --check` stayed green. Pin the arguments that must reach convert().
+{
+  const source = await (await import('node:fs/promises')).readFile(new URL('../assets/portal/app.js', import.meta.url), 'utf8');
+  const call = source.match(/await convert\(file, store,\s*\{path: outputPath\(file, true\)[^}]*\}\)/s);
+  assert(call, 'sync convert call not found');
+  assert(/fps: syncFps, signal,/.test(call[0]), 'sync convert call must pass fps and signal');
+  for (const line of source.split('\n'))
+    if (/\bsignal,\s*$/.test(line) === false && /\/\/.*\bsignal,/.test(line))
+      assert.fail('a line comment swallows "signal," here: ' + line.trim());
+}

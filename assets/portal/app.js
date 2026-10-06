@@ -583,8 +583,10 @@ $('#prepare-sync').onclick =
           if (!file) throw new Error('원본 영상을 선택하세요.');
           $('#sync-progress').value = 0;
           $('#sync-state').textContent = '변환 중 0%';
+          // The picker may be missing when the page is an older cached copy; default to 20.
+          const syncFps = Number($('#sync-fps')?.value) || 20;
           await convert(file, store,
-                        {path: outputPath(file, true), fps: Number($('#sync-fps')?.value) || 20,  // The page may be an older cached copy without the picker. signal,
+                        {path: outputPath(file, true), fps: syncFps, signal,
                          progress: syncProgress('1/2 브라우저 변환')});
           $('#sync-progress').value = 0;
           // The device validates every frame before replying; it cannot answer polls meanwhile.

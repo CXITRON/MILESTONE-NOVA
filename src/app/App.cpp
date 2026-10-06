@@ -522,6 +522,8 @@ void App::assets(uint32_t now) {
         mediaReadUs_ += result->readUs;
         mediaJpegUs_ += result->jpegUs;
         mediaTotalUs_ += result->totalUs;
+        mediaLatencyUs_ += uint64_t(esp_timer_get_time() - mediaRequestUs_);
+        workerCore_ = result->core;
         memcpy(mediaPixels_, result->pixels, rawBytes(board::mediaSide));
         mediaValid_ = true;
         if (first && !playback_.synchronized()) {
@@ -639,6 +641,7 @@ void App::assets(uint32_t now) {
       if (path) {
         assetPending_ = storage_.requestFile(path, playback_.position(now), mediaGeneration_);
         mediaRequested_ = now;
+        mediaRequestUs_ = esp_timer_get_time();
       }
     }
   }
@@ -787,6 +790,7 @@ void App::render(uint32_t now) {
   display_.present();
 }
 void App::tick() {
+  const int64_t tickStartUs = esp_timer_get_time();
   uint32_t now = millis();
   const uint32_t start = micros();
   if (lastLoop_)
@@ -865,7 +869,9 @@ void App::tick() {
     screenOff_ = true;
     display_.brightness(0);
   }
+  const int64_t phaseAssets = esp_timer_get_time();
   assets(now);
+  assetsUs_ += uint64_t(esp_timer_get_time() - phaseAssets);
   timer_.tick(now);
   if (!peripheralsOff_) {
     environment_.interval(settings_.sampleMs);
@@ -978,15 +984,19 @@ void App::tick() {
       const uint32_t shown = display_.frames() - mediaShownAt_;
       const float n = float(mediaFrames_);
       log("MEDIA",
-          "playback %.1f frames/s%s | screen %.1f/s flush %.1f ms | worker read %.1f jpeg %.1f total %.1f ms",
+          "playback %.1f frames/s%s | screen %.1f/s flush %.1f ms | worker read %.1f jpeg %.1f total %.1f ms "
+          "core %u | request->result %.1f ms | loop per frame: assets %.1f render %.1f tick %.1f ms",
           mediaFrames_ * 1000.0f / (now - mediaFpsAt_), playback_.synchronized() ? " (sync)" : "",
           shown * 1000.0f / (now - mediaFpsAt_),
           shown ? (display_.flushUs() - mediaFlushAt_) / 1000.0f / shown : 0.0f,
-          mediaReadUs_ / 1000.0f / n, mediaJpegUs_ / 1000.0f / n, mediaTotalUs_ / 1000.0f / n);
+          mediaReadUs_ / 1000.0f / n, mediaJpegUs_ / 1000.0f / n, mediaTotalUs_ / 1000.0f / n,
+          unsigned(workerCore_), mediaLatencyUs_ / 1000.0f / n, assetsUs_ / 1000.0f / n,
+          renderUs_ / 1000.0f / n, tickUs_ / 1000.0f / n);
     }
     mediaFpsAt_ = now;
     mediaFrames_ = 0;
     mediaReadUs_ = mediaJpegUs_ = mediaTotalUs_ = 0;
+    mediaLatencyUs_ = tickUs_ = assetsUs_ = renderUs_ = 0;
     mediaShownAt_ = display_.frames();
     mediaFlushAt_ = display_.flushUs();
   } else if (!playback_.playing()) {
@@ -1004,10 +1014,13 @@ void App::tick() {
   bootConfirm_.tick(now);
   internetUpdate(now);
   publish(now);
+  const int64_t phaseRender = esp_timer_get_time();
   render(now);
+  renderUs_ += uint64_t(esp_timer_get_time() - phaseRender);
   // Video frames go out in one pass: a frame spread over several loops shows as a sweeping seam.
   display_.flush(screen_ == Screen::Media ? 60000 : 4000);
   shutdown(millis());
+  tickUs_ += uint64_t(esp_timer_get_time() - tickStartUs);
   // Yield to the framework/BLE/SD; animation and playback timing never depend on this.
   vTaskDelay(1);
 }
