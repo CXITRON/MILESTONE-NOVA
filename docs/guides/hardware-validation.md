@@ -16,6 +16,13 @@ SD 모델/OS 버전/펌웨어 hash를 시험 기록에 남긴다.
 | strap | 배터리 divider 및 GPIO46 SD CS가 reset/boot 조건을 방해하지 않는지 확인 | 미실시 |
 | LCD | 20MHz 시작, 240×320 방향/색/inversion/테두리/10cm 배선 확인 | 미실시 |
 | redraw | NOW 가사/시계/영상에서 깜빡임, tearing, 버튼 반응 확인 | host layout 확인, 패널 미실시 |
+| SD 클럭 | 부팅 로그 `[SD] card clock 20 MHz`(실패 시 `retrying slower`로 10 MHz), 업로드·영상 재생·가사/아트 읽기 중 CRC/읽기 오류 없음 | 20 MHz 마운트 코드 추가(C0021). 기기 로그 미확인 |
+| 영상 FPS | AP Sync/MEDIA 재생 중 `[MEDIA] playback … frames/s` 줄. 기준(최적화 전): 새 프레임 6.2~9.3/s, 작업기 프레임당 SD 18~31 ms+디코딩 52~62 ms, `render` 약 100 ms | 화면 그리기·영상 구간 전송·재그리기 억제 적용(C0021). 재측정 미실시 |
+| Sync 연결 | 새로 업로드한 영상은 `/media/sync.njv.crc` 기록으로 연결이 즉시 끝남, 기록 없는 이전 영상은 전체 검증 후 연결, 다른 영상·크기는 거절 | host 통과(C0021). 기기 미실시 |
+| CORE LED | 날짜·시계 화면 청록, D-day 화면 호박색 웨이브가 밝기 상한 6/7/24와 야간에도 켜지고 LED 끔 설정에서는 꺼짐 | host 통과(C0020·C0021). 육안 미실시 |
+| NVS 여유 | 진단 `nvs=남은/전체`가 128 KiB 배치에서 전체 4032 안팎, 남은 값이 126(정리용 한 페이지)보다 충분히 큼 | 실측 `3769/4032`(C0012) |
+| Wi-Fi 이유 코드 | 진단의 `Wi-Fi lost/connect_failed … reason`이 환경(201 공유기 없음, 200 신호 끊김, 202 인증)과 맞는지 | 집 공유기 문제로 보류 |
+| TLS 메모리 | 아트·가사 조회 실패 기록에 `tls=32512`가 다시 나오지 않음 | v0.1.7 이후 재발 보고 없음, 장시간 미관찰 |
 | 버튼 | bounce, 동시 입력, short/long/repeat, 깨우는 OK 중복 입력 없음 | 지연 소비/동시 입력/포화 logic 통과, 실기 큐 누락 카운터 0. 물리 조작 미실시 |
 | I2C | DS3231만/AHT10만/둘 다/없음/SDA stuck 상태에서 reboot loop 없음 | 미실시 |
 | RTC | OSF, 전지 분리, 12/24h, 날짜 경계, UTC 저장/TZ 표시, NTP 복구 | 미실시 |

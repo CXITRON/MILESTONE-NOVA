@@ -302,6 +302,11 @@ commit은 전체 format/프레임/CRC 검증 후 교체한다. 손상/중단 후
 2. action `syncStart`에 새 `session` ID와 변환 결과의 `size`(bytes), `crc`(전체
    파일 CRC32 unsigned)를 전달한다. SD의 NJV1 전체 프레임 검증 중 같은 CRC를
    계산해 크기와 일치할 때만 길이를 확정한다. 준비한 파일과 다른 정상 영상도 거절한다.
+   업로드 확정(commit)이 이미 같은 CRC를 계산해 `/media/sync.njv.crc`에 기록했다면, 연결은 파일을
+   다시 읽지 않고 기록의 크기·CRC·파일 수정 시각과 색인(`.nix`) 존재를 `size`/`crc`와 대조해 길이를 확정한다
+   (`state` 없이 곧바로 `ok:true`). 기록이 없거나 하나라도 맞지 않으면 위의 전체 검증을 수행한다.
+   기록 형식(little-endian 20바이트): `"SCR1"`, `u32 size`, `u32 crc`, `u32 written`(수정 시각, 초),
+   `u32 check`(앞 16바이트의 CRC32). 새 업로드는 교체 전에 기존 기록을 지우고 확정 뒤에 새로 쓴다.
    검증은 백그라운드에서 수행하며 `{ok:true,state:"running",progress:0..100}`을
    반환한다. 같은 session/size/crc로 약 700 ms 간격으로 재요청하고, `state` 없이
    `ok:true`가 반환된 뒤 오디오를 재생한다. 검증 완료 자체로는 화면이나 재생을
