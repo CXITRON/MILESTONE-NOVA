@@ -51,9 +51,9 @@ bool jpegStructure(const uint8_t *d, size_t n, unsigned w, unsigned h) {
   return false;
 }
 } // namespace
-bool MediaDecoder::jpeg(size_t bytes, unsigned w, unsigned h) {
+bool MediaDecoder::jpeg(size_t bytes, unsigned w, unsigned h, uint16_t *output) {
   return w <= maxMediaSide && h <= maxMediaSide &&
-         decodeJpeg565(encoded_, bytes, decoded_, w, h, work_, workBytes);
+         decodeJpeg565(encoded_, bytes, output ? output : decoded_, w, h, work_, workBytes);
 }
 bool MediaDecoder::validate(const char *path, std::atomic<uint32_t> &progress,
                             const std::atomic<bool> &cancel, uint32_t *contentCrc) {
@@ -205,7 +205,7 @@ bool MediaDecoder::open(const char *path) {
   strcpy(path_, path);
   return true;
 }
-bool MediaDecoder::record(uint32_t n) {
+bool MediaDecoder::record(uint32_t n, uint16_t *output) {
   const int64_t started = esp_timer_get_time();
   uint8_t index[8];
   if (!index_.seek(16 + uint64_t(n) * 8) || index_.read(index, 8) != 8 ||
@@ -220,7 +220,7 @@ bool MediaDecoder::record(uint32_t n) {
                       crc32(encoded_, bytes) == read32(h + 4);
     const int64_t decoding = esp_timer_get_time();
     readUs_ = uint32_t(decoding - started);
-    const bool ok = read && jpeg(bytes, info_.width, info_.height);
+    const bool ok = read && jpeg(bytes, info_.width, info_.height, output);
     jpegUs_ = uint32_t(esp_timer_get_time() - decoding);
     return ok;
   }
@@ -292,6 +292,12 @@ bool MediaDecoder::frame(const char *path, uint32_t pos, uint16_t *out, uint32_t
   }
   if (info_.format == MediaFormat::JpegVideo) {
     const uint32_t target = std::min<uint64_t>(uint64_t(pos) * info_.fps / 1000, info_.frames - 1);
+    if (info_.width == side && info_.height == side) {
+      // Same size as the caller's frame: decode straight into it instead of into `decoded_` and
+      // then copying 115 KB. The shared copy no longer holds a frame, so forget it.
+      decodedFrame_ = UINT32_MAX;
+      return record(target, out);
+    }
     if (target != decodedFrame_ && !record(target))
       return false;
     decodedFrame_ = target;

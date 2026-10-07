@@ -2,8 +2,25 @@
 #include <algorithm>
 #include <cmath>
 namespace nova {
-LightFrame LightEffects::render(uint32_t now, uint8_t limit, const LightState &s) {
-  if (!initialized_) { initialized_ = true; bootAt_ = now; }
+void LightDither::reset() {
+  for (unsigned i = 0; i < error_.size(); ++i)
+    error_[i] = float(i) / float(error_.size());
+}
+uint8_t LightDither::channel(unsigned index, float target, uint8_t limit) {
+  if (index >= error_.size()) return 0;
+  target = std::clamp(target, 0.0f, float(limit));
+  if (target <= 0 || !limit) {
+    error_[index] = float(index) / float(error_.size());
+    return 0;
+  }
+  const float total = target + error_[index];
+  const auto value = uint8_t(std::min(float(limit), std::floor(total)));
+  error_[index] = total - value;
+  return value;
+}
+LightFrame LightEffects::render(uint32_t now, uint8_t limit, const LightState &s, bool smooth) {
+  if (!initialized_) { initialized_ = true; bootAt_ = now; dither_.reset(); }
+  const LightEffect previous = effect_;
   if (now - bootAt_ >= 1800) bootDone_ = true;
   if (!s.track || !trackSeen_ || track_ != s.trackGeneration) {
     trackSeen_ = s.track; track_ = s.trackGeneration;
@@ -44,14 +61,23 @@ LightFrame LightEffects::render(uint32_t now, uint8_t limit, const LightState &s
   else if (s.core) effect_ = LightEffect::Clock;
   else effect_ = LightEffect::Idle;
 
+  if (previous != effect_ || limit != lastLimit_ || smooth != lastSmooth_) dither_.reset();
+  lastLimit_ = limit;
+  lastSmooth_ = smooth;
   LightFrame frame{};
-  const float breath = (1.0f + std::sin(float(now % 3000) * 6.2831853f / 3000)) * .5f;
+  const bool breathing = effect_ == LightEffect::Critical || effect_ == LightEffect::Warning ||
+                         effect_ == LightEffect::SyncLost || effect_ == LightEffect::TimerDone ||
+                         effect_ == LightEffect::Connecting || effect_ == LightEffect::Timer;
+  const bool waving = effect_ == LightEffect::Boot || effect_ == LightEffect::Sync ||
+                      effect_ == LightEffect::Media || effect_ == LightEffect::Music;
+  const float breath = breathing ? (1.0f + std::sin(float(now % 3000) *
+                                                  6.2831853f / 3000)) * .5f : 0;
   for (unsigned i = 0; i < frame.size(); ++i) {
     float r = 0, g = 0, b = 0, a = 0;
-    const float wave = .15f + .65f * (1 + std::sin(float(now % 4000) *
-                                                    6.2831853f / 4000 - i * .9f)) * .5f;
-    const float slow = (1 + std::sin(float(now % 6000) * 6.2831853f / 6000 - i * .7f)) * .5f;
-    const float slowWarm = (1 + std::sin(float(now % 4500) * 6.2831853f / 4500 - i * .5f)) * .5f;
+    const float wave = waving ? .15f + .65f * (1 + std::sin(float(now % 4000) *
+                                                    6.2831853f / 4000 - i * .9f)) * .5f : 0;
+    const float slow = effect_ == LightEffect::Clock ? (1 + std::sin(float(now % 6000) * 6.2831853f / 6000 - i * .7f)) * .5f : 0;
+    const float slowWarm = effect_ == LightEffect::DDay ? (1 + std::sin(float(now % 4500) * 6.2831853f / 4500 - i * .5f)) * .5f : 0;
     const bool edge = i == 0 || i + 1 == frame.size();
     const bool center = i == frame.size() / 2;
     const bool chase = (now / 180) % frame.size() == i;
@@ -88,13 +114,22 @@ LightFrame LightEffects::render(uint32_t now, uint8_t limit, const LightState &s
     case LightEffect::DDay: r = 1; g = .42f; b = .05f; a = .22f + .3f * slowWarm; break;
     case LightEffect::Idle: g = .7f; b = .4f; a = .07f; break;
     }
-    // Round, and never let a lit channel fall to zero: truncation turned every dim effect off
-    // at low brightness limits.
-    const auto level = [&](float c) -> uint8_t {
-      const float v = limit * std::clamp(c, 0.0f, 1.0f);
-      return v <= 0 ? 0 : uint8_t(std::max(1.0f, std::round(v)));
+    // A mild polynomial gamma curve (x * (.8 + .2*x)) avoids pow() per channel.
+    // Diffuse fractional values instead of rounding every lit channel up to one.
+    const auto target = [&](float c, bool ambientFloor) {
+      const float x = std::clamp(c, 0.0f, 1.0f);
+      const float v = limit * x * (.8f + .2f * x);
+      // Keep the established CORE visibility requirement on its dominant channel only.
+      // Other channels retain fractional color and can correctly fade to zero.
+      return ambientFloor && limit ? std::max(1.0f, v) : v;
     };
-    frame[i] = {level(r * a), level(g * a), level(b * a)};
+    const auto level = [&](unsigned channel, float value) -> uint8_t {
+      return smooth ? dither_.channel(channel, value, limit)
+                    : uint8_t(std::min(float(limit), std::round(value)));
+    };
+    frame[i] = {level(i * 3, target(r * a, effect_ == LightEffect::DDay)),
+                level(i * 3 + 1, target(g * a, effect_ == LightEffect::Clock)),
+                level(i * 3 + 2, target(b * a, false))};
   }
   return frame;
 }

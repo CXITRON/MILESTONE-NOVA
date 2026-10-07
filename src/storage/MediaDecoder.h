@@ -21,8 +21,8 @@ public:
 private:
   uint32_t readUs_ = 0, jpegUs_ = 0;
   bool open(const char *path);
-  bool jpeg(size_t bytes, unsigned width, unsigned height);
-  bool record(uint32_t index);
+  bool jpeg(size_t bytes, unsigned width, unsigned height, uint16_t *output = nullptr);
+  bool record(uint32_t index, uint16_t *output = nullptr);
   bool bitmap(uint16_t *pixels, unsigned side);
   void monoToPixels(uint16_t *pixels, unsigned side);
   File file_, index_;

@@ -57,10 +57,12 @@ int main() {
   transfers.clear(); startRows.clear();
   display.forceStrips(4, 6);
   display.present(); display.flush(60000);
-  assert(transfers.size() == 3 && startRows[0] == 32 && startRows[2] == 48); // Unchanged, still sent.
+  // Unchanged, still sent: the three contiguous forced strips go out as one window and one stream.
+  assert(transfers.size() == 1 && startRows.size() == 1 && startRows[0] == 32);
+  assert(transfers[0].size() == 3 * 240 * 8);
   transfers.clear(); startRows.clear();
   display.present(); display.flush(60000);
-  assert(transfers.size() == 3); // Forced again; nothing else changed.
+  assert(transfers.size() == 1 && transfers[0].size() == 3 * 240 * 8); // Forced again; nothing else changed.
   transfers.clear(); startRows.clear();
   display.forceStrips(-1, -1);
   display.present(); display.flush(60000);

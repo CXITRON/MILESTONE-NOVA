@@ -13,8 +13,8 @@ class LightingTests(unittest.TestCase):
         subprocess.run([
             os.environ.get('CXX', 'g++'), '-std=c++17', '-Wall', '-Wextra', '-Werror',
             '-g', '-O1', '-fsanitize=address,undefined', '-fno-omit-frame-pointer',
-            '-I' + str(ROOT / 'src'), str(ROOT / 'tests/lighting/test_effects.cpp'),
-            str(ROOT / 'src/lighting/Effects.cpp'), '-o', str(output)
+            '-I' + str(ROOT / 'tests/lighting/support'), '-I' + str(ROOT / 'src'), str(ROOT / 'tests/lighting/test_effects.cpp'),
+            str(ROOT / 'src/lighting/Effects.cpp'), str(ROOT / 'src/lighting/Lights.cpp'), '-o', str(output)
         ], check=True)
         subprocess.run([str(output)], check=True,
                        env={**os.environ, 'ASAN_OPTIONS': 'detect_leaks=0'})

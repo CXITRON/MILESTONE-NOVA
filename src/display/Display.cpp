@@ -1,4 +1,5 @@
 #include "Display.h"
+#include <algorithm>
 #include <cstring>
 #include <esp_heap_caps.h>
 namespace nova {
@@ -87,21 +88,27 @@ void Display::flush(uint32_t sliceUs) {
     const bool forced = int(index) >= forcedFirst_ && int(index) <= forcedLast_ && forcedFirst_ >= 0;
     if (!forced && !initial_ && !memcmp(current, sent_ + start, pixels * 2))
       continue;
+    // Forced (video) strips are contiguous in the canvas: set one window and stream them in one
+    // transaction instead of a window command and transaction per 8 rows.
+    const unsigned last =
+        forced ? std::min<unsigned>(unsigned(forcedLast_), board::height / 8 - 1) : index;
+    const unsigned endRow = last * 8 + 7;
+    const size_t bytes = size_t(last - index + 1) * pixels * 2;
     const uint8_t columns[]{0, 0, 0, 239};
-    const uint8_t rows[]{uint8_t(row >> 8), uint8_t(row), uint8_t((row + 7) >> 8),
-                         uint8_t(row + 7)};
+    const uint8_t rows[]{uint8_t(row >> 8), uint8_t(row), uint8_t(endRow >> 8), uint8_t(endRow)};
     command(0x2A, columns, 4);
     command(0x2B, rows, 4);
     command(0x2C);
     spi_.beginTransaction(settings_);
     digitalWrite(board::lcdCs, LOW);
     digitalWrite(board::lcdDc, HIGH);
-    spi_.writePixels(current, pixels * 2);
+    spi_.writePixels(current, bytes);
     digitalWrite(board::lcdCs, HIGH);
     spi_.endTransaction();
-    if (forced)
+    if (forced) {
       sentStale_ = true;
-    else
+      strip_ = last + 1;
+    } else
       memcpy(sent_ + start, current, pixels * 2);
     if (uint32_t(micros() - started) >= sliceUs)
       break;
