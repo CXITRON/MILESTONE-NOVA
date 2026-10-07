@@ -739,6 +739,9 @@ void App::render(uint32_t now) {
   rendered_ = now;
   network_.address(address_, sizeof(address_));
   View v;
+  const int64_t buildStart = esp_timer_get_time();
+  v.clock = esp_timer_get_time;
+  v.times = &renderTimes_;
   v.screen = now - boot_ < 3000 ? Screen::Boot : screen_;
   v.settings = &settings_;
   v.media = &session_;
@@ -797,6 +800,8 @@ void App::render(uint32_t now) {
   if (bootConfirm_.pending())
     v.notice = "새 펌웨어 검증 중 (60초)";
   v.sleeping = power_.pending();
+  renderBuildUs_ += uint64_t(esp_timer_get_time() - buildStart);
+  ++renders_;
   ui_.render(display_.canvas(), v);
   display_.present();
 }
@@ -998,18 +1003,28 @@ void App::tick() {
       const float n = float(mediaFrames_);
       log("MEDIA",
           "playback %.1f frames/s%s | screen %.1f/s flush %.1f ms | worker read %.1f jpeg %.1f total %.1f ms "
-          "core %u | request->result %.1f ms | loop per frame: assets %.1f render %.1f tick %.1f ms",
+          "core %u | request->result %.1f ms | loop per frame: assets %.1f render %.1f tick %.1f ms | "
+          "per render (%u): build %.1f clear %.1f chrome %.1f screen %.1f overlay %.1f post %.1f ms",
           mediaFrames_ * 1000.0f / (now - mediaFpsAt_), playback_.synchronized() ? " (sync)" : "",
           shown * 1000.0f / (now - mediaFpsAt_),
           shown ? (display_.flushUs() - mediaFlushAt_) / 1000.0f / shown : 0.0f,
           mediaReadUs_ / 1000.0f / n, mediaJpegUs_ / 1000.0f / n, mediaTotalUs_ / 1000.0f / n,
           unsigned(workerCore_), mediaLatencyUs_ / 1000.0f / n, assetsUs_ / 1000.0f / n,
-          renderUs_ / 1000.0f / n, tickUs_ / 1000.0f / n);
+          renderUs_ / 1000.0f / n, tickUs_ / 1000.0f / n, renders_,
+          renders_ ? renderBuildUs_ / 1000.0f / renders_ : 0.0f,
+          renders_ ? renderTimes_.clear / 1000.0f / renders_ : 0.0f,
+          renders_ ? renderTimes_.chrome / 1000.0f / renders_ : 0.0f,
+          renders_ ? renderTimes_.screen / 1000.0f / renders_ : 0.0f,
+          renders_ ? renderTimes_.overlay / 1000.0f / renders_ : 0.0f,
+          renders_ ? renderTimes_.post / 1000.0f / renders_ : 0.0f);
     }
     mediaFpsAt_ = now;
     mediaFrames_ = 0;
     mediaReadUs_ = mediaJpegUs_ = mediaTotalUs_ = 0;
     mediaLatencyUs_ = tickUs_ = assetsUs_ = renderUs_ = 0;
+    renderTimes_ = RenderTimes{};
+    renderBuildUs_ = 0;
+    renders_ = 0;
     mediaShownAt_ = display_.frames();
     mediaFlushAt_ = display_.flushUs();
   } else if (!playback_.playing()) {

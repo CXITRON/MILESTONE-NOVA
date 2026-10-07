@@ -7,7 +7,13 @@
 #include "Navigation.h"
 #include <ctime>
 namespace nova {
+// Microseconds spent in each part of Ui::render, filled only when the app supplies a clock.
+struct RenderTimes {
+  uint32_t clear = 0, chrome = 0, screen = 0, overlay = 0, post = 0;
+};
 struct View {
+  int64_t (*clock)() = nullptr;  // Optional microsecond clock; null disables timing.
+  RenderTimes *times = nullptr;
   Screen screen = Screen::Clock;
   Profile mode = Profile::Core;
   unsigned menu = 0, systemPage = 0, recoveryItem = 0, updateProgress = 0;

@@ -45,9 +45,16 @@ void Ui::chrome(Canvas &c, const View &v) {
   c.text(12, 300, 216, 18, footer, c.muted(), 1, true);
 }
 void Ui::render(Canvas &c, const View &v) {
+  const auto stamp = [&]() -> int64_t { return v.clock ? v.clock() : 0; };
+  const auto add = [&](uint32_t RenderTimes::*field, int64_t from) {
+    if (v.times && v.clock)
+      v.times->*field += uint32_t(v.clock() - from);
+  };
+  int64_t mark = stamp();
   c.theme(v.settings ? v.settings->accentColor : c.accent(),
           v.settings ? v.settings->mutedColor : c.muted());
   c.clear(color::background);
+  add(&RenderTimes::clear, mark);
   if (v.screen == Screen::Boot) {
     c.rect(94, 73, 52, 4, c.accent());
     c.text(0, 112, 240, 48, "NOVA", color::white, 3, true);
@@ -56,7 +63,10 @@ void Ui::render(Canvas &c, const View &v) {
       c.text(16, 223, 208, 54, v.settings->message, v.settings->messageColor, 1, true);
     return;
   }
+  mark = stamp();
   chrome(c, v);
+  add(&RenderTimes::chrome, mark);
+  mark = stamp();
   if (v.sleeping) {
     c.text(16, 110, 208, 60, "전원을 끄는 중", color::white, 1, true);
     c.text(16, 200, 208, 50, "OK 버튼을 놓아 주세요", c.muted(), 1, true);
@@ -117,12 +127,16 @@ void Ui::render(Canvas &c, const View &v) {
     coreScreen(c, v);
     break;
   }
+  add(&RenderTimes::screen, mark);
+  mark = stamp();
   if (v.syncStale && v.screen == Screen::Media)
     c.text(16, 263, 208, 20, "동기 신호 끊김 / 정지", color::warning, 1, true);
   if (v.notice && v.notice[0]) {
     c.rect(8, 264, 224, 29, color::panel);
     c.text(14, 268, 212, 20, v.notice, color::warning);
   }
+  add(&RenderTimes::overlay, mark);
+  mark = stamp();
   if (v.settings) {
     auto *pixels = c.pixels();
     if (v.settings->luminance != 100 || v.settings->contrast) {
@@ -156,6 +170,7 @@ void Ui::render(Canvas &c, const View &v) {
         pixels[y * board::width] = color::background;
     }
   }
+  add(&RenderTimes::post, mark);
 }
 void mediaScreen(Canvas &c, const View &v) {
   // Full-width 240x240 frame below the status bar; it covers the screen title row.
