@@ -893,6 +893,8 @@ void Portal::run() {
       storage_->execute(cleanup);
       strcpy(cleanup.path, "/media/sync.njv.nix");
       storage_->execute(cleanup);
+      strcpy(cleanup.path, "/media/sync.njv.crc");
+      storage_->execute(cleanup);
     }
     if (!requested_ && running) {
       server_.stop();

@@ -12,6 +12,13 @@ namespace {
 bool artworkPath(const char *path) {
   return strlen(path) == 29 && !strncmp(path, "/artwork/", 9) && !strcmp(path + 25, ".nvi");
 }
+// Written when a Sync video is committed: lets "connect" confirm the file is the one the browser
+// prepared without reading and decoding it all over again.
+struct SyncMark {
+  char magic[4];
+  uint32_t size, crc, written, check;
+};
+constexpr char syncMarkMagic[4]{'S', 'C', 'R', '1'};
 bool automaticArtworkAllowed(const char *path) {
   char flag[144];
   for (const char *suffix : {"pin", "custom"}) {
@@ -411,6 +418,30 @@ void Storage::fileJob(FileJob &j) {
         fail("Prepared Sync file does not match SD");
         return;
       }
+      // The upload validated every frame and recorded the content CRC. If that record matches this
+      // file (size, write time) and the browser's checksum, the file is the prepared one: skip the
+      // second full read. Anything unexpected falls through to the complete validation below.
+      char markPath[160], indexPath[160];
+      snprintf(markPath, sizeof(markPath), "%s.crc", j.path);
+      snprintf(indexPath, sizeof(indexPath), "%s.nix", j.path);
+      SyncMark mark{};
+      File record = SD.open(markPath, FILE_READ);
+      if (record && record.size() == sizeof(mark) &&
+          record.read(reinterpret_cast<uint8_t *>(&mark), sizeof(mark)) == sizeof(mark) &&
+          !memcmp(mark.magic, syncMarkMagic, sizeof(mark.magic)) &&
+          mark.check == crc32(&mark, offsetof(SyncMark, check)) && mark.size == j.offset &&
+          mark.crc == j.checksum && mark.written == f.getLastWrite() && SD.exists(indexPath)) {
+        uint8_t header[64]{};
+        MediaInfo info;
+        f.seek(0);
+        const size_t got = f.read(header, sizeof(header));
+        if (mediaHeader(header, got, f.size(), info) && !memcmp(header, "NJV1", 4)) {
+          j.total = info.duration;
+          j.ok = true;
+          progress_ = 100;
+          return;
+        }
+      }
     }
     j.ok = decoder_.validate(j.path, progress_, validationCancelled_, sync ? &checksum : nullptr);
     if (j.ok) {
@@ -616,14 +647,18 @@ void Storage::fileJob(FileJob &j) {
     snprintf(backup, sizeof(backup), "%s.bak", upload_.path);
     writing_ = true;
     decoder_.close();
+    const bool syncFile = !strcmp(upload_.path, "/media/sync.njv");
+    uint32_t contentCrc = 0;
     bool ok = !strncmp(upload_.path, "/update/", 8) ||
-              decoder_.validate(part, progress_, validationCancelled_);
+              decoder_.validate(part, progress_, validationCancelled_, syncFile ? &contentCrc : nullptr);
     if (!ok) {
       fail(decoder_.error());
       writing_ = false;
       return;
     }
     SD.remove(backup);
+    if (syncFile)
+      SD.remove("/media/sync.njv.crc"); // Never let an old record vouch for the file being replaced.
     const bool old = SD.exists(upload_.path);
     if (old)
       ok = SD.rename(upload_.path, backup);
@@ -640,6 +675,20 @@ void Storage::fileJob(FileJob &j) {
         SD.rename(indexPart, indexFinal);
       }
       SD.remove(backup);
+      if (syncFile) {
+        File committed = SD.open(upload_.path, FILE_READ);
+        if (committed) {
+          SyncMark mark{};
+          memcpy(mark.magic, syncMarkMagic, sizeof(mark.magic));
+          mark.size = committed.size();
+          mark.crc = contentCrc;
+          mark.written = committed.getLastWrite();
+          mark.check = crc32(&mark, offsetof(SyncMark, check));
+          committed.close();
+          // A missing record only costs a full validation on connect, so a failure is not fatal.
+          atomicWrite("/media/sync.njv.crc", reinterpret_cast<const uint8_t *>(&mark), sizeof(mark));
+        }
+      }
       strcpy(j.path, upload_.path);
       SD.remove("/media/.transfer");
       upload_ = UploadRecord{};

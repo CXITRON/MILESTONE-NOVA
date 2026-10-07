@@ -386,6 +386,59 @@ int main(int argc, char **argv) {
   job.offset = original.size();
   job.checksum = crc32(original.data(), original.size());
   assert(!StorageTestAccess::run(resumed, job)); // A still is not a Sync video.
+  // Committing a Sync video records its content CRC, so connecting needs no second full validation.
+  {
+    auto fresh = video("NJV1", 160);
+    job = {};
+    job.op = FileOp::UploadBegin;
+    strcpy(job.path, "/media/sync.njv");
+    job.id = 77;
+    job.total = fresh.size();
+    assert(StorageTestAccess::run(resumed, job));
+    job.op = FileOp::UploadChunk;
+    job.offset = 0;
+    job.data = fresh.data();
+    job.length = fresh.size();
+    job.checksum = crc32(job.data, job.length);
+    assert(StorageTestAccess::run(resumed, job));
+    job.op = FileOp::UploadCommit;
+    assert(StorageTestAccess::run(resumed, job));
+    assert(SD.exists("/media/sync.njv.crc") && SD.exists("/media/sync.njv.nix"));
+    FileJob check;
+    check.op = FileOp::SyncValidate;
+    strcpy(check.path, "/media/sync.njv");
+    check.offset = fresh.size();
+    check.checksum = crc32(fresh.data(), fresh.size());
+    assert(StorageTestAccess::run(resumed, check) && check.total == 200);
+    ++check.offset;
+    assert(!StorageTestAccess::run(resumed, check)); // Wrong size is never accepted.
+    --check.offset;
+    check.checksum ^= 1;
+    assert(!StorageTestAccess::run(resumed, check)); // Nor a different prepared source.
+    check.checksum ^= 1;
+    // Without the record the complete validation still decides, with the same answers.
+    SD.remove("/media/sync.njv.crc");
+    assert(StorageTestAccess::run(resumed, check) && check.total == 200);
+    check.checksum ^= 1;
+    assert(!StorageTestAccess::run(resumed, check));
+    // A replacement upload removes the old record first, so it can never vouch for the new file.
+    check.checksum ^= 1;
+    job = {};
+    job.op = FileOp::UploadBegin;
+    strcpy(job.path, "/media/sync.njv");
+    job.id = 78;
+    job.total = fresh.size();
+    assert(StorageTestAccess::run(resumed, job));
+    job.op = FileOp::UploadChunk;
+    job.offset = 0;
+    job.data = fresh.data();
+    job.length = fresh.size();
+    job.checksum = crc32(job.data, job.length);
+    assert(StorageTestAccess::run(resumed, job));
+    job.op = FileOp::UploadCommit;
+    assert(StorageTestAccess::run(resumed, job) && SD.exists("/media/sync.njv.crc"));
+    assert(StorageTestAccess::run(resumed, check) && check.total == 200);
+  }
   // Metadata/search pagination and explicit delete preserve the MISSING state.
   Track track;
   strcpy(track.title, "곡 검색");
