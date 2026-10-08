@@ -1003,20 +1003,19 @@ void App::tick() {
       const float n = float(mediaFrames_);
       log("MEDIA",
           "playback %.1f frames/s%s | screen %.1f/s flush %.1f ms | worker read %.1f jpeg %.1f total %.1f ms "
-          "core %u | request->result %.1f ms | loop per frame: assets %.1f render %.1f tick %.1f ms | "
-          "per render (%u): build %.1f clear %.1f chrome %.1f screen %.1f overlay %.1f post %.1f ms",
+          "core %u | request->result %.1f ms | loop per frame: assets %.1f render %.1f tick %.1f ms",
           mediaFrames_ * 1000.0f / (now - mediaFpsAt_), playback_.synchronized() ? " (sync)" : "",
           shown * 1000.0f / (now - mediaFpsAt_),
           shown ? (display_.flushUs() - mediaFlushAt_) / 1000.0f / shown : 0.0f,
           mediaReadUs_ / 1000.0f / n, mediaJpegUs_ / 1000.0f / n, mediaTotalUs_ / 1000.0f / n,
           unsigned(workerCore_), mediaLatencyUs_ / 1000.0f / n, assetsUs_ / 1000.0f / n,
-          renderUs_ / 1000.0f / n, tickUs_ / 1000.0f / n, renders_,
-          renders_ ? renderBuildUs_ / 1000.0f / renders_ : 0.0f,
-          renders_ ? renderTimes_.clear / 1000.0f / renders_ : 0.0f,
-          renders_ ? renderTimes_.chrome / 1000.0f / renders_ : 0.0f,
-          renders_ ? renderTimes_.screen / 1000.0f / renders_ : 0.0f,
-          renders_ ? renderTimes_.overlay / 1000.0f / renders_ : 0.0f,
-          renders_ ? renderTimes_.post / 1000.0f / renders_ : 0.0f);
+          renderUs_ / 1000.0f / n, tickUs_ / 1000.0f / n);
+      // A second line: Log.cpp keeps 240 characters per line, so one long line lost its tail.
+      if (renders_)
+        log("MEDIA", "per render (%u): build %.1f clear %.1f chrome %.1f screen %.1f overlay %.1f post %.1f ms",
+            renders_, renderBuildUs_ / 1000.0f / renders_, renderTimes_.clear / 1000.0f / renders_,
+            renderTimes_.chrome / 1000.0f / renders_, renderTimes_.screen / 1000.0f / renders_,
+            renderTimes_.overlay / 1000.0f / renders_, renderTimes_.post / 1000.0f / renders_);
     }
     mediaFpsAt_ = now;
     mediaFrames_ = 0;
