@@ -494,6 +494,8 @@ USB로 직접 올린 기기와 같은 버전의 릴리스는 "최신 버전입�
 
 ## 정식 릴리스 0.1.15
 
+[GitHub 릴리스 v0.1.15](https://github.com/CXITRON/MILESTONE-NOVA/releases/tag/v0.1.15)
+
 U0001 완료 시점의 영상 개선과 LED 롤백을 포함한다. LCD 이중 버퍼·DMA, 영상 렌더
 통합, 조건부 JPEGDEC, 작업 코어 배치는 USB 시험 0.1.14 최종 후보와 같으며
 릴리스 버전을 0.1.15로 올려 해당 기기도 GitHub OTA 업데이트를 인식할 수 있게 했다.
