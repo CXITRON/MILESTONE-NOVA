@@ -499,6 +499,8 @@ USB로 직접 올린 기기와 같은 버전의 릴리스는 "최신 버전입�
 
 ## 업로드 필드 오류 수정 0.1.17
 
+[GitHub 릴리스 v0.1.17](https://github.com/CXITRON/MILESTONE-NOVA/releases/tag/v0.1.17)
+
 0.1.16에서 `Invalid chunk fields`로 업로드가 실패하던 raw 요청의 메타데이터 전달을
 HTTP header로 수정했다. 구형 클라이언트/서버는 multipart로 fallback하도록 협상한다.
 업데이트 후 포털을 새로고침하고 재시도한다. IndexedDB 준비 자료는 그대로 사용할 수 있다.
