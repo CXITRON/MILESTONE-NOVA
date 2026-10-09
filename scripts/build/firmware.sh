@@ -25,7 +25,7 @@ if [[ -n ${NOVA_VERSION:-} ]]; then
   }
   extra_flags+=" -DNOVA_VERSION_NUMBER=$NOVA_VERSION"
 fi
-"$cli" compile --fqbn "$fqbn" --build-path "$root/build/firmware" \
+"$cli" compile --libraries "$root/lib" --fqbn "$fqbn" --build-path "$root/build/firmware" \
   --build-property 'upload.maximum_size=6291456' \
   --build-property "compiler.cpp.extra_flags=$extra_flags" \
   --build-property 'compiler.c.elf.extra_flags=-Wl,--wrap=esp_mbedtls_mem_calloc' \

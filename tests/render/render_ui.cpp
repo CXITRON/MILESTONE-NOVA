@@ -1,4 +1,5 @@
 #include "ui/Ui.h"
+#include <algorithm>
 #include <cassert>
 #include <cstdio>
 #include <cstdlib>
@@ -341,6 +342,62 @@ int main(int argc, char **argv) {
   ui.render(c, v);
   assert(c.pixels()[30 * board::width] != color::accent);
   assert(c.pixels()[291 * board::width + 16] == settings.accentColor);
+
+  // Fused video copy/tone/shift must match reference pixels, including overlay fallbacks.
+  {
+    v.screen = Screen::Media;
+    std::vector<uint16_t> image(board::mediaSide * board::mediaSide);
+    for (unsigned i = 0; i < image.size(); ++i) image[i] = uint16_t(i * 137 + 3);
+    v.mediaPixels = image.data();
+    for (bool mono : {false, true}) for (bool shift : {false, true})
+      for (int light : {60, 100, 140}) for (int contrast : {-20, 0, 30})
+        for (unsigned overlay : {0u, 1u, 2u}) {
+          settings.mediaMonochrome = mono; settings.burnin = shift;
+          settings.luminance = light; settings.contrast = contrast;
+          v.now = shift ? 60000 : 0;
+          v.notice = overlay == 1 ? "test notice" : ""; v.syncStale = overlay == 2;
+          v.fastMedia = false; ui.render(c, v);
+          std::vector<uint16_t> reference(c.pixels(), c.pixels() + board::width * board::height);
+          // Stale canvas data must not leak into the omitted clear area.
+          c.clear(0xFFFF);
+          v.fastMedia = true; ui.render(c, v);
+          assert(std::equal(reference.begin(), reference.end(), c.pixels()));
+        }
+    settings.mediaMonochrome = false; settings.burnin = false;
+    settings.luminance = 100; settings.contrast = 0; v.notice = ""; v.syncStale = false;
+    v.mediaPixels = nullptr;
+  }
+  // Tone curve plus burn-in shift run as one pass; the result must equal the two separate passes.
+  {
+    reset(Screen::Media);
+    settings.mediaMonochrome = false;
+    settings.burnin = false;
+    settings.luminance = 100;
+    settings.contrast = 0;
+    v.now = 0;
+    ui.render(c, v);
+    std::vector<uint16_t> plain(c.pixels(), c.pixels() + board::width * board::height);
+    settings.luminance = 83;
+    settings.contrast = -7;
+    settings.burnin = true;
+    v.now = 60000;  // odd minute: the shift is active
+    ui.render(c, v);
+    const auto tone = [&](int value, int max) {
+      int channel = value * 255 / max;
+      channel = (channel - 128) * (100 + settings.contrast) / 100 + 128;
+      return std::clamp(channel * int(settings.luminance) / 100, 0, 255) * max / 255;
+    };
+    for (auto &p : plain)
+      p = uint16_t(tone(p >> 11, 31) << 11 | tone((p >> 5) & 63, 63) << 5 | tone(p & 31, 31));
+    for (int y = 0; y < board::height; ++y)
+      for (int x = 0; x < board::width; ++x) {
+        const uint16_t want = x == 0 || y == 0 ? color::background
+                                               : plain[(y - 1) * board::width + x - 1];
+        assert(c.pixels()[y * board::width + x] == want);
+      }
+    settings.luminance = 100;
+    settings.contrast = 0;
+  }
 
   // Punctuation missing from both fonts is drawn as its ASCII lookalike, never as '?'.
   const auto drawn = [&](const char *text) {

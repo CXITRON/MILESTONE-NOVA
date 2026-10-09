@@ -414,6 +414,11 @@ void App::console(const char *cmd, uint32_t now) {
         unsigned(network_.ap()), unsigned(screen_), static_cast<unsigned long>(playback_.session()),
         unsigned(playback_.playing()), static_cast<unsigned long>(playback_.position(now)),
         unsigned(playback_.stale()));
+    log("CPU", "MHz=%u chip=%.1fC thermal=%d loop_core=%u", unsigned(getCpuFrequencyMhz()),
+        chipTemperature_, thermalState_, unsigned(xPortGetCoreID()));
+    log("FRAME", "luminance=%u contrast=%d monochrome=%u burnin=%u shift=%u",
+        unsigned(settings_.luminance), int(settings_.contrast), unsigned(settings_.mediaMonochrome),
+        unsigned(settings_.burnin), unsigned(settings_.burnin && (now / 60000) % 2));
     log("MEDIA", "key=%s position=%lu", session_.track().key,
         static_cast<unsigned long>(session_.position(now)));
     char update[128];
@@ -519,6 +524,12 @@ void App::assets(uint32_t now) {
       const bool first = !mediaValid_;
       if (mediaPixels_ && result->artPresent) {
         ++mediaFrames_;
+        if (result->frame != UINT32_MAX &&
+            (mediaIndex_ != result->frame || mediaIndexGeneration_ != result->request.generation)) {
+          mediaIndex_ = result->frame;
+          mediaIndexGeneration_ = result->request.generation;
+          if (!++mediaToken_) ++mediaToken_;
+        }
         mediaFresh_ = true;
         mediaReadUs_ += result->readUs;
         mediaJpegUs_ += result->jpegUs;
@@ -723,7 +734,7 @@ void App::internetUpdate(uint32_t now) {
   lastUpdateState_ = state;
 }
 void App::render(uint32_t now) {
-  if (!display_.ready() || display_.busy() || peripheralsOff_ ||
+  if (!display_.canRender() || peripheralsOff_ ||
       now - rendered_ < (screen_ == Screen::Media ? 33U : 100U))
     return;
   // While video plays the loop used to redraw and resend the same picture between decoded frames
@@ -803,7 +814,7 @@ void App::render(uint32_t now) {
   renderBuildUs_ += uint64_t(esp_timer_get_time() - buildStart);
   ++renders_;
   ui_.render(display_.canvas(), v);
-  display_.present();
+  display_.present(v.screen == Screen::Media ? mediaToken_ : 0);
 }
 void App::tick() {
   const int64_t tickStartUs = esp_timer_get_time();
@@ -1010,6 +1021,8 @@ void App::tick() {
           mediaReadUs_ / 1000.0f / n, mediaJpegUs_ / 1000.0f / n, mediaTotalUs_ / 1000.0f / n,
           unsigned(workerCore_), mediaLatencyUs_ / 1000.0f / n, assetsUs_ / 1000.0f / n,
           renderUs_ / 1000.0f / n, tickUs_ / 1000.0f / n);
+      log("MEDIA", "unique indexed frames displayed %.1f/s", (display_.contentFrames() - mediaSourceAt_) *
+          1000.0f / (now - mediaFpsAt_));
       // A second line: Log.cpp keeps 240 characters per line, so one long line lost its tail.
       if (renders_)
         log("MEDIA", "per render (%u): build %.1f clear %.1f chrome %.1f screen %.1f overlay %.1f post %.1f ms",
@@ -1025,6 +1038,7 @@ void App::tick() {
     renderBuildUs_ = 0;
     renders_ = 0;
     mediaShownAt_ = display_.frames();
+    mediaSourceAt_ = display_.contentFrames();
     mediaFlushAt_ = display_.flushUs();
   } else if (!playback_.playing()) {
     mediaFpsAt_ = 0;
@@ -1042,11 +1056,10 @@ void App::tick() {
   internetUpdate(now);
   publish(now);
   const int64_t phaseRender = esp_timer_get_time();
+  display_.forceStrips(screen_ == Screen::Media ? 4 : -1, 32);
   render(now);
   renderUs_ += uint64_t(esp_timer_get_time() - phaseRender);
-  // Video frames go out in one pass: a frame spread over several loops shows as a sweeping seam.
-  // Media frames cover rows 30..269: strips 4..32 are entirely video (strip 3 and 33 also hold UI rows).
-  display_.forceStrips(screen_ == Screen::Media ? 4 : -1, 32);
+  // The LCD worker owns its submitted framebuffer; flush only reaps completions in async mode.
   display_.flush(screen_ == Screen::Media ? 60000 : 4000);
   shutdown(millis());
   tickUs_ += uint64_t(esp_timer_get_time() - tickStartUs);

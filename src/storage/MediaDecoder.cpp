@@ -14,11 +14,11 @@ constexpr size_t encodedBytes = maxJpegFrame + 8, workBytes = 65536;
 } // namespace
 bool MediaDecoder::begin() {
   encoded_ =
-      static_cast<uint8_t *>(heap_caps_malloc(encodedBytes, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
+      static_cast<uint8_t *>(heap_caps_aligned_alloc(16, encodedBytes, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
   mono_ = static_cast<uint8_t *>(heap_caps_malloc(16384, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
   decoded_ = static_cast<uint16_t *>(
-      heap_caps_malloc(rawBytes(maxMediaSide), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
-  work_ = static_cast<uint8_t *>(heap_caps_malloc(workBytes, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
+      heap_caps_aligned_alloc(16, rawBytes(maxMediaSide), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
+  work_ = static_cast<uint8_t *>(heap_caps_aligned_alloc(16, workBytes, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
   return encoded_ && mono_ && decoded_ && work_;
 }
 void MediaDecoder::close() {
@@ -52,8 +52,12 @@ bool jpegStructure(const uint8_t *d, size_t n, unsigned w, unsigned h) {
 }
 } // namespace
 bool MediaDecoder::jpeg(size_t bytes, unsigned w, unsigned h, uint16_t *output) {
-  return w <= maxMediaSide && h <= maxMediaSide &&
-         decodeJpeg565(encoded_, bytes, output ? output : decoded_, w, h, work_, workBytes);
+  if (w > maxMediaSide || h > maxMediaSide) return false;
+  uint16_t *destination = output ? output : decoded_;
+  uint16_t *aligned = (reinterpret_cast<uintptr_t>(destination) & 15) ? decoded_ : destination;
+  const bool ok = decodeJpeg565(encoded_, bytes, aligned, w, h, work_, workBytes, true);
+  if (ok && aligned != destination) memcpy(destination, aligned, size_t(w) * h * 2);
+  return ok;
 }
 bool MediaDecoder::validate(const char *path, std::atomic<uint32_t> &progress,
                             const std::atomic<bool> &cancel, uint32_t *contentCrc) {
@@ -259,6 +263,7 @@ void MediaDecoder::monoToPixels(uint16_t *out, unsigned side) {
 }
 bool MediaDecoder::frame(const char *path, uint32_t pos, uint16_t *out, uint32_t &duration,
                          unsigned side) {
+  delivered_ = UINT32_MAX;
   if (!out || !side || side > maxMediaSide || !open(path))
     return false;
   duration = info_.frames > 1 ? info_.duration : 0;
@@ -288,6 +293,7 @@ bool MediaDecoder::frame(const char *path, uint32_t pos, uint16_t *out, uint32_t
       scale565(decoded_, info_.width, info_.height, out, side);
     else
       resample565(decoded_, info_.width, info_.height, out, side);
+    if (raw) delivered_ = frame;
     return true;
   }
   if (info_.format == MediaFormat::JpegVideo) {
@@ -296,11 +302,13 @@ bool MediaDecoder::frame(const char *path, uint32_t pos, uint16_t *out, uint32_t
       // Same size as the caller's frame: decode straight into it instead of into `decoded_` and
       // then copying 115 KB. The shared copy no longer holds a frame, so forget it.
       decodedFrame_ = UINT32_MAX;
-      return record(target, out);
+      const bool ok = record(target, out);
+      if (ok) delivered_ = target;
+      return ok;
     }
     if (target != decodedFrame_ && !record(target))
       return false;
-    decodedFrame_ = target;
+    decodedFrame_ = delivered_ = target;
     scale565(decoded_, info_.width, info_.height, out, side);
     return true;
   }
@@ -323,7 +331,7 @@ bool MediaDecoder::frame(const char *path, uint32_t pos, uint16_t *out, uint32_t
     if ((n & 15) == 0)
       vTaskDelay(1);
   }
-  decodedFrame_ = target;
+  decodedFrame_ = delivered_ = target;
   monoToPixels(out, side);
   return true;
 }

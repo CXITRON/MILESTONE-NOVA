@@ -14,6 +14,7 @@ public:
   ~Canvas();
   bool begin();
   uint16_t *pixels() { return pixels_; }
+  uint16_t *exchangePixels(uint16_t *next) { auto *old = pixels_; pixels_ = next; return old; }
   void clear(uint16_t color);
   void theme(uint16_t accent, uint16_t muted) {
     accent_ = accent;

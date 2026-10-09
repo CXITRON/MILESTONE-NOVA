@@ -102,6 +102,7 @@ private:
   unsigned renders_ = 0;
   bool mediaFresh_ = true;
   Screen renderedScreen_ = Screen::Boot;
+  uint32_t mediaIndex_ = UINT32_MAX, mediaIndexGeneration_ = 0, mediaToken_ = 0, mediaSourceAt_ = 0;
   uint32_t mediaFrames_ = 0, mediaFpsAt_ = 0, nvsUsageAt_ = 0, saveFailureAt_ = 0, artFailureAt_ = 0, lyricsFailureAt_ = 0, lastWifiDrops_ = 0, lastWifiFailures_ = 0, lastWifiDropAt_ = 0;
   char notice_[128]{}, address_[24]{};
 };

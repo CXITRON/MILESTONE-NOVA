@@ -108,7 +108,10 @@ bool Storage::begin(Settings &s, Secrets &secrets, bool importSettings) {
     return false;
   }
   stopped_ = false;
-  if (xTaskCreate(task, "nova-sd", 10240, this, 1, nullptr) != pdPASS) {
+  // Keep decode/SD work off the Arduino render loop core; unpinned tasks can migrate and
+  // serialize both halves of the video pipeline after reboot.
+  constexpr BaseType_t workerCore = ARDUINO_RUNNING_CORE == 0 ? 1 : 0;
+  if (xTaskCreatePinnedToCore(task, "nova-sd", 10240, this, 1, nullptr, workerCore) != pdPASS) {
     mounted_ = false;
     stopped_ = true;
     SD.end();
@@ -242,6 +245,7 @@ void Storage::readMedia(AssetResult &r) {
   } else
     r.artPresent = true;
   r.error = !r.artPresent;
+  r.frame = decoder_.frameIndex();
   r.readUs = decoder_.readUs();
   r.jpegUs = decoder_.jpegUs();
   r.totalUs = uint32_t(esp_timer_get_time() - started);

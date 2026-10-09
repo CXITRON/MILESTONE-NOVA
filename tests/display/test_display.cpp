@@ -70,5 +70,11 @@ int main() {
   transfers.clear();
   display.present(); display.flush(60000);
   assert(transfers.empty()); // Back to dirty-strip behaviour.
+#ifdef ARDUINO
+  nativeFail = true;
+  display.canvas().clear(0x7777);
+  display.present(); display.flush(60000);
+  assert(!display.busy() && !display.ready()); // DMA failure cannot acknowledge a stale frame.
+#endif
   std::cout << "Display batching, frame integrity, dirty strips, wrap and sleep passed\n";
 }

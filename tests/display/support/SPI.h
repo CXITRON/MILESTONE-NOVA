@@ -2,11 +2,14 @@
 #include <cstdint>
 #include <cstring>
 #include <vector>
+#include <atomic>
 constexpr int FSPI = 0, MSBFIRST = 0, SPI_MODE0 = 0, OUTPUT = 0, LOW = 0, HIGH = 1;
-inline uint32_t testMicros = 0, pixelWriteUs = 1000;
+inline std::atomic<uint32_t> testMicros{0};
+inline uint32_t pixelWriteUs = 1000;
 inline uint32_t micros() { return testMicros; }
 inline void pinMode(int, int) {}
-inline void digitalWrite(int, int) {}
+inline int dcLevel = HIGH;
+inline void digitalWrite(int pin, int value) { if (pin == 17) dcLevel=value; }
 inline void delay(unsigned) {}
 inline void ledcAttach(int, int, int) {}
 inline void ledcWrite(int, unsigned) {}

@@ -285,7 +285,10 @@ int main(int argc, char **argv) {
     assert(contentCrc == crc32(bytes.data(), bytes.size()));
     assert(decoder.frame("/media/test.njv", 0, pixels, duration, side) && duration == 200 &&
            (pixels[0] & 0xf800) > 0xd000 && (pixels[side * side - 1] & 0xf800) > 0xd000);
+    assert(decoder.frameIndex() == 0);
+    assert(decoder.frame("/media/test.njv", 40, pixels, duration, side) && decoder.frameIndex() == 0);
     assert(decoder.frame("/media/test.njv", 100, pixels, duration, side) && pixels[0] == 0);
+    assert(decoder.frameIndex() == 1);
     decoder.close();
     bytes.back() ^= 1;
     write("/media/test.njv", bytes);

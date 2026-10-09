@@ -33,6 +33,7 @@ struct View {
   time_t epoch = 0;
   bool environmentValid = false, batteryValid = false, wifi = false, ble = false, sd = false,
        rtc = false;
+  bool fastMedia = true; // Reference rendering can disable fusion for pixel equivalence tests.
   bool mediaPlaying = false, sleeping = false, settingsEditing = false, warning = false;
   float temperature = 0, humidity = 0, volts = 0, percent = 0;
   uint32_t mediaPosition = 0, mediaDuration = 0;

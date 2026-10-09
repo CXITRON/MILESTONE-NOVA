@@ -29,7 +29,8 @@ void Ui::chrome(Canvas &c, const View &v) {
       "MILESTONE",     "MENU",       "SETUP AP",  "UPDATE",
       "RECOVERY",      "MESSAGE",    "DASHBOARD", "CLOCK + MESSAGE",
       "D-DAY + CLOCK", "DIAGNOSTICS"};
-  c.text(16, 39, 208, 20, titles[static_cast<unsigned>(v.screen)], c.accent());
+  if (v.screen != Screen::Media || v.sleeping || !v.fastMedia)
+    c.text(16, 39, 208, 20, titles[static_cast<unsigned>(v.screen)], c.accent());
   c.rect(16, 296, 208, 1, color::panel);
   const char *footer = v.screen == Screen::Menu    ? "<> Select  OK  BACK"
                        : v.screen == Screen::Setup ? "BACK Close AP"
@@ -44,6 +45,84 @@ void Ui::chrome(Canvas &c, const View &v) {
                            : "< PREV     MENU     NEXT >";
   c.text(12, 300, 216, 18, footer, c.muted(), 1, true);
 }
+// Tone curve and burn-in shift in one pass. The canvas lives in PSRAM, so each row is copied into
+// internal RAM, converted there, and written back; this replaced two full-screen passes.
+static bool fusedMedia(const View &v) {
+  return v.fastMedia && v.screen == Screen::Media && v.mediaPixels && v.settings &&
+         !v.sleeping && !v.syncStale && !(v.notice && v.notice[0]);
+}
+static __attribute__((optimize("O3"))) void finishFrame(uint16_t *pixels, const Settings &s, bool shift,
+                        const uint16_t *media = nullptr) {
+  const bool tone = s.luminance != 100 || s.contrast;
+  if (!tone && !shift && !media) return;
+  if (!tone && !shift && media && !s.mediaMonochrome) {
+    memcpy(pixels + 30 * board::width, media, board::mediaSide * board::mediaSide * 2);
+    return;
+  }
+  if (!tone && shift && media && !s.mediaMonochrome) {
+    // No per-pixel transform is needed: copy shifted rows directly, preserving bottom-up order.
+    for (int y = board::height - 1; y > 0; --y) {
+      const int sourceY = y - 1;
+      const uint16_t *source = sourceY >= 30 && sourceY < 30 + int(board::mediaSide)
+                                ? media + (sourceY - 30) * board::width
+                                : pixels + sourceY * board::width;
+      uint16_t *dst = pixels + y * board::width;
+      dst[0] = color::background;
+      // One-pixel shift misaligns source/destination for the SDK memcpy. Halfword stores
+      // avoid its byte-copy fallback while remaining valid RGB565 accesses.
+      for (int x = 1; x < board::width; ++x) dst[x] = source[x - 1];
+    }
+    std::fill(pixels, pixels + board::width, color::background);
+    return;
+  }
+  uint16_t red[32], green[64], blue[32];
+  if (tone) {
+    // Evaluated once per channel value instead of once per pixel (three divisions per pixel
+    // over 76,800 pixels cost tens of ms per frame).
+    const auto curve = [&](int value, int max) {
+      int channel = value * 255 / max;
+      channel = (channel - 128) * (100 + s.contrast) / 100 + 128;
+      return std::clamp(channel * int(s.luminance) / 100, 0, 255) * max / 255;
+    };
+    for (int i = 0; i < 32; ++i) {
+      red[i] = uint16_t(curve(i, 31) << 11);
+      blue[i] = uint16_t(curve(i, 31));
+    }
+    for (int i = 0; i < 64; ++i)
+      green[i] = uint16_t(curve(i, 63) << 5);
+  }
+  constexpr int w = board::width, h = board::height;
+  uint16_t line[w];
+  // Shifting one pixel down and right: walk upward so each source row is still unmodified.
+  for (int y = h - 1; y >= 0; --y) {
+    uint16_t *dst = pixels + y * w;
+    if (shift && y == 0) {
+      std::fill(dst, dst + w, color::background);
+      break;
+    }
+    const int sourceY = shift ? y - 1 : y;
+    const bool videoRow = media && sourceY >= 30 && sourceY < 30 + int(board::mediaSide);
+    memcpy(line, videoRow ? media + (sourceY - 30) * w : (shift ? dst - w : dst), sizeof(line));
+    if (videoRow && s.mediaMonochrome)
+      for (int x = 0; x < w; ++x) {
+        const uint16_t p = line[x];
+        const unsigned light = (((p >> 11) * 255 / 31) * 77 +
+             (((p >> 5) & 63) * 255 / 63) * 150 + (p & 31) * 255 / 31 * 29) >> 8;
+        line[x] = ((light >> 3) << 11) | ((light >> 2) << 5) | (light >> 3);
+      }
+    if (tone)
+      for (int x = 0; x < w; ++x) {
+        const uint16_t p = line[x];
+        line[x] = red[p >> 11] | green[(p >> 5) & 63] | blue[p & 31];
+      }
+    if (shift) {
+      dst[0] = color::background;
+      for (int x = 1; x < w; ++x) dst[x] = line[x - 1];
+    } else {
+      memcpy(dst, line, sizeof(line));
+    }
+  }
+}
 void Ui::render(Canvas &c, const View &v) {
   const auto stamp = [&]() -> int64_t { return v.clock ? v.clock() : 0; };
   const auto add = [&](uint32_t RenderTimes::*field, int64_t from) {
@@ -53,7 +132,10 @@ void Ui::render(Canvas &c, const View &v) {
   int64_t mark = stamp();
   c.theme(v.settings ? v.settings->accentColor : c.accent(),
           v.settings ? v.settings->mutedColor : c.muted());
-  c.clear(color::background);
+  if (fusedMedia(v)) {
+    c.rect(0, 0, board::width, 30, color::background);
+    c.rect(0, 270, board::width, 50, color::background);
+  } else c.clear(color::background);
   add(&RenderTimes::clear, mark);
   if (v.screen == Screen::Boot) {
     c.rect(94, 73, 52, 4, c.accent());
@@ -137,47 +219,17 @@ void Ui::render(Canvas &c, const View &v) {
   }
   add(&RenderTimes::overlay, mark);
   mark = stamp();
-  if (v.settings) {
-    auto *pixels = c.pixels();
-    if (v.settings->luminance != 100 || v.settings->contrast) {
-      // Same math as before, but evaluated once per channel value instead of once per pixel:
-      // a 76,800-pixel loop with three integer divisions per pixel cost tens of ms per frame.
-      const auto tone = [&](int value, int max) {
-        int channel = value * 255 / max;
-        channel = (channel - 128) * (100 + v.settings->contrast) / 100 + 128;
-        return std::clamp(channel * int(v.settings->luminance) / 100, 0, 255) * max / 255;
-      };
-      uint16_t red[32], green[64], blue[32];
-      for (int i = 0; i < 32; ++i) {
-        red[i] = uint16_t(tone(i, 31) << 11);
-        blue[i] = uint16_t(tone(i, 31));
-      }
-      for (int i = 0; i < 64; ++i)
-        green[i] = uint16_t(tone(i, 63) << 5);
-      for (unsigned i = 0; i < board::width * board::height; ++i) {
-        const uint16_t p = pixels[i];
-        pixels[i] = red[p >> 11] | green[(p >> 5) & 63] | blue[p & 31];
-      }
-    }
-    if (v.settings->burnin && (v.now / 60000) % 2) {
-      // Shift the whole frame one pixel down and right; row copies instead of per-pixel moves.
-      for (int y = board::height - 1; y > 0; --y)
-        memmove(pixels + y * board::width + 1, pixels + (y - 1) * board::width,
-                (board::width - 1) * sizeof(uint16_t));
-      for (int x = 0; x < board::width; ++x)
-        pixels[x] = color::background;
-      for (int y = 0; y < board::height; ++y)
-        pixels[y * board::width] = color::background;
-    }
-  }
+  if (v.settings && c.pixels())
+    finishFrame(c.pixels(), *v.settings, v.settings->burnin && (v.now / 60000) % 2,
+                fusedMedia(v) ? v.mediaPixels : nullptr);
   add(&RenderTimes::post, mark);
 }
 void mediaScreen(Canvas &c, const View &v) {
   // Full-width 240x240 frame below the status bar; it covers the screen title row.
   constexpr int side = board::mediaSide, top = 30;
-  if (v.mediaPixels)
+  if (v.mediaPixels && !fusedMedia(v))
     c.image(0, top, side, side, v.mediaPixels, v.settings->mediaMonochrome);
-  else {
+  else if (!v.mediaPixels) {
     c.rect(0, top, side, side, color::panel);
     c.text(48, top + side / 2 - 20, 144, 60, "미디어 없음", c.muted(), 1, true);
   }
