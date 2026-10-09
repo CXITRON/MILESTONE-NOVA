@@ -12,7 +12,5 @@ private:
   Adafruit_NeoPixel pixels_{board::rgbCount, board::rgb, NEO_GRB + NEO_KHZ800};
   LightEffects effects_;
   uint32_t last_ = 0;
-  bool dark_ = false;
-  uint8_t fastFrames_ = 0;
 };
 } // namespace nova
