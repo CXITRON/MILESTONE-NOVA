@@ -14,12 +14,7 @@ void write32(uint8_t *p, uint32_t n) {
   write16(p + 2, n >> 16);
 }
 uint32_t crcUpdate(uint32_t s, const uint8_t *p, size_t n) {
-  while (n--) {
-    s ^= *p++;
-    for (unsigned b = 0; b < 8; ++b)
-      s = (s >> 1) ^ (0xEDB88320U & (0U - (s & 1)));
-  }
-  return s;
+  return crc32Update(s, p, n);
 }
 bool mediaHeader(const uint8_t *p, size_t n, uint32_t bytes, MediaInfo &out) {
   if (!p || n < 16 || bytes < 16 || bytes >= 0x80000000U)

@@ -239,6 +239,34 @@ int main(int argc, char **argv) {
   assert(!SD.exists("/media/.transfer"));
   auto catalog = StorageTestAccess::catalog(resumed);
   assert(catalog.count == 1);
+  // 512 KiB chunks retain durable resume, duplicate/conflicting retry, and strict limits.
+  std::vector<uint8_t> bigUpload(maxUploadChunk + 137);
+  for (size_t i = 0; i < bigUpload.size(); ++i) bigUpload[i] = uint8_t(i * 17);
+  job = {}; job.op = FileOp::UploadBegin; job.id = 45; job.total = bigUpload.size();
+  strcpy(job.path, "/update/speed.bin");
+  assert(StorageTestAccess::run(resumed, job));
+  job.op = FileOp::UploadChunk; job.data = bigUpload.data(); job.length = maxUploadChunk + 1;
+  job.checksum = crc32(job.data, job.length);
+  assert(!StorageTestAccess::run(resumed, job) && job.offset == 0);
+  job.length = maxUploadChunk; job.checksum = crc32(job.data, job.length);
+  const auto beforeWriteTime = testTimeUs;
+  fileWriteUs = 1000; testTaskDelays = 0;
+  assert(StorageTestAccess::run(resumed, job) && job.offset == maxUploadChunk);
+  assert(testTaskDelays == 5 && job.writeUs >= 16000); // Four data yields + one durable journal write.
+  fileWriteUs = 0; testTimeUs = beforeWriteTime;
+  Storage largeResumed; StorageTestAccess::init(largeResumed); StorageTestAccess::recover(largeResumed);
+  job.offset = 0;
+  assert(StorageTestAccess::run(largeResumed, job) && job.offset == maxUploadChunk);
+  bigUpload[12345] ^= 1; job.offset = 0; job.checksum = crc32(job.data, job.length);
+  assert(!StorageTestAccess::run(largeResumed, job));
+  bigUpload[12345] ^= 1;
+  job.offset = maxUploadChunk; job.data = bigUpload.data() + maxUploadChunk; job.length = 137;
+  job.checksum = crc32(job.data, job.length) ^ 1;
+  assert(!StorageTestAccess::run(largeResumed, job));
+  job.checksum ^= 1;
+  assert(StorageTestAccess::run(largeResumed, job) && job.offset == bigUpload.size());
+  assert(read("/update/speed.bin.part") == bigUpload);
+  job.op = FileOp::UploadAbort; assert(StorageTestAccess::run(largeResumed, job));
   job = {};
   job.op = FileOp::MediaEdit;
   job.id = 0;

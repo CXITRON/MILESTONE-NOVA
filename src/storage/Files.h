@@ -3,6 +3,8 @@
 #include <cstdint>
 namespace nova {
 constexpr unsigned maxMediaEntries = 64;
+constexpr size_t legacyUploadChunk = 256 * 1024;
+constexpr size_t maxUploadChunk = 2 * legacyUploadChunk;
 struct MediaEntry {
   char path[121]{}, title[97]{};
   uint16_t seconds = 0; // Zero follows Settings::mediaSeconds; positive values override it.
@@ -55,6 +57,7 @@ struct FileJob {
   uint8_t *data = nullptr;
   size_t length = 0, actual = 0;
   uint32_t offset = 0, total = 0, id = 0, checksum = 0, value = 0;
+  uint32_t verifyUs = 0, writeUs = 0;
   uint64_t capacity = 0, used = 0;
   bool ok = false, enabled = true;
   char error[96]{};

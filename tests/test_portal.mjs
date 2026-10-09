@@ -94,6 +94,42 @@ assert.equal(finished.checksum, crc32(bytes));
 assert.deepEqual(await preparedStore.chunk(0), bytes.subarray(0, 262144));
 assert.deepEqual(await preparedStore.chunk(1), bytes.subarray(262144));
 
+// New raw requests combine persisted chunks without changing their layout. Resume can
+// cross three stored blocks; a lost acknowledgement must retry exactly the same bytes.
+const rawBytes = Uint8Array.from({length: 3 * 262144 + 137}, (_, i) => (i * 17) & 255);
+for (const capacity of [262144, 524288]) {
+  let durable = 10000, lostReply = false, retriedRaw = false, commits = 0;
+  const rawStore = {
+    get: async () => ({...meta, total: rawBytes.length}),
+    chunk: async i => rawBytes.slice(i * 262144, (i + 1) * 262144)
+  };
+  await uploadPrepared(rawStore, async (url, body) => {
+    if (url === '/api/transfer') {
+      if (body.op === 'begin') return {offset: durable, rawChunks: true, chunkBytes: capacity};
+      assert.equal(body.op, 'commit'); ++commits; return {state: 'done'};
+    }
+    assert(url.startsWith('/api/blob/raw?'));
+    assert(body instanceof Blob);
+    const q = new URL(url, 'http://device/').searchParams;
+    const start = Number(q.get('offset')), data = new Uint8Array(await body.arrayBuffer());
+    assert.equal(data.length, Math.min(capacity, rawBytes.length - start));
+    assert.equal(Number(q.get('crc')), crc32(data));
+    assert.deepEqual(data, rawBytes.subarray(start, start + data.length));
+    if (start === durable) durable += data.length;
+    else { assert.equal(start + data.length, durable); retriedRaw = true; }
+    if (!lostReply) { lostReply = true; throw new Error('lost acknowledgement'); }
+    return {offset: durable};
+  }, new AbortController().signal, () => {});
+  assert.equal(durable, rawBytes.length); assert(retriedRaw); assert.equal(commits, 1);
+}
+for (const capacity of [0, 524289, NaN, 262144.5]) {
+  let requests = 0;
+  await assert.rejects(uploadPrepared(store, async () => {
+    ++requests; return {offset: 0, rawChunks: true, chunkBytes: capacity};
+  }, new AbortController().signal, () => {}), /전송 단위/);
+  assert.equal(requests, 1);
+}
+
 // IndexedDB rejects both the request and the transaction for a quota/write failure.
 const failedStore = new TransferStore(), unhandled = [];
 const unhandledListener = error => unhandled.push(error);

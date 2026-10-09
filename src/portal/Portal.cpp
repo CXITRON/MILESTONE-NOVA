@@ -1,5 +1,6 @@
 #include "Portal.h"
 #include "../core/Text.h"
+#include "../logging/Log.h"
 #include "Assets.h"
 #include <WiFi.h>
 #include <algorithm>
@@ -70,7 +71,11 @@ bool Portal::begin(Storage &s, Artwork &a, OnlineLyrics &l, Firmware &f) {
     view_ = new (p) PortalSnapshot{};
   if (auto *p = alloc(sizeof(MediaCatalog)))
     catalog_ = new (p) MediaCatalog{};
-  bytes_ = static_cast<uint8_t *>(alloc(262145));
+  bytes_ = static_cast<uint8_t *>(alloc(uploadCapacity_ + 1));
+  if (!bytes_) {
+    uploadCapacity_ = legacyUploadChunk;
+    bytes_ = static_cast<uint8_t *>(alloc(uploadCapacity_ + 1));
+  }
   commands_ = xQueueCreate(1, sizeof(PortalCommand *));
   logs_ = xQueueCreate(8, sizeof(LogLine));
   done_ = xSemaphoreCreateBinary();
@@ -644,6 +649,8 @@ void Portal::transfer() {
   cJSON_AddNumberToObject(out, "offset", job.offset);
   cJSON_AddNumberToObject(out, "total", job.total);
   cJSON_AddStringToObject(out, "path", job.path);
+  cJSON_AddNumberToObject(out, "chunkBytes", uploadCapacity_);
+  cJSON_AddBoolToObject(out, "rawChunks", true);
   json(out);
 }
 String Portal::body() {
@@ -686,9 +693,11 @@ void Portal::upload() {
   const auto &u = server_.upload();
   if (u.status == UPLOAD_FILE_START) {
     received_ = 0;
+    uploadAt_ = micros();
+    receiveUs_ = 0;
     uploadOk_ = authorized();
   } else if (u.status == UPLOAD_FILE_WRITE) {
-    if (u.currentSize > 262144 - received_) {
+    if (u.currentSize > uploadCapacity_ - received_) {
       uploadOk_ = false;
       server_.client().stop();
       return;
@@ -697,7 +706,38 @@ void Portal::upload() {
       memcpy(bytes_ + received_, u.buf, u.currentSize);
       received_ += u.currentSize;
     }
-  } else if (u.status == UPLOAD_FILE_ABORTED)
+  } else if (u.status == UPLOAD_FILE_END)
+    receiveUs_ = micros() - uploadAt_;
+  else if (u.status == UPLOAD_FILE_ABORTED)
+    uploadOk_ = false;
+}
+void Portal::rawUpload() {
+  // WebServer uses the same callback for raw and multipart bodies. Reject multipart
+  // before accessing raw(), whose descriptor only exists for a raw request.
+  if (server_.header("Content-Type") != "application/octet-stream") {
+    uploadOk_ = false;
+    received_ = 0;
+    server_.client().stop();
+    return;
+  }
+  auto &u = server_.raw();
+  if (u.status == RAW_START) {
+    received_ = 0;
+    receiveUs_ = 0;
+    uploadAt_ = micros();
+    uploadOk_ = authorized();
+    if (!uploadOk_) server_.client().stop();
+  } else if (u.status == RAW_WRITE) {
+    if (!uploadOk_ || u.currentSize > uploadCapacity_ - received_) {
+      uploadOk_ = false;
+      server_.client().stop();
+      return;
+    }
+    memcpy(bytes_ + received_, u.buf, u.currentSize);
+    received_ += u.currentSize;
+  } else if (u.status == RAW_END)
+    receiveUs_ = micros() - uploadAt_;
+  else if (u.status == RAW_ABORTED)
     uploadOk_ = false;
 }
 void Portal::chunk() {
@@ -753,6 +793,12 @@ void Portal::chunk() {
   auto *root = cJSON_CreateObject();
   cJSON_AddBoolToObject(root, "ok", true);
   cJSON_AddNumberToObject(root, "offset", job.offset);
+  cJSON_AddNumberToObject(root, "bytes", received_);
+  cJSON_AddNumberToObject(root, "receiveMs", receiveUs_ / 1000.0);
+  cJSON_AddNumberToObject(root, "verifyMs", job.verifyUs / 1000.0);
+  cJSON_AddNumberToObject(root, "writeMs", job.writeUs / 1000.0);
+  log("UPLOAD", "%u bytes recv %.1f crc %.1f write+checkpoint %.1f ms",
+      unsigned(received_), receiveUs_ / 1000.0, job.verifyUs / 1000.0, job.writeUs / 1000.0);
   json(root);
 }
 void Portal::artwork() {
@@ -867,6 +913,7 @@ void Portal::routes() {
   server_.on("/api/file", HTTP_GET, [this] { file(); });
   server_.on("/api/transfer", HTTP_POST, [this] { transfer(); }, [this] { readJson(); });
   server_.on("/api/blob", HTTP_POST, [this] { chunk(); }, [this] { upload(); });
+  server_.on("/api/blob/raw", HTTP_POST, [this] { chunk(); }, [this] { rawUpload(); });
   server_.on("/api/artwork", HTTP_POST, [this] { artwork(); }, [this] { readJson(); });
   server_.onNotFound([this] {
     server_.sendHeader("Location", "http://192.168.4.1/");

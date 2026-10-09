@@ -7,6 +7,7 @@
 #include <cstring>
 #include <memory>
 #include <new>
+#include <esp_timer.h>
 namespace nova {
 namespace {
 bool artworkPath(const char *path) {
@@ -581,8 +582,16 @@ void Storage::fileJob(FileJob &j) {
     return;
   }
   if (j.op == FileOp::UploadChunk) {
-    if (!j.id || j.id != upload_.id || !j.data || !j.length || j.length > 262144 ||
-        uint64_t(j.offset) + j.length > upload_.total || crc32(j.data, j.length) != j.checksum) {
+    const int64_t verifyAt = esp_timer_get_time();
+    j.verifyUs = j.writeUs = 0;
+    if (!j.id || j.id != upload_.id || !j.data || !j.length || j.length > maxUploadChunk ||
+        uint64_t(j.offset) + j.length > upload_.total) {
+      fail("Invalid chunk/CRC");
+      return;
+    }
+    const bool crcOk = crc32(j.data, j.length) == j.checksum;
+    j.verifyUs = uint32_t(esp_timer_get_time() - verifyAt);
+    if (!crcOk) {
       fail("Invalid chunk/CRC");
       return;
     }
@@ -611,15 +620,21 @@ void Storage::fileJob(FileJob &j) {
       j.offset = upload_.offset;
       return;
     }
+    const int64_t writeAt = esp_timer_get_time();
+    int64_t yieldedAt = writeAt;
     File f = SD.open(part, "r+");
     writing_ = true;
     bool ok = f && f.seek(upload_.offset);
     size_t at = 0;
     while (ok && at < j.length && !stopping_) {
-      const size_t n = std::min(j.length - at, size_t(8192));
+      const size_t n = std::min(j.length - at, size_t(32768));
       ok = f.write(j.data + at, n) == n;
       at += n;
-      vTaskDelay(1);
+      // Yield by elapsed work time rather than adding a tick after every small write.
+      if (esp_timer_get_time() - yieldedAt >= 4000) {
+        vTaskDelay(1);
+        yieldedAt = esp_timer_get_time();
+      }
     }
     f.flush();
     f.close();
@@ -634,6 +649,7 @@ void Storage::fileJob(FileJob &j) {
     } else
       fail(stopping_ ? "Storage is stopping" : "SD write failed");
     writing_ = false;
+    j.writeUs = uint32_t(esp_timer_get_time() - writeAt);
     j.offset = upload_.offset;
     return;
   }

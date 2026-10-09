@@ -1,9 +1,11 @@
 // Only bounded chunks live in JS memory. IndexedDB survives a tab reload on HTTP APs.
+const CRC_TABLE = Uint32Array.from({length: 256}, (_, index) => {
+  let c = index;
+  for (let bit = 0; bit < 8; bit++) c = (c >>> 1) ^ (0xedb88320 & -(c & 1));
+  return c >>> 0;
+});
 export function crc32(bytes, crc = 0xffffffff) {
-  for (const b of bytes) {
-    crc ^= b;
-    for (let bit = 0; bit < 8; bit++) crc = (crc >>> 1) ^ (0xedb88320 & -(crc & 1));
-  }
+  for (let i = 0; i < bytes.length; ++i) crc = CRC_TABLE[(crc ^ bytes[i]) & 255] ^ (crc >>> 8);
   return (~crc) >>> 0;
 }
 const CHUNK = 262144;
@@ -113,22 +115,38 @@ export async function uploadPrepared(store, api, signal, progress, committing, r
   let offset = begun.offset;
   if (!Number.isSafeInteger(offset) || offset < 0 || offset > meta.total)
     throw new Error('기기와 브라우저의 전송 크기가 다릅니다.');
+  // IndexedDB keeps its original 256 KiB layout, including previously prepared uploads.
+  // Only a device advertising the bounded raw protocol receives combined 512 KiB requests.
+  const raw = begun.rawChunks === true;
+  const chunkBytes = raw ? begun.chunkBytes : CHUNK;
+  if (!Number.isSafeInteger(chunkBytes) || chunkBytes < CHUNK || chunkBytes > CHUNK * 2)
+    throw new Error('기기의 전송 단위가 잘못되었습니다.');
   while (offset < meta.total) {
     signal.throwIfAborted();
-    const data = await store.chunk(Math.floor(offset / CHUNK));
-    if (!data) throw new Error('브라우저의 전송 자료가 없습니다. 다시 변환하세요.');
-    const part = data.subarray(offset % CHUNK);
-    if (!part.length || offset + part.length > meta.total)
-      throw new Error('브라우저의 전송 자료가 손상되었습니다. 다시 변환하세요.');
+    const length = Math.min(meta.total - offset, raw ? chunkBytes : CHUNK - offset % CHUNK);
+    const part = new Uint8Array(length);
+    for (let at = 0; at < length;) {
+      signal.throwIfAborted();
+      const position = offset + at, index = Math.floor(position / CHUNK);
+      const data = await store.chunk(index);
+      if (!data) throw new Error('브라우저의 전송 자료가 없습니다. 다시 변환하세요.');
+      if (!(data instanceof Uint8Array) || data.length !== Math.min(CHUNK, meta.total - index * CHUNK))
+        throw new Error('브라우저의 전송 자료가 손상되었습니다. 다시 변환하세요.');
+      const take = Math.min(length - at, data.length - position % CHUNK);
+      part.set(data.subarray(position % CHUNK, position % CHUNK + take), at);
+      at += take;
+    }
+    signal.throwIfAborted();
     const query = new URLSearchParams({id: meta.id, offset, crc: crc32(part)});
-    const body = new FormData();
-    body.append('chunk', new Blob([part]), 'chunk.bin');
+    const blob = new Blob([part]);
+    const body = raw ? blob : new FormData();
+    if (!raw) body.append('chunk', blob, 'chunk.bin');
     // A chunk is safe to send again: the device checks an already written range against the CRC.
     // Retry transient failures (busy SD, lost response, brief Wi-Fi stall) instead of aborting.
     let next;
     for (let attempt = 0;; ++attempt) {
       try {
-        next = await api('/api/blob?' + query, body, signal);
+        next = await api((raw ? '/api/blob/raw?' : '/api/blob?') + query, body, signal);
         break;
       } catch (error) {
         signal.throwIfAborted();

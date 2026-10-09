@@ -44,6 +44,10 @@ async function api(path, data, signal) {
     options.method = 'POST';
     if (data instanceof FormData)
       options.body = data;
+    else if (data instanceof Blob) {
+      options.headers['Content-Type'] = 'application/octet-stream';
+      options.body = data;
+    }
     else {
       options.headers['Content-Type'] = 'application/json';
       options.body = JSON.stringify(data);

@@ -6,7 +6,9 @@
 #include <memory>
 #include <string>
 #include <vector>
+#include <esp_timer.h>
 inline int failWriteAfter = -1;
+inline int64_t fileWriteUs = 0;
 inline std::string failRenameSource;
 class File {
   struct Handle {
@@ -46,6 +48,7 @@ public:
   size_t read(uint8_t *p, size_t n) { return h_ && h_->file ? fread(p, 1, n, h_->file) : 0; }
   size_t readBytes(char *p, size_t n) { return read(reinterpret_cast<uint8_t *>(p), n); }
   size_t write(const uint8_t *p, size_t n) {
+    testTimeUs += fileWriteUs;
     if (failWriteAfter == 0)
       return 0;
     if (failWriteAfter > 0)

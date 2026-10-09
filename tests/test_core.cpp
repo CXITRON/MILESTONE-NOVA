@@ -110,6 +110,8 @@ void textTests() {
   check(!strcmp(key, "51877402f0e5f146")); // Shared with the Python tool fixture.
   check(!validTrackKey("../../not-a-key!!"));
   check(crc32("123456789", 9) == 0xCBF43926);
+  check(crc32("", 0) == 0);
+  check(~crc32Update(crc32Update(0xFFFFFFFF, "1234", 4), "56789", 5) == 0xCBF43926);
 }
 void logicTests() {
   check(board::pinsValid());

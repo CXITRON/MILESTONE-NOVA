@@ -1,4 +1,5 @@
 #include "Text.h"
+#include <array>
 #include <cstdio>
 #include <cstring>
 namespace nova {
@@ -102,16 +103,22 @@ void sanitizeFilename(char *out, size_t cap, std::string_view s) {
     cleanUtf8(out, cap, "untitled");
   }
 }
-uint32_t crc32(const void *data, size_t n) {
+uint32_t crc32Update(uint32_t crc, const void *data, size_t n) {
+  static constexpr auto table = [] {
+    std::array<uint32_t, 256> values{};
+    for (unsigned i = 0; i < values.size(); ++i) {
+      uint32_t c = i;
+      for (unsigned bit = 0; bit < 8; ++bit)
+        c = (c >> 1) ^ (0xEDB88320U & (0U - (c & 1)));
+      values[i] = c;
+    }
+    return values;
+  }();
   auto p = static_cast<const uint8_t *>(data);
-  uint32_t crc = 0xFFFFFFFF;
-  while (n--) {
-    crc ^= *p++;
-    for (int b = 0; b < 8; ++b)
-      crc = (crc >> 1) ^ (0xEDB88320U & (0U - (crc & 1)));
-  }
-  return ~crc;
+  while (n--) crc = table[(crc ^ *p++) & 255] ^ (crc >> 8);
+  return crc;
 }
+uint32_t crc32(const void *data, size_t n) { return ~crc32Update(0xFFFFFFFF, data, n); }
 bool appendFormValue(char *out, size_t capacity, size_t &at, const char *s) {
   constexpr char hex[] = "0123456789ABCDEF";
   for (const auto *p = reinterpret_cast<const uint8_t *>(s); *p; ++p) {

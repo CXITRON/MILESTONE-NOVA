@@ -86,6 +86,7 @@ private:
   void transfer();
   void chunk();
   void upload();
+  void rawUpload();
   void readJson();
   String body();
   void artwork();
@@ -108,6 +109,8 @@ private:
   PortalCommand command_{};
   uint8_t *bytes_ = nullptr;
   size_t received_ = 0;
+  size_t uploadCapacity_ = maxUploadChunk;
+  uint32_t uploadAt_ = 0, receiveUs_ = 0;
   bool uploadOk_ = false, jsonReady_ = false, ready_ = false;
   char token_[33]{};
   std::atomic<bool> requested_{false}, quiescent_{true}, cleanupSync_{false};
