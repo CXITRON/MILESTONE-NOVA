@@ -276,7 +276,7 @@ SD 여유 공간 하한은 새 저장을 막는 조건이며 강제 정리 조�
 
 AP 인터페이스로 들어온 요청만 처리한다. mutation은 현재 AP session의 128-bit token을
 `X-NOVA` header로 보내야 하며 Host와 Content-Type도 검사한다. CORS를 열지 않는다.
-JSON body는 8 KiB로 제한하고 연결 종료/초과 body를 거절한다. 0.1.16 시험 코드에서는
+JSON body는 8 KiB로 제한하고 연결 종료/초과 body를 거절한다. 0.1.16부터는
 begin이 광고하는 chunkBytes(최대512 KiB, PSRAM 부족 시256 KiB)가 수신 상한이다.
 기존0.1.15의 chunk 상한은256 KiB다.
 암호/공개키 원문은 status/settings/file API로 반환하지 않는다.
@@ -291,11 +291,11 @@ begin이 광고하는 chunkBytes(최대512 KiB, PSRAM 부족 시256 KiB)가 수�
 | GET /api/file | 공개 media/artwork/lyrics/logs 파일을 16 KiB 단위로 전달 |
 | POST /api/transfer | begin/status/commit/abort. begin의 id/path/total이 일치하면 durable offset 반환 |
 | POST /api/blob | query id/offset/crc + multipart chunk, 또는 kind=image/lyrics/key |
-| POST /api/blob/raw | 0.1.16 시험: query id/offset/crc + application/octet-stream 바이너리 body |
+| POST /api/blob/raw | 0.1.16부터: query id/offset/crc + application/octet-stream 바이너리 body |
 | POST /api/artwork | search/use, pin/custom/block, refresh/delete |
 
 begin은 새 전송 ID(uint32, 0 제외), 대상 경로, 크기, 교체 여부를 받는다.
-0.1.16 시험 코드의 begin 응답은 `chunkBytes:524288`(할당 실패 시262144),
+0.1.16의 begin 응답은 `chunkBytes:524288`(할당 실패 시262144),
 `rawChunks:true`를 추가한다. 브라우저는 이 광고가 있을 때만 raw 경로와 더 큰 단위를
 사용한다. 광고가 없는 기기는 기존256 KiB multipart 경로를 사용한다. IndexedDB의
 256 KiB 저장 단위는 바꾸지 않고, 임의 durable offset부터 여러 저장 블록을 합쳐 보낸다.

@@ -839,3 +839,19 @@ FPS는 원본 후반18.2~18.6/전체16.5~18.6FPS이고 사용자가 충분하다
 정식 release https://github.com/CXITRON/MILESTONE-NOVA/releases/tag/v0.1.15 게시 완료, latest=v0.1.15/draft=false/prerelease=false. 공개latest manifest와앱을 curl로 다시 받아 전체바이트/size/hash/내장키RSA-PSS/제품버전 검증 통과. 자산은nova-0.1.15.bin2002240bytes,stable.json254bytes. 앱SHA256 9084ced76e416278e5bf5775b96d67ecce117bd42ad1f2178ddcb5d03dbb18b9.
 U0001은완료상태유지,LED미확정관찰은수용한현상태유지입니다. 실제추가기기OTA/USB설치는하지않았습니다. 기기는아직candidate6 0.1.14, 공개업데이트는0.1.15입니다. NVS파티션을원격확대한것도아닙니다.
 개인메모/라운지/읽음위치/build/키/NVS백업은기존git제외를유지했습니다. 공개Report의로컬전용메모는비공개경로라고표기했습니다. 보고서와README를완료상태로정리했고이최종메모까지후속문서커밋으로main에푸시합니다. 펌웨어태그17f750f는이동하지않습니다.
+
+### codex-20261009-170755 | 업로드 수신 개선 0.1.16 배포, 원격 실측 대기
+- 시각: 2026-10-09T17:07:55+09:00
+- 작성자: Codex
+- 수신자: Claude Code
+- 유형: 작업 종료
+- 주제 ID: codex-20261009-170755
+- 답변 대상: 없음
+- 관련 파일 / Report: docs/agents/reports/report_C0030_2026_10_09.md, docs/guides/protocol.md
+
+사용자가 변환은 빠른데 전송이 느리다며 여러 조치를 요청했습니다. WebServer의 바이트 단위 multipart 검사 대신 raw octet-stream bulk 수신을 추가하고, 광고된 기기에서만 최대512 KiB로 전송합니다. PSRAM 할당 부족 시256 KiB이며 구형 클라이언트/기기는 기존 multipart로 동작합니다. IndexedDB256 KiB schema는 유지하고 임의 durable offset부터 합쳐 보내므로 기존 준비 자료도 사용할 수 있습니다.
+C++/JS CRC table,32 KiB SD batch와 시간 기준 양보,receiveMs/verifyMs/writeMs 진단을 추가했습니다. 데이터flush+atomic checkpoint 후에만 ACK하며 retry/conflict/CRC/중단/기존 파일 보호를 유지합니다. 수신과SD 동시 파이프라인을 도입한 것은 아닙니다. 화면/LCD/LED/변환/FPS/RF/SD클럭은 바꾸지 않았고 공유 CRC 계산만 미디어 검증에도 적용됩니다.
+전체28 tests와 Core/Parity/Node/Storage 검사 및 실제SDK build 통과. 512 KiB 경계,재부팅resume,ACK유실retry,oversize/CRC/commit실패를 검증했습니다. host CRC benchmark는7.68→1.10ms/512 KiB였지만 기기 전송 향상률이 아닙니다. 실제 raw HTTP 수신과 Wi-Fi 처리량은 아직 미측정입니다.
+사용자는 현재 외부 원격 작업 중 시리얼 불가라고 알려줬습니다. 이후 시리얼 접근은 중단했습니다. 첫 commit/push/tag는 자동 검토가 이번 변경 승인 부족으로 실행 전에 거절했고, 우회하지 않고 물었습니다. 사용자의 “진행해도 돠” 명시 승인 후1a40a41/main/v0.1.16을 푸시하고 정식 릴리스 https://github.com/CXITRON/MILESTONE-NOVA/releases/tag/v0.1.16 를 게시했습니다.
+공개latest=v0.1.16/draft=false/prerelease=false,manifest254 bytes/앱2004800 bytes. 공개재다운로드 바이트·크기·SHA256·내장키RSA-PSS·버전 검증 완료. 앱SHA256 b0d8fafd663e525465fe31652ad3a7a99428cb19d62f241551d4ceb92b95870f. 기기 자동 설치나USB업로드는 하지 않았습니다. 설치 후 포털을 새로고침하고 같은 파일의 전송 시간/속도를 비교해야 합니다.
+C0030은 구현/배포 완료와 실물 처리량 미측정을 구분했습니다. 최종 문서/이 메모는 후속main 커밋으로 남기고 tag는 이동하지 않습니다. 빈U0002_L 초안은 사용자 자료여서 그대로 남기며 U0001완료/LED현재수용상태도 유지합니다.

@@ -413,11 +413,11 @@ Worker 갱신 배포 전에는 같은 경로가 88×88 MAC1을 돌려주므로, 
 애니메이션 종료/반복 경계를 함께 만족해야 하므로 영상 중간에 임의로 넘기지 않는다.
 
 브라우저는 최대256 KiB 단위로 IndexedDB에 자료를 보관하고 SD 전송을 재개한다.
-0.1.16 전송 개선 시험 코드에서는 기기가 지원을 광고할 때 여러 블록을 합쳐 최대512 KiB
+0.1.16부터는 기기가 지원을 광고할 때 여러 블록을 합쳐 최대512 KiB
 바이너리 요청으로 보낸다. 구형 기기·포털은 기존256 KiB multipart 경로를 유지한다.
 CRC 계산을 테이블 방식으로 바꾸고, SD 쓰기는32 KiB 배치와 약4ms 경과 기준 양보를
 사용한다. 수신·CRC·SD 저장 시간은 업로드 응답과 USB `[UPLOAD]` 로그로 구분한다.
-이 시험 변경의 실물 업로드 속도는 아직 미측정이다([C0030](docs/agents/reports/report_C0030_2026_10_09.md)).
+이 변경의 실물 업로드 속도는 아직 미측정이다([C0030](docs/agents/reports/report_C0030_2026_10_09.md)).
 각 chunk의 CRC와 체크포인트, 전체 파일 형식·프레임 검증이 끝나야 기존 파일을 교체한다.
 `*.nix`는 SD worker가 생성하는 탐색 인덱스다. `.part`/catalog/인덱스를 직접 편집하지 않는다.
 파일은 2 GiB 미만, NOVA/MVJ 영상은 최대 6시간·30 FPS, JPEG 프레임은 최대 48 KiB다.
@@ -496,6 +496,15 @@ gh release create v$V build/release/$V/nova-$V.bin build/release/$V/stable.json 
 `release.py`는 서명 후 공개키로 다시 검증하고 제품 descriptor를 확인한다. 소스의 기본 버전은
 `src/board/Board.h`의 `version`이며 `NOVA_VERSION`을 주면 그 값이 우선한다.
 USB로 직접 올린 기기와 같은 버전의 릴리스는 "최신 버전입니다"로 처리되어 설치하지 않는다.
+
+## 업로드 전송 개선 0.1.16
+
+[GitHub 릴리스 v0.1.16](https://github.com/CXITRON/MILESTONE-NOVA/releases/tag/v0.1.16)
+
+바이너리 본문 수신, 최대512 KiB 전송 단위 협상, 테이블 CRC, 시간 기준 SD 양보를
+포함한다. 기존 준비 파일과256 KiB multipart 클라이언트의 호환성을 유지한다.
+전체 호스트 검사·빌드·공개 OTA 서명 검증은 통과했고 실제 기기 전송 처리량은 미측정이다.
+변경·검증·제약은 [C0030](docs/agents/reports/report_C0030_2026_10_09.md)에 기록한다.
 
 ## 정식 릴리스 0.1.15
 
