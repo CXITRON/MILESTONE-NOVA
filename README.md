@@ -135,13 +135,13 @@ OFF 중에도 DM13B 대기 전류, SK6812 5개의 대기 전류(꺼진 상태에
 
 ## 빌드 / 테스트 / 최초 업로드
 
-검증 환경: Arduino-ESP32 **3.3.11**, U8g2 **2.36.19**, Adafruit NeoPixel **1.15.5**,
-Arduino CLI, host GCC/Python3/Node.js/libjpeg 개발 패키지. Adafruit GFX/별도 TFT·RTC·AHT library는 필요하지 않다.
+검증 환경: Arduino-ESP32 **3.3.11**, U8g2 **2.36.19**,
+Arduino CLI, host GCC/Python3/Node.js/libjpeg 개발 패키지. Adafruit GFX/NeoPixel, 별도 TFT·RTC·AHT library는 필요하지 않다(하단 LED는 Arduino RMT로 직접 구동).
 
 ```sh
 arduino-cli core update-index --additional-urls https://espressif.github.io/arduino-esp32/package_esp32_index.json
 arduino-cli core install esp32:esp32@3.3.11 --additional-urls https://espressif.github.io/arduino-esp32/package_esp32_index.json
-arduino-cli lib install 'U8g2@2.36.19' 'Adafruit NeoPixel@1.15.5'
+arduino-cli lib install 'U8g2@2.36.19'
 ./scripts/build/firmware.sh
 ./scripts/test/run.sh
 ./scripts/test/preview.sh
@@ -497,6 +497,15 @@ gh release create v$V build/release/$V/nova-$V.bin build/release/$V/stable.json 
 `src/board/Board.h`의 `version`이며 `NOVA_VERSION`을 주면 그 값이 우선한다.
 USB로 직접 올린 기기와 같은 버전의 릴리스는 "최신 버전입니다"로 처리되어 설치하지 않는다.
 
+## 하단 LED 출력 수정 0.1.18
+
+[GitHub 릴리스 v0.1.18](https://github.com/CXITRON/MILESTONE-NOVA/releases/tag/v0.1.18)
+
+MEDIA, AP Sync, NOW에서 하단 LED가 빠르게 깜빡이거나 꺼져야 할 LED가 다른 색으로 튀던 현상(U0002)을 다룬다.
+LED 한 프레임(5개, 120 RMT 심벌)을 RMT 메모리 3블록에 전송 전에 모두 적재해, 전송 중 인터럽트 보충이 필요 없게 했다.
+효과 계산과 영상 프레임 경로는 바꾸지 않았다. 원격 확인을 위해 진단 내보내기에 `media=` 줄(마지막 재생 구간 FPS)을 추가했다.
+실기 LED·FPS 확인 전이며 결과는 [C0033](docs/agents/reports/report_C0033_2026_10_09.md)에 기록한다.
+
 ## 업로드 필드 오류 수정 0.1.17
 
 [GitHub 릴리스 v0.1.17](https://github.com/CXITRON/MILESTONE-NOVA/releases/tag/v0.1.17)
@@ -593,6 +602,7 @@ LED는 40 ms 간격의 정수 출력(반올림·켜진 채널 최소 1단계)을
 | `Wi-Fi lost=N reason=R connect_failed=M reason=R` | 연결 후 끊김/접속 실패 횟수와 마지막 이유. 200 BEACON_TIMEOUT, 201 NO_AP_FOUND, 202 AUTH_FAIL, 36 STA_LEAVING(SDK `wifi_err_reason_t`) |
 | `Artwork/Lyrics failed (결과 tls= errno= heap= blk= rssi=)` | 양수 결과는 서버 HTTP 상태, 음수는 응답 전 연결 실패. `tls=32512`(0x7F00)는 mbedTLS 메모리 할당 실패, `blk`는 내부 RAM 최대 연속 블록 |
 | `Settings save failed (사유 nvs=…)` | 설정 저장 실패의 사유(`invalid`/`open`/ESP 오류 이름)와 그때의 NVS 여유 |
+| `media=sync unique=… (boot min … max …) screen=… jpeg=… tick=…` | 마지막 5초 재생 구간의 원본 영상 프레임/s, 화면 전송/s, JPEG 디코딩·메인 루프 평균 ms. 재생을 멈춰도 남으며 min/max는 부팅 이후 원본 프레임/s 범위다. 재생 전에는 `none` |
 
 TLS의 큰 메모리 블록은 내부 RAM이 아니라 PSRAM에서 가져오도록 링크 단계에서 바꿔 두었다(`src/network/TlsMemory.cpp`).
 같은 종류의 조회 실패는 5분에 한 줄만 기록한다. 영상 재생 중 FPS 줄은 [로컬 MEDIA와 AP Sync](#로컬-media와-ap-sync) 절에 설명한다.

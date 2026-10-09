@@ -1,4 +1,5 @@
 #include "lighting/Effects.h"
+#include "lighting/LedSignal.h"
 #include <cassert>
 #include <cstdint>
 #include <iostream>
@@ -113,5 +114,49 @@ int main() {
   e.render(200200, 100, s); assert(e.effect() == LightEffect::TimerPaused);
   s.timerFinished = true;
   e.render(200300, 100, s); assert(e.effect() == LightEffect::TimerDone);
+  // Mode changes must not leave the previous effect behind: after any history of MEDIA, AP Sync
+  // and NOW playback, a paused screen is always lit only at its two edges, every 40 ms tick.
+  {
+    LightEffects m;
+    LightState p;
+    m.render(0, 7, p);  // boot
+    uint32_t now = 2000;
+    for (unsigned round = 0; round < 300; ++round) {
+      p = {};
+      const unsigned mode = round % 3;
+      p.media = mode == 0; p.synchronized = p.ap = mode == 1; p.now = p.connected = mode == 2;
+      p.playing = true;
+      for (int i = 0; i < 5; ++i, now += 40) m.render(now, 7, p);
+      p.playing = false;
+      for (int i = 0; i < 5; ++i, now += 40) {
+        const auto frame = m.render(now, 7, p);
+        assert(m.effect() == LightEffect::Paused);
+        for (unsigned led = 0; led < frame.size(); ++led) {
+          const bool edge = led == 0 || led + 1 == frame.size();
+          const auto &c = frame[led];
+          assert(edge ? (!c.r && c.g == 1 && c.b == 1) : (!c.r && !c.g && !c.b));
+        }
+      }
+    }
+  }
+  // The whole strip is encoded up front: GRB, most significant bit first, physical order reversed.
+  {
+    static_assert(ledSymbols == 120, "five LEDs, 24 bits each");
+    LightFrame frame{};
+    frame[0] = {0x80, 0x01, 0x00};   // effect index 0 -> rightmost physical LED (last 24 symbols)
+    frame[4] = {0x00, 0x00, 0xff};   // effect index 4 -> first physical LED
+    LedSignal sig{};
+    encodeLeds(frame, sig);
+    const auto bits = [&](size_t start, uint32_t value) {
+      for (int i = 0; i < 8; ++i)
+        assert(sig[start + i] == ((value >> (7 - i) & 1) ? ledOne : ledZero));
+    };
+    bits(0, 0x00); bits(8, 0x00); bits(16, 0xff);     // first physical LED: G, R, B of frame[4]
+    for (size_t i = 24; i < 96; ++i) assert(sig[i] == ledZero);
+    bits(96, 0x01); bits(104, 0x80); bits(112, 0x00);  // last physical LED: G, R, B of frame[0]
+    // 1 bit 0.8 us high / 0.4 us low, 0 bit 0.4 / 0.8 at 10 MHz, high first then low.
+    assert((ledOne & 0x7fff) == 8 && (ledOne >> 15 & 1) && (ledOne >> 16 & 0x7fff) == 4 && !(ledOne >> 31));
+    assert((ledZero & 0x7fff) == 4 && (ledZero >> 15 & 1) && (ledZero >> 16 & 0x7fff) == 8 && !(ledZero >> 31));
+  }
   std::cout << "LED priorities, bounded artwork feedback/retry, valid-cover fallback, brightness and wrap passed\n";
 }

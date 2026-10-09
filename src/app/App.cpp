@@ -76,7 +76,9 @@ void App::begin() {
   battery_.begin();
   log("BAT", "calibrated ADC, divider x2; initial filter pending");
   log("AHT", "AHT10 asynchronous probe scheduled");
-  log("RGB", "5 pixels with brightness limit %u", settings_.rgbBrightness);
+  log("RGB", "%u pixels with brightness limit %u; %s", unsigned(board::rgbCount),
+      unsigned(settings_.rgbBrightness),
+      rgb_.whole() ? "whole frame in RMT memory" : "RMT refill fallback");
   auto *memory = heap_caps_malloc(sizeof(Lyrics), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
   if (memory)
     lyrics_ = new (memory) Lyrics{};
@@ -1021,8 +1023,14 @@ void App::tick() {
           mediaReadUs_ / 1000.0f / n, mediaJpegUs_ / 1000.0f / n, mediaTotalUs_ / 1000.0f / n,
           unsigned(workerCore_), mediaLatencyUs_ / 1000.0f / n, assetsUs_ / 1000.0f / n,
           renderUs_ / 1000.0f / n, tickUs_ / 1000.0f / n);
-      log("MEDIA", "unique indexed frames displayed %.1f/s", (display_.contentFrames() - mediaSourceAt_) *
-          1000.0f / (now - mediaFpsAt_));
+      const float unique = (display_.contentFrames() - mediaSourceAt_) * 1000.0f / (now - mediaFpsAt_);
+      log("MEDIA", "unique indexed frames displayed %.1f/s", unique);
+      mediaUniqueMin_ = mediaUniqueMin_ ? std::min(mediaUniqueMin_, unique) : unique;
+      mediaUniqueMax_ = std::max(mediaUniqueMax_, unique);
+      snprintf(mediaStats_, sizeof(mediaStats_),
+               "%s unique=%.1f/s (boot min %.1f max %.1f) screen=%.1f/s jpeg=%.1fms tick=%.1fms",
+               playback_.synchronized() ? "sync" : "local", unique, mediaUniqueMin_, mediaUniqueMax_,
+               shown * 1000.0f / (now - mediaFpsAt_), mediaJpegUs_ / 1000.0f / n, tickUs_ / 1000.0f / n);
       // A second line: Log.cpp keeps 240 characters per line, so one long line lost its tail.
       if (renders_)
         log("MEDIA", "per render (%u): build %.1f clear %.1f chrome %.1f screen %.1f overlay %.1f post %.1f ms",

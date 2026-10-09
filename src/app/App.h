@@ -100,6 +100,9 @@ private:
   RenderTimes renderTimes_{};
   uint64_t renderBuildUs_ = 0;
   unsigned renders_ = 0;
+  // Last 5-second playback window, kept after playback stops so remote diagnostics can show it.
+  char mediaStats_[112] = "none";
+  float mediaUniqueMin_ = 0, mediaUniqueMax_ = 0;
   bool mediaFresh_ = true;
   Screen renderedScreen_ = Screen::Boot;
   uint32_t mediaIndex_ = UINT32_MAX, mediaIndexGeneration_ = 0, mediaToken_ = 0, mediaSourceAt_ = 0;

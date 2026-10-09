@@ -261,7 +261,7 @@ void App::publish(uint32_t now, bool force) {
       "writing=%d progress=%lu catalog=%u\nWi-Fi=%s ip=%s\nBLE=%s\nRTC=%d AHT=%d "
       "sample_ms=%lu\nbattery=%.3fV low=%d critical=%d\nchip=%.1fC thermal_state=%d "
       "cpu=%uMHz\nupdate_pending=%d\nnvs=%u/%u\nprofile=%u core=%u layout=%u\nsync=%lu "
-      "position=%lu stale=%d\nHistory (UTC epoch, uptime, event):\n",
+      "position=%lu stale=%d\nmedia=%s\nHistory (UTC epoch, uptime, event):\n",
       board::version, int(esp_reset_reason()), static_cast<unsigned long>(s.uptime),
       unsigned(s.heap), unsigned(ESP.getMinFreeHeap()), unsigned(s.psram),
       unsigned(uxTaskGetStackHighWaterMark(nullptr)), static_cast<unsigned long>(loopMax_), s.sd,
@@ -272,7 +272,7 @@ void App::publish(uint32_t now, bool force) {
       bootConfirm_.pending(), store_.nvsUsageFree(), store_.nvsUsageTotal(), s.mode,
       navigation_.core(),
       settings_.nowLayout, static_cast<unsigned long>(s.syncSession),
-      static_cast<unsigned long>(s.position), s.syncStale);
+      static_cast<unsigned long>(s.position), s.syncStale, mediaStats_);
   if (n > 0 && size_t(n) < sizeof(s.diagnostics))
     diagnostics_.format(s.diagnostics + n, sizeof(s.diagnostics) - n);
   portal_.publish(s);
