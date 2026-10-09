@@ -103,17 +103,22 @@ for (const capacity of [262144, 524288]) {
     get: async () => ({...meta, total: rawBytes.length}),
     chunk: async i => rawBytes.slice(i * 262144, (i + 1) * 262144)
   };
-  await uploadPrepared(rawStore, async (url, body) => {
+  await uploadPrepared(rawStore, async (url, body, signal, headers) => {
     if (url === '/api/transfer') {
-      if (body.op === 'begin') return {offset: durable, rawChunks: true, chunkBytes: capacity};
+      if (body.op === 'begin') {
+        assert.equal(body.rawChunkHeaders, true);
+        return {offset: durable, rawChunks: true, rawChunkHeaders: true, chunkBytes: capacity};
+      }
       assert.equal(body.op, 'commit'); ++commits; return {state: 'done'};
     }
-    assert(url.startsWith('/api/blob/raw?'));
+    assert.equal(url, '/api/blob/raw');
     assert(body instanceof Blob);
-    const q = new URL(url, 'http://device/').searchParams;
-    const start = Number(q.get('offset')), data = new Uint8Array(await body.arrayBuffer());
+    // Arduino's raw parser leaves query args empty. Validate the real header contract.
+    assert.equal(new URL(url, 'http://device/').searchParams.get('offset'), null);
+    assert.equal(headers['X-NOVA-Transfer'], String(meta.id));
+    const start = Number(headers['X-NOVA-Offset']), data = new Uint8Array(await body.arrayBuffer());
     assert.equal(data.length, Math.min(capacity, rawBytes.length - start));
-    assert.equal(Number(q.get('crc')), crc32(data));
+    assert.equal(Number(headers['X-NOVA-CRC']), crc32(data));
     assert.deepEqual(data, rawBytes.subarray(start, start + data.length));
     if (start === durable) durable += data.length;
     else { assert.equal(start + data.length, durable); retriedRaw = true; }
@@ -125,10 +130,26 @@ for (const capacity of [262144, 524288]) {
 for (const capacity of [0, 524289, NaN, 262144.5]) {
   let requests = 0;
   await assert.rejects(uploadPrepared(store, async () => {
-    ++requests; return {offset: 0, rawChunks: true, chunkBytes: capacity};
+    ++requests; return {offset: 0, rawChunks: true, rawChunkHeaders: true, chunkBytes: capacity};
   }, new AbortController().signal, () => {}), /전송 단위/);
   assert.equal(requests, 1);
 }
+// New clients also work with 0.1.16 servers: raw without header support is not usable.
+let legacyOffset = 0, legacyRequests = 0;
+await uploadPrepared(store, async (url, body, signal, headers) => {
+  if (url === '/api/transfer') {
+    if (body.op === 'begin') return {offset: 0, rawChunks: true, chunkBytes: 524288};
+    return {state: 'done'};
+  }
+  assert(url.startsWith('/api/blob?')); assert(body instanceof FormData);
+  assert.equal(headers, undefined);
+  const data = new Uint8Array(await body.get('chunk').arrayBuffer());
+  assert(data.length <= 262144);
+  assert.deepEqual(data, bytes.subarray(legacyOffset, legacyOffset + data.length));
+  legacyOffset += data.length; ++legacyRequests;
+  return {offset: legacyOffset};
+}, new AbortController().signal, () => {});
+assert.equal(legacyOffset, bytes.length); assert.equal(legacyRequests, 2);
 
 // IndexedDB rejects both the request and the transaction for a quota/write failure.
 const failedStore = new TransferStore(), unhandled = [];

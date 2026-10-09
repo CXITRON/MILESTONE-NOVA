@@ -291,15 +291,20 @@ begin이 광고하는 chunkBytes(최대512 KiB, PSRAM 부족 시256 KiB)가 수�
 | GET /api/file | 공개 media/artwork/lyrics/logs 파일을 16 KiB 단위로 전달 |
 | POST /api/transfer | begin/status/commit/abort. begin의 id/path/total이 일치하면 durable offset 반환 |
 | POST /api/blob | query id/offset/crc + multipart chunk, 또는 kind=image/lyrics/key |
-| POST /api/blob/raw | 0.1.16부터: query id/offset/crc + application/octet-stream 바이너리 body |
+| POST /api/blob/raw | 0.1.17부터: X-NOVA-Transfer/Offset/CRC headers + application/octet-stream body |
 | POST /api/artwork | search/use, pin/custom/block, refresh/delete |
 
 begin은 새 전송 ID(uint32, 0 제외), 대상 경로, 크기, 교체 여부를 받는다.
-0.1.16의 begin 응답은 `chunkBytes:524288`(할당 실패 시262144),
-`rawChunks:true`를 추가한다. 브라우저는 이 광고가 있을 때만 raw 경로와 더 큰 단위를
-사용한다. 광고가 없는 기기는 기존256 KiB multipart 경로를 사용한다. IndexedDB의
-256 KiB 저장 단위는 바꾸지 않고, 임의 durable offset부터 여러 저장 블록을 합쳐 보낸다.
-raw 경로도 같은 AP token/Host/CRC/offset 검사와 저장 확정 후 응답을 따른다.
+0.1.17 클라이언트는 begin에 `rawChunkHeaders:true`를 추가한다. 서버 응답은
+`chunkBytes:524288`(할당 실패 시262144), `rawChunkHeaders:true`를 포함하고,
+`rawChunks`는 클라이언트가 header 계약을 지원할 때만 true다. 클라이언트도 두 raw 지원
+flag를 함께 확인한다. 따라서 cached0.1.16 클라이언트/새 서버, 새 클라이언트/0.1.16 서버는
+256 KiB multipart로 fallback한다. IndexedDB 저장 schema는 유지한다.
+
+raw 요청의 메타데이터는 `X-NOVA-Transfer`(id), `X-NOVA-Offset`, `X-NOVA-CRC`의
+십진수 uint32 문자열이다. `X-NOVA` token/Host/Content-Type 및 저장 확정 계약은 동일하다.
+설치된 SDK는 raw body 분기에서 URL query를 파싱하지 않으므로 raw 경로에 query만
+보내면 동작하지 않는다.0.1.16의 이 결함은0.1.17에서 수정했다.
 성공 chunk 응답의 `receiveMs`, `verifyMs`, `writeMs`는 수신/메모리 CRC/SD 쓰기+checkpoint
 시간이다. 중복 재전송에서 writeMs는0이며 재시도용 SD 재읽기 시간은 포함하지 않는다.
 USB의 `[UPLOAD]`도 이 값을 기록한다. 실효속도는 요청 전체 시간과 함께 비교한다.

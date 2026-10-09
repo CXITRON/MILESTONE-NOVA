@@ -650,7 +650,10 @@ void Portal::transfer() {
   cJSON_AddNumberToObject(out, "total", job.total);
   cJSON_AddStringToObject(out, "path", job.path);
   cJSON_AddNumberToObject(out, "chunkBytes", uploadCapacity_);
-  cJSON_AddBoolToObject(out, "rawChunks", true);
+  // Cached 0.1.16 clients send query fields, which the SDK does not parse for raw bodies.
+  // They must retain multipart until they reload a client that advertises header metadata.
+  cJSON_AddBoolToObject(out, "rawChunks", yes(root.get(), "rawChunkHeaders"));
+  cJSON_AddBoolToObject(out, "rawChunkHeaders", true);
   json(out);
 }
 String Portal::body() {
@@ -781,8 +784,10 @@ void Portal::chunk() {
   job.op = FileOp::UploadChunk;
   job.data = bytes_;
   job.length = received_;
-  if (!decimal(server_.arg("id"), job.id) || !decimal(server_.arg("offset"), job.offset) ||
-      !decimal(server_.arg("crc"), job.checksum)) {
+  const bool raw = server_.header("Content-Type") == "application/octet-stream";
+  if (!decimal(raw ? server_.header("X-NOVA-Transfer") : server_.arg("id"), job.id) ||
+      !decimal(raw ? server_.header("X-NOVA-Offset") : server_.arg("offset"), job.offset) ||
+      !decimal(raw ? server_.header("X-NOVA-CRC") : server_.arg("crc"), job.checksum)) {
     respond(false, "Invalid chunk fields");
     return;
   }
@@ -896,8 +901,8 @@ void Portal::routes() {
       syncCheck_ = Commit::Idle;
     return next();
   });
-  const char *headers[]{"X-NOVA", "Content-Type"};
-  server_.collectHeaders(headers, 2);
+  const char *headers[]{"X-NOVA", "Content-Type", "X-NOVA-Transfer", "X-NOVA-Offset", "X-NOVA-CRC"};
+  server_.collectHeaders(headers, sizeof(headers) / sizeof(headers[0]));
   for (size_t i = 0; i < portalAssetCount; ++i)
     server_.on(portalAssets[i].path, HTTP_GET, [this, i] {
       const auto &a = portalAssets[i];

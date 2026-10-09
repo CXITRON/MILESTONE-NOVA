@@ -111,13 +111,13 @@ export async function uploadPrepared(store, api, signal, progress, committing, r
   const meta = await store.get();
   if (!meta?.ready) throw new Error('먼저 파일을 변환·준비하세요.');
   signal.throwIfAborted();
-  const begun = await api('/api/transfer', {op: 'begin', ...meta, replace: true}, signal);
+  const begun = await api('/api/transfer', {op: 'begin', ...meta, replace: true, rawChunkHeaders: true}, signal);
   let offset = begun.offset;
   if (!Number.isSafeInteger(offset) || offset < 0 || offset > meta.total)
     throw new Error('기기와 브라우저의 전송 크기가 다릅니다.');
   // IndexedDB keeps its original 256 KiB layout, including previously prepared uploads.
   // Only a device advertising the bounded raw protocol receives combined 512 KiB requests.
-  const raw = begun.rawChunks === true;
+  const raw = begun.rawChunks === true && begun.rawChunkHeaders === true;
   const chunkBytes = raw ? begun.chunkBytes : CHUNK;
   if (!Number.isSafeInteger(chunkBytes) || chunkBytes < CHUNK || chunkBytes > CHUNK * 2)
     throw new Error('기기의 전송 단위가 잘못되었습니다.');
@@ -138,6 +138,11 @@ export async function uploadPrepared(store, api, signal, progress, committing, r
     }
     signal.throwIfAborted();
     const query = new URLSearchParams({id: meta.id, offset, crc: crc32(part)});
+    const headers = raw ? {
+      'X-NOVA-Transfer': String(meta.id),
+      'X-NOVA-Offset': String(offset),
+      'X-NOVA-CRC': query.get('crc')
+    } : undefined;
     const blob = new Blob([part]);
     const body = raw ? blob : new FormData();
     if (!raw) body.append('chunk', blob, 'chunk.bin');
@@ -146,7 +151,7 @@ export async function uploadPrepared(store, api, signal, progress, committing, r
     let next;
     for (let attempt = 0;; ++attempt) {
       try {
-        next = await api((raw ? '/api/blob/raw?' : '/api/blob?') + query, body, signal);
+        next = await api(raw ? '/api/blob/raw' : '/api/blob?' + query, body, signal, headers);
         break;
       } catch (error) {
         signal.throwIfAborted();

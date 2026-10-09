@@ -33,12 +33,12 @@ function toast(message) {
   clearTimeout(toastTimer);
   toastTimer = setTimeout(() => $('#toast').style.display = 'none', 6500);
 }
-async function api(path, data, signal) {
+async function api(path, data, signal, headers = {}) {
   const deadline = AbortSignal.timeout(data?.op === 'sync' ? 1800 : data?.op === 'commit' ? 900000 : 300000);
   const options = {
     signal: signal ? AbortSignal.any([signal, deadline]) : deadline,
     cache: 'no-store',
-    headers: {'X-NOVA': token}
+    headers: {...headers, 'X-NOVA': token}
   };
   if (data !== undefined) {
     options.method = 'POST';

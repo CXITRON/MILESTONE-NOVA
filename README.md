@@ -497,6 +497,14 @@ gh release create v$V build/release/$V/nova-$V.bin build/release/$V/stable.json 
 `src/board/Board.h`의 `version`이며 `NOVA_VERSION`을 주면 그 값이 우선한다.
 USB로 직접 올린 기기와 같은 버전의 릴리스는 "최신 버전입니다"로 처리되어 설치하지 않는다.
 
+## 업로드 필드 오류 수정 0.1.17
+
+0.1.16에서 `Invalid chunk fields`로 업로드가 실패하던 raw 요청의 메타데이터 전달을
+HTTP header로 수정했다. 구형 클라이언트/서버는 multipart로 fallback하도록 협상한다.
+업데이트 후 포털을 새로고침하고 재시도한다. IndexedDB 준비 자료는 그대로 사용할 수 있다.
+Claude가 작업 중인 U0002 LED 변경은 이 hotfix에 포함하지 않는다.
+검증과 배포 상태는 [C0031](docs/agents/reports/report_C0031_2026_10_09.md)에 기록한다.
+
 ## 업로드 전송 개선 0.1.16
 
 [GitHub 릴리스 v0.1.16](https://github.com/CXITRON/MILESTONE-NOVA/releases/tag/v0.1.16)
