@@ -176,8 +176,20 @@ int main(int argc, char **argv) {
   Storage s;
   StorageTestAccess::init(s);
   FileJob job;
+  // Model the two atomic replacement power-cut states, without deleting the committed copy.
+  const std::vector<uint8_t> oldLyrics{'o', 'l', 'd'}, newLyrics{'n', 'e', 'w'};
+  write("/lyrics/interrupted.lrc.bak", oldLyrics);
+  write("/lyrics/interrupted.lrc.tmp", newLyrics);
+  write("/lyrics/committed.lrc", newLyrics);
+  write("/lyrics/committed.lrc.bak", oldLyrics);
   job.op = FileOp::Scan;
+  failRenameSource = "/lyrics/interrupted.lrc.bak";
+  assert(!StorageTestAccess::run(s, job)); // Failed recovery must not report success.
   assert(StorageTestAccess::run(s, job));
+  assert(read("/lyrics/interrupted.lrc") == oldLyrics);
+  assert(read("/lyrics/committed.lrc") == newLyrics);
+  assert(StorageTestAccess::run(s, job)); // Repeated boot scan is idempotent.
+  assert(read("/lyrics/interrupted.lrc") == oldLyrics);
   auto original = image(0xf800), replacement = image(0x07e0);
   write("/media/a.nvi", original);
   job = {};
@@ -804,6 +816,54 @@ int main(int argc, char **argv) {
   longSong.durationMs = UINT32_MAX;
   const auto priorRequests = httpRequests;
   assert(!online.fetch(longSong, lyricBytes) && httpRequests == priorRequests);
+  // Isolate catalog capacity checks from earlier media and artwork fixtures.
+  const auto previousRoot = SD.root;
+  SD.root += "/capacity";
+  std::filesystem::create_directories(SD.root);
+  for (const char *dir : {"/media", "/artwork", "/update", "/lyrics"}) SD.mkdir(dir);
+  Storage full;
+  StorageTestAccess::init(full);
+  auto payload = image(0x1234);
+  for (unsigned i = 0; i < maxMediaEntries - 1; ++i) {
+    char path[80]; snprintf(path, sizeof(path), "/media/item%02u.nvi", i);
+    write(path, payload);
+  }
+  job = {}; job.op = FileOp::Scan;
+  assert(StorageTestAccess::run(full, job));
+  // Start at 63 entries, fill the catalog before resuming: commit must also reject.
+  job = {}; job.op = FileOp::UploadBegin; job.id = 900; job.total = payload.size();
+  strcpy(job.path, "/media/overflow.nvi");
+  assert(StorageTestAccess::run(full, job));
+  job.op = FileOp::UploadChunk; job.data = payload.data(); job.length = payload.size();
+  job.checksum = crc32(job.data, job.length);
+  assert(StorageTestAccess::run(full, job));
+  write("/media/last.nvi", payload);
+  FileJob scan; scan.op = FileOp::Scan;
+  assert(StorageTestAccess::run(full, scan));
+  assert(StorageTestAccess::catalog(full).count == maxMediaEntries);
+  job.op = FileOp::UploadCommit;
+  assert(!StorageTestAccess::run(full, job) && strstr(job.error, "catalog is full"));
+  assert(!SD.exists("/media/overflow.nvi") && SD.exists("/media/overflow.nvi.part"));
+  job = {}; job.op = FileOp::UploadBegin; job.id = 901; job.total = payload.size();
+  strcpy(job.path, "/media/new.nvi");
+  assert(!StorageTestAccess::run(full, job) && strstr(job.error, "catalog is full"));
+  assert(!SD.exists("/media/new.nvi.part"));
+  // Replacements, Sync, and OTA do not add media entries at capacity.
+  job = {}; job.op = FileOp::UploadBegin; job.id = 902; job.total = payload.size();
+  job.enabled = true; strcpy(job.path, "/media/item00.nvi");
+  assert(StorageTestAccess::run(full, job));
+  job.op = FileOp::UploadChunk; job.data = payload.data(); job.length = payload.size();
+  job.checksum = crc32(job.data, job.length);
+  assert(StorageTestAccess::run(full, job));
+  job.op = FileOp::UploadCommit;
+  assert(StorageTestAccess::run(full, job));
+  assert(StorageTestAccess::catalog(full).count == maxMediaEntries);
+  for (const char *path : {"/media/sync.njv", "/update/candidate.bin"}) {
+    job = {}; job.op = FileOp::UploadBegin; job.id = 903; job.total = payload.size();
+    strcpy(job.path, path); assert(StorageTestAccess::run(full, job));
+    job.op = FileOp::UploadAbort; assert(StorageTestAccess::run(full, job));
+  }
+  SD.root = previousRoot;
   std::cout
       << "Storage real worker handlers: checkpoint reboot, conflicting retry, atomic rollback, CRC "
          "rejection, JPEG/MSM seek, BMP orientation, Sync content identity, catalog, artwork "

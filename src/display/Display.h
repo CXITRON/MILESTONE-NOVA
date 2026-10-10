@@ -31,6 +31,9 @@ public:
   bool canRender() const { return ready_ && (async_ ? !queued_ : !pending_); }
   void wait();
   bool ready() const { return ready_; }
+  // Transfer errors since boot, and re-initializations that brought the panel back.
+  uint32_t failures() const { return failures_; }
+  uint32_t recoveries() const { return recoveries_; }
   // Completed frames and total microseconds spent inside flush(), for playback diagnostics.
   uint32_t contentFrames() const { return contentFrames_; }
   uint32_t frames() const { return frames_; }
@@ -49,6 +52,9 @@ private:
   uint16_t *spare_ = nullptr, *front_ = nullptr;
   Frame next_{};
   void launch();
+  void fail();
+  void recover();
+  void initPanel(bool inverted);
   Completion transfer(const Frame &frame);
   void command(uint8_t value, const uint8_t *data = nullptr, size_t count = 0);
   LcdBus bus_;
@@ -59,7 +65,8 @@ private:
   bool sentStale_ = false;
   uint32_t frames_ = 0, contentFrames_ = 0, lastToken_ = 0, pendingToken_ = 0;
   uint64_t flushUs_ = 0;
-  bool transferFailed_ = false;
+  bool transferFailed_ = false, panelStarted_ = false, inverted_ = false, asleep_ = false;
+  uint32_t hz_ = 0, failedAt_ = 0, failures_ = 0, recoveries_ = 0, attempts_ = 0;
   bool ready_ = false, pending_ = false, initial_ = true;
 };
 } // namespace nova

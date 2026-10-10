@@ -82,7 +82,10 @@ std::string fixture(const Bytes &image, const std::string &version) {
   packets[url] = image;
   return url;
 }
-void run(Firmware &f, Firmware::Work work) { assert(f.request(work)); f.process(); }
+void run(Firmware &f, Firmware::Work work) {
+  f.serviceReady(true); // This harness is the executor; production uses Portal's worker.
+  assert(f.request(work)); f.process();
+}
 int main(int argc, char **argv) {
   assert(argc == 4);
   const auto image = read(argv[1]), publicBytes = read(argv[2]), wrongImage = read(argv[3]);
@@ -189,6 +192,17 @@ int main(int argc, char **argv) {
     assert(testNvs["nova"] == settingsRecords && testNvs["nova-secrets"] == secretsRecords);
     testNvsCapacity = 0;
   }
+
+  Firmware noWorker;
+  noWorker.begin(storage, key.c_str());
+  for (auto work : {Firmware::Work::Check, Firmware::Work::Prepare, Firmware::Work::Rollback}) {
+    assert(!noWorker.request(work) && !noWorker.busy());
+  }
+  noWorker.serviceReady(true);
+  assert(noWorker.request(Firmware::Work::Check));
+  noWorker.process();
+  noWorker.serviceReady(false);
+  assert(!noWorker.request(Firmware::Work::Check) && !noWorker.busy());
 
   Firmware normal;
   normal.begin(storage, key.c_str());

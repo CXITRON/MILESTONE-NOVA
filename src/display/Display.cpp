@@ -32,7 +32,19 @@ void Display::wait() {
   }
 }
 void Display::command(uint8_t cmd, const uint8_t *data, size_t n) {
-  if (!bus_.command(cmd, data, n)) { transferFailed_ = true; ready_ = pending_ = false; }
+  if (!bus_.command(cmd, data, n)) { transferFailed_ = true; fail(); pending_ = false; }
+}
+void Display::initPanel(bool inverted) {
+  command(0x01);
+  delay(150);
+  command(0x11);
+  delay(120);
+  const uint8_t rgb565 = 0x55, madctl = board::lcdMadctl;
+  command(0x3A, &rgb565, 1);
+  command(0x36, &madctl, 1);
+  command(inverted ? 0x21 : 0x20);
+  command(0x13);
+  command(0x29);
 }
 bool Display::begin(uint32_t hz, uint8_t light, bool inverted) {
   pinMode(board::lcdCs, OUTPUT);
@@ -46,19 +58,13 @@ bool Display::begin(uint32_t hz, uint8_t light, bool inverted) {
   delay(10);
   digitalWrite(board::lcdReset, HIGH);
   delay(120);
-  command(0x01);
-  delay(150);
-  command(0x11);
-  delay(120);
-  const uint8_t rgb565 = 0x55, madctl = board::lcdMadctl;
-  command(0x3A, &rgb565, 1);
-  command(0x36, &madctl, 1);
-  command(inverted ? 0x21 : 0x20);
-  command(0x13);
-  command(0x29);
+  hz_ = hz;
+  inverted_ = inverted;
+  initPanel(inverted);
   sent_ = static_cast<uint16_t *>(
       heap_caps_malloc(board::width * board::height * 2, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
   ready_ = canvas_.begin() && sent_ && !transferFailed_;
+  panelStarted_ = ready_;
   if (ready_) {
 #ifdef NOVA_LCD_ASYNC
     spare_ = static_cast<uint16_t *>(heap_caps_malloc(board::width * board::height * 2,
@@ -85,11 +91,17 @@ bool Display::begin(uint32_t hz, uint8_t light, bool inverted) {
 void Display::brightness(uint8_t value) { ledcWrite(board::backlight, value); }
 void Display::inversion(bool inverted) {
   wait();
+  inverted_ = inverted;
   if (ready_)
     command(inverted ? 0x21 : 0x20);
 }
-void Display::frequency(uint32_t hz) { wait(); if (!bus_.frequency(hz)) ready_ = pending_ = false; }
+void Display::frequency(uint32_t hz) {
+  wait();
+  hz_ = hz;
+  if (!bus_.frequency(hz)) { fail(); pending_ = false; }
+}
 void Display::sleep() {
+  asleep_ = true;
   if (async_) wait();
   else pending_ = false;
   brightness(0);
@@ -114,6 +126,35 @@ void Display::present(uint32_t token) {
     pending_ = true;
     if (sentStale_ && forcedFirst_ < 0) { initial_ = true; sentStale_ = false; }
   }
+}
+void Display::fail() {
+  if (ready_) {
+    ++failures_;
+    failedAt_ = micros();
+    attempts_ = 0;
+  }
+  ready_ = false;
+}
+// A transfer error used to leave the screen frozen until reboot. Re-create the SPI device and send
+// the panel init sequence again, at most three times and no more than once a second. The worker is
+// idle here: every failure path has already collected its completion.
+void Display::recover() {
+  if (ready_ || !panelStarted_ || asleep_ || pending_ || queued_ || attempts_ >= 3 || micros() - failedAt_ < 1000000)
+    return;
+  ++attempts_;
+  failedAt_ = micros();
+  transferFailed_ = false;
+  if (!bus_.frequency(hz_)) return;
+  digitalWrite(board::lcdReset, LOW);
+  delay(10);
+  digitalWrite(board::lcdReset, HIGH);
+  delay(120);
+  initPanel(inverted_);
+  if (transferFailed_) return;
+  initial_ = true;
+  sentStale_ = false;
+  ready_ = true;
+  ++recoveries_;
 }
 void Display::launch() {
 #ifdef NOVA_LCD_ASYNC
@@ -167,6 +208,8 @@ void Display::task(void *self) {
 }
 #endif
 void Display::flush(uint32_t sliceUs) {
+  if (!ready_)
+    recover();
 #ifdef NOVA_LCD_ASYNC
   if (async_) {
     Completion result;
@@ -178,7 +221,7 @@ void Display::flush(uint32_t sliceUs) {
         ++frames_;
         if (result.token && result.token != lastToken_) { ++contentFrames_; lastToken_ = result.token; }
       }
-      else { ready_ = false; queued_ = false; }
+      else { fail(); queued_ = false; }
       if (ready_ && queued_) launch();
     }
     return;
@@ -211,7 +254,8 @@ void Display::flush(uint32_t sliceUs) {
     command(0x2B, rows, 4);
     command(0x2C);
     if (!ready_ || !bus_.pixels(current, bytes)) {
-      ready_ = pending_ = false;
+      fail();
+      pending_ = false;
       return;
     }
     if (forced) {

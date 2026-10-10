@@ -264,8 +264,10 @@ void MediaDecoder::monoToPixels(uint16_t *out, unsigned side) {
 bool MediaDecoder::frame(const char *path, uint32_t pos, uint16_t *out, uint32_t &duration,
                          unsigned side) {
   delivered_ = UINT32_MAX;
+  opened_ = false;
   if (!out || !side || side > maxMediaSide || !open(path))
     return false;
+  opened_ = true;
   duration = info_.frames > 1 ? info_.duration : 0;
   if (info_.format == MediaFormat::Bitmap)
     return bitmap(out, side);

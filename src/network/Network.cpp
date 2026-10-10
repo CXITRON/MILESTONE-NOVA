@@ -41,7 +41,7 @@ void Network::disconnect(bool radioOff) {
 }
 void Network::connect(const WifiProfile &p) {
   disconnect();
-  linkObserved_ = false;
+  linkObserved_ = linkSettled_ = false;
   WiFi.mode(ap_ ? WIFI_AP_STA : WIFI_STA);
   if (p.auth)
     WiFi.begin(p.ssid, WPA2_AUTH_PEAP, p.identity, p.username, p.password);
@@ -55,6 +55,7 @@ void Network::connect(const WifiProfile &p) {
 void Network::begin(const Secrets &s, const Settings &v) {
   configure(s, v);
   started_ = attempt_ = millis();
+  bootWaitComplete_ = linkSettled_ = false;
   off_ = false;
   ntp_ = false;
   retry_ = 30000;
@@ -160,8 +161,9 @@ int Network::rssi() const { return connected() ? WiFi.RSSI() : 0; }
 bool Network::connected() const { return !off_ && WiFi.status() == WL_CONNECTED; }
 bool Network::settled(uint32_t now) const {
   return !configured_ || off_ ||
-         (connected() ? linkObserved_ && elapsed(now, connectedAt_) >= settleMs
-                      : !attempting_ && elapsed(now, started_) >= connectTimeoutMs);
+         (connected() ? linkObserved_ && (linkSettled_ || elapsed(now, connectedAt_) >= settleMs)
+                      : !attempting_ &&
+                            (bootWaitComplete_ || elapsed(now, started_) >= connectTimeoutMs));
 }
 const char *Network::status() const {
   return connected()    ? "Connected"
@@ -192,6 +194,9 @@ void Network::snapshot(NetworkView &v) const {
   strcpy(v.test, testStatus_);
 }
 void Network::tick(uint32_t now, bool ble) {
+  // Completion is sticky: signed deadline checks must not reopen boot waiting after 24.9 days.
+  if (!bootWaitComplete_ && elapsed(now, started_) >= connectTimeoutMs)
+    bootWaitComplete_ = true;
   if (scanning_) {
     const int n = WiFi.scanComplete();
     if (n >= 0) {
@@ -218,7 +223,10 @@ void Network::tick(uint32_t now, bool ble) {
     if (!linkObserved_) {
       linkObserved_ = true;
       connectedAt_ = now;
+      linkSettled_ = false;
     }
+    if (!linkSettled_ && elapsed(now, connectedAt_) >= settleMs)
+      linkSettled_ = true;
     if (testing_) {
       if (!stable_)
         stable_ = now;
@@ -239,7 +247,7 @@ void Network::tick(uint32_t now, bool ble) {
   ntp_ = false;
   stable_ = 0;
   if (linkObserved_) {
-    linkObserved_ = false;
+    linkObserved_ = linkSettled_ = false;
     attempt_ = now; // Backoff starts at the loss, not an hours-old connect() timestamp.
   }
   if (attempting_ && elapsed(now, attempt_) >= connectTimeoutMs) {

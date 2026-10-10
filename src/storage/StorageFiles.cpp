@@ -10,6 +10,15 @@
 #include <esp_timer.h>
 namespace nova {
 namespace {
+bool catalogHasRoom(const MediaCatalog &catalog, const char *path) {
+  if (strncmp(path, "/media/", 7) || !mediaExtension(path) ||
+      !strncmp(path, "/media/sync.", 12) || catalog.count < maxMediaEntries)
+    return true;
+  for (unsigned i = 0; i < catalog.count; ++i)
+    if (!strcmp(path, catalog.entries[i].path))
+      return true; // Replacing a listed file does not consume another entry.
+  return false;
+}
 bool artworkPath(const char *path) {
   return strlen(path) == 29 && !strncmp(path, "/artwork/", 9) && !strcmp(path + 25, ".nvi");
 }
@@ -152,7 +161,7 @@ bool Storage::scan() {
   }
   catalogSequence_ = best;
   // Reclaim interrupted replacement names, never format or delete unrelated files.
-  for (const char *dir : {"/media", "/media/photo", "/media/video", "/artwork", "/update"}) {
+  for (const char *dir : {"/media", "/media/photo", "/media/video", "/artwork", "/update", "/lyrics"}) {
     File folder = SD.open(dir);
     if (!folder)
       continue;
@@ -166,7 +175,8 @@ bool Storage::scan() {
         if (!SD.exists(name)) {
           char backup[148];
           snprintf(backup, sizeof(backup), "%s.bak", name);
-          SD.rename(backup, name);
+          if (!SD.rename(backup, name))
+            return false;
         }
       }
     }
@@ -535,6 +545,10 @@ void Storage::fileJob(FileJob &j) {
       fail("Invalid transfer");
       return;
     }
+    if (!catalogHasRoom(*catalog_, j.path)) {
+      fail("Media catalog is full");
+      return;
+    }
     if (upload_.id == j.id && !strcmp(upload_.path, j.path) && upload_.total == j.total) {
       j.offset = upload_.offset;
       j.ok = true;
@@ -656,6 +670,11 @@ void Storage::fileJob(FileJob &j) {
   if (j.op == FileOp::UploadCommit) {
     if (j.id != upload_.id || !j.id || upload_.offset != upload_.total) {
       fail("Incomplete transfer");
+      return;
+    }
+    // Recheck before promotion: a recovered/resumed transfer may outlive a catalog change.
+    if (!catalogHasRoom(*catalog_, upload_.path)) {
+      fail("Media catalog is full");
       return;
     }
     char part[144], backup[144];

@@ -36,6 +36,29 @@ int main() {
   assert(nova::decodeJpeg565(static_cast<uint8_t*>(encoded),bytes,out+1,side,side,static_cast<uint8_t*>(work),65536,true));
   assert(std::equal(reference.begin(),reference.end(),out+1));
   assert(!nova::decodeJpeg565(static_cast<uint8_t*>(encoded),bytes,out,side-1,side,static_cast<uint8_t*>(work),65536,true));
+  if (!progressive) {
+   // JPEGDEC indexes fixed tables with header values. Edited headers must stay out of its fast
+   // path (UBSan aborts on an out-of-range index or a zero MCU size) and still decode safely.
+   auto *data=static_cast<uint8_t*>(encoded);
+   const auto find=[&](uint8_t marker,size_t from) { for(size_t i=from;i+4<bytes;++i) if(data[i]==0xFF&&data[i+1]==marker) return i; return size_t(0); };
+   const size_t sof=find(0xC0,2), dht=find(0xC4,2), sos=find(0xDA,2);
+   assert(sof&&dht&&sos);
+   const uint8_t sofSampling=data[sof+10], dhtId=data[dht+4], sosTables=data[sos+7];
+   const uint8_t dhtCount=data[dht+5];
+   for(int edit=0;edit<4;++edit) {
+    data[sof+10]=edit==0?0:sofSampling; data[dht+4]=edit==1?3:dhtId; data[sos+7]=edit==2?0x33:sosTables; data[dht+5]=edit==3?255:dhtCount;
+    nova::decodeJpeg565(data,bytes,out,side,side,static_cast<uint8_t*>(work),65536,true);
+   }
+   data[sof+10]=sofSampling; data[dht+4]=dhtId; data[sos+7]=sosTables; data[dht+5]=dhtCount;
+   srand(side);
+   std::vector<uint8_t> original(data,data+bytes);
+   for(int round=0;round<300;++round) {
+    memcpy(data,original.data(),bytes);
+    for(int edit=0;edit<4;++edit) data[rand()%bytes]=uint8_t(rand());
+    nova::decodeJpeg565(data,bytes,out,side,side,static_cast<uint8_t*>(work),65536,true);
+   }
+   memcpy(data,original.data(),bytes);
+  }
   memset(encoded,0,bytes);
   assert(!nova::decodeJpeg565(static_cast<uint8_t*>(encoded),bytes,out,side,side,static_cast<uint8_t*>(work),65536,true));
   free(encoded); free(raw); free(work);

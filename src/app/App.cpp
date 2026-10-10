@@ -104,6 +104,7 @@ void App::begin() {
   autoUpdate_.begin(millis());
   log("UPDATE", "GitHub Releases ready; automatic=%d", int(store_.autoUpdate()));
   serviceReady_ = portal_.begin(storage_, artwork_, onlineLyrics_, firmware_);
+  firmware_.serviceReady(serviceReady_);
   navigation_.core(settings_.coreStart);
   navigation_.select(static_cast<Profile>(settings_.profile));
   screen_ = navigation_.screen();

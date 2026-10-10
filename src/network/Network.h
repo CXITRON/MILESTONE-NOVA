@@ -52,7 +52,7 @@ private:
   uint32_t started_ = 0, attempt_ = 0, retry_ = 30000, stable_ = 0, lastNtp_ = 0,
            ntpSeconds_ = 21600, retrySeconds_ = 300;
   bool eventRegistered_ = false;
-  bool linkObserved_ = false;
+  bool linkObserved_ = false, linkSettled_ = false, bootWaitComplete_ = false;
   uint32_t connectedAt_ = 0;
   bool configured_ = false, attempting_ = false, ntp_ = false, off_ = false, ap_ = false,
        testing_ = false, saved_ = false, scanning_ = false, bootSync_ = true;

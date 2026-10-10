@@ -497,6 +497,15 @@ gh release create v$V build/release/$V/nova-$V.bin build/release/$V/stable.json 
 `src/board/Board.h`의 `version`이며 `NOVA_VERSION`을 주면 그 값이 우선한다.
 USB로 직접 올린 기기와 같은 버전의 릴리스는 "최신 버전입니다"로 처리되어 설치하지 않는다.
 
+## 전체 안정성 검토 수정 0.1.19
+
+[GitHub 릴리스 v0.1.19](https://github.com/CXITRON/MILESTONE-NOVA/releases/tag/v0.1.19)
+
+전체 코드 검토([C0037](docs/agents/reports/report_C0037_2026_10_10.md), [C0038](docs/agents/reports/report_C0038_2026_10_10.md))에서 나온 수정 후보 중 아래를 고쳤다. 기능 추가는 없다.
+- 가사 파일 교체 중 전원이 끊겨 `.lrc.bak`만 남아도 스캔이 복구한다(D01). 64개 등록 뒤 새 파일이 카탈로그에서 빠지던 문제(D02), 포털 작업자 생성 실패 때 소프트 Off/재시작이 막히던 문제(D04), 가동 약 24.8일 뒤 첫 BLE 시작이 막힐 수 있던 문제(D03)를 고쳤다([C0039](docs/agents/reports/report_C0039_2026_10_10.md)).
+- JPEGDEC 앞에서 JPEG 헤더를 검사해, 지원 범위 밖 헤더는 esp_jpeg로 처리한다(F1). 색인이 있는 영상에서 프레임 하나가 실패해도 파일 전체를 다시 검증하지 않고 한 번만 다시 읽는다(F4). LCD 전송이 실패하면 최대 3번 패널을 다시 초기화한다(F2, 예방용)([C0040](docs/agents/reports/report_C0040_2026_10_10.md)).
+호스트 시험과 격리 빌드는 통과했고 실기 확인은 아직 없다.
+
 ## 하단 LED 출력 수정 0.1.18
 
 [GitHub 릴리스 v0.1.18](https://github.com/CXITRON/MILESTONE-NOVA/releases/tag/v0.1.18)

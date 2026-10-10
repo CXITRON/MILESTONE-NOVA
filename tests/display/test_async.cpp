@@ -41,5 +41,31 @@ int main(){
  d.canvas().clear(0x7777);d.present();d.wait();
  assert(!d.ready() && !d.busy() && !d.canRender() && d.frames()==frames);
  nativeFail=false;
+ // A failed transfer is retried: after the back-off the panel is initialized again and redrawn.
+ {
+  nova::Display r;
+  assert(r.begin(40000000,80,false));
+  r.wait();
+  nativeFail=true;
+  r.canvas().clear(0x2222);r.present();r.wait();
+  nativeFail=false;
+  assert(!r.ready() && r.failures()==1);
+  r.flush(); // within the back-off: nothing happens
+  assert(!r.ready() && r.recoveries()==0);
+  testMicros+=1100000;
+  r.flush();
+  assert(r.ready() && r.recoveries()==1);
+  transfers.clear();
+  r.canvas().clear(0x6666);r.present();r.wait();
+  assert(r.canRender() && transfers.size()==40);
+  for(auto &t:transfers)for(auto p:t)assert(p==0x6666);
+  // A panel that keeps failing is given up on after three attempts.
+  nativeFail=true;
+  r.canvas().clear(0x1111);r.present();r.wait();
+  for(int i=0;i<5;++i){testMicros+=1100000;r.flush();}
+  nativeFail=false;
+  testMicros+=1100000;r.flush();
+  assert(r.failures()>=2);
+ }
  std::cout<<"Async frame ownership, bounded queue, immutable mode, drain/sleep and DMA error passed\n";
 }

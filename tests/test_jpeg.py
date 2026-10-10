@@ -8,7 +8,7 @@ class JpegTests(unittest.TestCase):
         out=ROOT/'build/tests/jpeg'
         out.parent.mkdir(parents=True,exist_ok=True)
         subprocess.run([os.environ.get('CXX','g++'),'-std=c++17','-g','-O1',
-            '-fsanitize=address,undefined','-fno-omit-frame-pointer','-DNOVA_FAST_JPEG','-D__LINUX__',
+            '-fsanitize=address,undefined','-fno-omit-frame-pointer','-fno-sanitize-recover=undefined','-DNOVA_FAST_JPEG','-D__LINUX__',
             '-I'+str(ROOT/'tests/storage/support'),'-I'+str(ROOT/'src'),
             '-I'+str(ROOT/'lib/jpegdec/src'),str(ROOT/'tests/media/test_jpeg.cpp'),
             str(ROOT/'src/media/JpegImage.cpp'),str(ROOT/'tests/storage/support/Jpeg.cpp'),

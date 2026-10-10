@@ -9,6 +9,8 @@ public:
   using State = ReleaseState;
   // Releases are verified with the key built into the firmware. Only tests pass an override.
   void begin(Storage &storage, const char *publicKeyOverride = nullptr);
+  // App sets this only after the service worker has been successfully created.
+  void serviceReady(bool ready) { serviceReady_ = ready; }
   bool request(Work work);
   void process(); // Service worker only.
   bool busy() const { return work_ != Work::None || state_ == State::Working; }
@@ -38,6 +40,7 @@ private:
   uint8_t *bytes_ = nullptr;
   uint32_t size_ = 0, preparedSize_ = 0;
   bool releaseCandidate_ = false;
+  std::atomic<bool> serviceReady_{false};
   std::atomic<Work> work_{Work::None};
   std::atomic<State> state_{State::Idle};
   std::atomic<unsigned> progress_{0};

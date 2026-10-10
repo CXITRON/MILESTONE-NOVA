@@ -239,9 +239,18 @@ void Storage::readMedia(AssetResult &r) {
   const char *path = r.request.name;
   const int64_t started = esp_timer_get_time();
   if (!decoder_.frame(path, r.request.position, r.pixels, r.durationMs, board::mediaSide)) {
-    if (decoder_.validate(path, progress_, validationCancelled_))
+    // A missing or invalid header/index needs the full validation that rebuilds it. A single bad
+    // frame of an indexed file only gets one retry on a fresh handle: re-reading and rewriting the
+    // whole file for a transient SD glitch stalls the worker.
+    if (decoder_.needsValidation()) {
+      if (decoder_.validate(path, progress_, validationCancelled_))
+        r.artPresent =
+            decoder_.frame(path, r.request.position, r.pixels, r.durationMs, board::mediaSide);
+    } else {
+      decoder_.close();
       r.artPresent =
           decoder_.frame(path, r.request.position, r.pixels, r.durationMs, board::mediaSide);
+    }
   } else
     r.artPresent = true;
   r.error = !r.artPresent;

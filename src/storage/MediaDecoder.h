@@ -16,11 +16,14 @@ public:
   const char *error() const { return error_; }
   // Microseconds the latest video frame spent on SD reads (index, header, data, CRC) and JPEG decoding.
   uint32_t frameIndex() const { return delivered_ ; }
+  // True when the latest frame() failed before reading any frame: header or index missing/invalid.
+  bool needsValidation() const { return !opened_; }
   uint32_t readUs() const { return readUs_; }
   uint32_t jpegUs() const { return jpegUs_; }
 
 private:
   uint32_t delivered_ = UINT32_MAX;
+  bool opened_ = false;
   uint32_t readUs_ = 0, jpegUs_ = 0;
   bool open(const char *path);
   bool jpeg(size_t bytes, unsigned width, unsigned height, uint16_t *output = nullptr);

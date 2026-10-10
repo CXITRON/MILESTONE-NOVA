@@ -57,6 +57,26 @@ int main() {
   testMillis += 15000;
   network.tick(testMillis, false);
   assert(WiFi.disconnects == disconnects + 1 && network.settled(testMillis));
+  // Completed boot waiting and link stability must survive the signed half-range and full wrap.
+  testMillis = 0;
+  network.begin(secrets, settings);
+  testMillis = 30000;
+  network.tick(testMillis, false);
+  assert(network.settled(testMillis));
+  for (auto now : {0x80000000U, 0xffffffffU, 0U})
+    assert(network.settled(now));
+  WiFi.event(ARDUINO_EVENT_WIFI_STA_CONNECTED);
+  WiFi.event(ARDUINO_EVENT_WIFI_STA_GOT_IP);
+  testMillis = 31000;
+  network.tick(testMillis, false);
+  assert(!network.settled(testMillis));
+  testMillis += 2000;
+  network.tick(testMillis, false);
+  assert(network.settled(testMillis));
+  assert(network.settled(0x80010000U));
+  // Beginning again resets the boot waiting latch.
+  network.begin(secrets, settings);
+  assert(!network.settled(testMillis));
   // Setup AP must remain on a stable channel; background STA reconnects are deferred.
   testMillis += 30000;
   network.begin(secrets, settings);

@@ -48,7 +48,7 @@ void Firmware::latest(char *out, size_t capacity) {
   xSemaphoreGive(mutex_);
 }
 bool Firmware::request(Work work) {
-  if (!mutex_ || !bytes_ || busy() || work == Work::None ||
+  if (!serviceReady_ || !mutex_ || !bytes_ || busy() || work == Work::None ||
       ((work == Work::Install || work == Work::AutoInstall) && state_ != State::Ready) ||
       (work == Work::Download && !url_[0]))
     return false;
