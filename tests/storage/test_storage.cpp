@@ -863,6 +863,36 @@ int main(int argc, char **argv) {
     strcpy(job.path, path); assert(StorageTestAccess::run(full, job));
     job.op = FileOp::UploadAbort; assert(StorageTestAccess::run(full, job));
   }
+  // A cache-heavy card must let the idle task run even for files ignored by the catalog.
+  // Exercise the real scan handler, including the non-media continue path, not a scan model.
+  SD.root = previousRoot + "/boot-cache";
+  std::filesystem::create_directories(SD.root);
+  for (const char *dir : {"/media", "/artwork", "/update", "/lyrics"}) SD.mkdir(dir);
+  for (unsigned i = 0; i < 256; ++i) {
+    char path[80];
+    snprintf(path, sizeof(path), "/artwork/cache%03u.used", i);
+    write(path, {1});
+    snprintf(path, sizeof(path), "/media/ignored%03u.nix", i);
+    write(path, {2});
+  }
+  Storage cacheHeavy;
+  StorageTestAccess::init(cacheHeavy);
+  testTaskDelays = 0;
+  unsigned lastDelay = 0, consecutiveVisits = 0, maximumVisitsWithoutDelay = 0;
+  onDirectoryVisit = [&] {
+    if (testTaskDelays != lastDelay)
+      consecutiveVisits = 0;
+    lastDelay = testTaskDelays;
+    maximumVisitsWithoutDelay = std::max(maximumVisitsWithoutDelay, ++consecutiveVisits);
+  };
+  job = {}; job.op = FileOp::Scan;
+  assert(StorageTestAccess::run(cacheHeavy, job));
+  onDirectoryVisit = {};
+  assert(maximumVisitsWithoutDelay <= 1); // No phase may compensate for another phase's missing yields.
+  assert(testTaskDelays >= 768); // 512 recovery visits and 256 skipped media visits must yield.
+  assert(StorageTestAccess::catalog(cacheHeavy).count == 0);
+  assert(read("/artwork/cache000.used") == std::vector<uint8_t>{1});
+  assert(read("/media/ignored255.nix") == std::vector<uint8_t>{2});
   SD.root = previousRoot;
   std::cout
       << "Storage real worker handlers: checkpoint reboot, conflicting retry, atomic rollback, CRC "

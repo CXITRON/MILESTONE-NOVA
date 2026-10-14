@@ -128,6 +128,9 @@ bool Storage::saveCatalog() {
   return ok;
 }
 bool Storage::scan() {
+  const int64_t started = esp_timer_get_time();
+  unsigned recoveredVisits = 0, mediaVisits = 0;
+  log("SD", "scan start");
   decoder_.close();
   // Recover the newest validated catalog, then reconcile with files once per explicit scan.
   uint32_t best = catalogSequence_;
@@ -165,7 +168,14 @@ bool Storage::scan() {
     File folder = SD.open(dir);
     if (!folder)
       continue;
+    log("SD", "scan recovery %s", dir);
     for (File f = folder.openNextFile(); f; f = folder.openNextFile()) {
+      // Even ordinary cache files need a blocking tick: yielding only on media entries
+      // can starve the core's idle task for the entire boot scan (task watchdog).
+      vTaskDelay(1);
+      if (stopping_)
+        return false;
+      ++recoveredVisits;
       char name[144];
       snprintf(name, sizeof(name), "%s", f.path());
       f.close();
@@ -181,7 +191,11 @@ bool Storage::scan() {
       }
     }
   }
+  log("SD", "scan reconcile %u entries", unsigned(catalog_->count));
   for (unsigned i = 0; i < catalog_->count;) {
+    vTaskDelay(1);
+    if (stopping_)
+      return false;
     if (!SD.exists(catalog_->entries[i].path)) {
       for (unsigned n = i + 1; n < catalog_->count; ++n)
         catalog_->entries[n - 1] = catalog_->entries[n];
@@ -193,9 +207,13 @@ bool Storage::scan() {
     File folder = SD.open(dir);
     if (!folder)
       continue;
+    log("SD", "scan media %s", dir);
     for (File f = folder.openNextFile(); f; f = folder.openNextFile()) {
+      // Put this before all continue paths, including directories and sidecar files.
+      vTaskDelay(1);
       if (stopping_)
         return false;
+      ++mediaVisits;
       if (f.isDirectory())
         continue;
       const char *path = f.path();
@@ -215,10 +233,13 @@ bool Storage::scan() {
         cleanUtf8(e.title, sizeof(e.title), strrchr(path, '/') + 1);
         e.bytes = f.size();
       }
-      vTaskDelay(1);
     }
   }
-  return saveCatalog();
+  const bool ok = saveCatalog();
+  log("SD", "scan done ok=%d recovery=%u media=%u entries=%u elapsed_ms=%llu", int(ok),
+      recoveredVisits, mediaVisits, unsigned(catalog_->count),
+      static_cast<unsigned long long>((esp_timer_get_time() - started) / 1000));
+  return ok;
 }
 bool Storage::saveTransfer() {
   upload_.checksum = crc32(&upload_, offsetof(UploadRecord, checksum));

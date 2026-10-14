@@ -3,10 +3,12 @@
 #include <cstdint>
 #include <cstdio>
 #include <filesystem>
+#include <functional>
 #include <memory>
 #include <string>
 #include <vector>
 #include <esp_timer.h>
+inline std::function<void()> onDirectoryVisit;
 inline int failWriteAfter = -1;
 inline int64_t fileWriteUs = 0;
 inline std::string failRenameSource;
@@ -71,6 +73,8 @@ public:
   File openNextFile() {
     if (!h_ || h_->next >= h_->entries.size())
       return {};
+    if (onDirectoryVisit)
+      onDirectoryVisit();
     const auto absolute = h_->entries[h_->next++];
     return File(absolute.string(), h_->logical + "/" + absolute.filename().string());
   }
