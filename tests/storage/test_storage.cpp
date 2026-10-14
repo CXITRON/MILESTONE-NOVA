@@ -5,6 +5,7 @@
 #include "network/Http.h"
 #include "storage/Journal.h"
 #include "storage/Storage.h"
+#include "update/Recovery.h"
 #include <cassert>
 #include <cstring>
 #include <esp_timer.h>
@@ -893,6 +894,42 @@ int main(int argc, char **argv) {
   assert(StorageTestAccess::catalog(cacheHeavy).count == 0);
   assert(read("/artwork/cache000.used") == std::vector<uint8_t>{1});
   assert(read("/media/ignored255.nix") == std::vector<uint8_t>{2});
+  // A crash hint must isolate access without deleting a file or persisting disabled catalog flags.
+  write("/media/good.nvi", payload);
+  write("/media/suspect.nvi", payload);
+  job = {}; job.op = FileOp::Scan;
+  assert(StorageTestAccess::run(cacheHeavy, job));
+  const auto catalogBefore = read("/media/catalog.b");
+  assert(!catalogBefore.empty());
+  Recovery bootRecovery;
+  bootRecovery.begin(0, false, false, true);
+  auto *crashingFile = new Recovery::FileScope("/media/suspect.nvi");
+  bootRecovery.begin(0, false, true, false);
+  delete crashingFile;
+  assert(Recovery::blocked("/media/suspect.nvi"));
+  job = {}; job.op = FileOp::Scan;
+  assert(StorageTestAccess::run(cacheHeavy, job));
+  const auto isolatedCatalog = StorageTestAccess::catalog(cacheHeavy);
+  assert(isolatedCatalog.count == 2);
+  for (unsigned i = 0; i < isolatedCatalog.count; ++i)
+    if (!strcmp(isolatedCatalog.entries[i].path, "/media/suspect.nvi"))
+      assert(!isolatedCatalog.entries[i].enabled);
+  assert(read("/media/catalog.b") == catalogBefore);
+  assert(read("/media/suspect.nvi") == payload);
+  job = {}; job.op = FileOp::Info; strcpy(job.path, "/media/suspect.nvi");
+  assert(!StorageTestAccess::run(cacheHeavy, job) && strstr(job.error, "isolated"));
+  // Editing a different file must not serialize the isolated file's temporary disabled overlay.
+  job = {}; job.op = FileOp::MediaEdit; job.id = 0;
+  for (unsigned i = 0; i < isolatedCatalog.count; ++i)
+    if (!strcmp(isolatedCatalog.entries[i].path, "/media/good.nvi")) job.id = i;
+  job.enabled = true; strcpy(job.text, "edited while isolated");
+  assert(StorageTestAccess::run(cacheHeavy, job));
+  bootRecovery.resumeNormal();
+  job = {}; job.op = FileOp::Scan;
+  assert(StorageTestAccess::run(cacheHeavy, job));
+  const auto restoredCatalog = StorageTestAccess::catalog(cacheHeavy);
+  for (unsigned i = 0; i < restoredCatalog.count; ++i)
+    assert(restoredCatalog.entries[i].enabled);
   SD.root = previousRoot;
   std::cout
       << "Storage real worker handlers: checkpoint reboot, conflicting retry, atomic rollback, CRC "

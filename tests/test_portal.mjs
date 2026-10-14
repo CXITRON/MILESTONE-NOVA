@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 
 import {decodeLzw} from '../assets/portal/gif.js';
-import {crc32, matchesSource, sourceIdentity, SyncClock, TransferStore, uploadPrepared} from '../assets/portal/transfer.js';
+import {crc32, matchesSource, sourceIdentity, SyncClock, TransferStore, uploadPrepared, uploadRecovery} from '../assets/portal/transfer.js';
 
 assert.equal(crc32(new TextEncoder().encode('123456789')), 0xcbf43926);
 assert.deepEqual([...decodeLzw(Uint8Array.of(0x44, 0x01), 2, 1)], [0]);
@@ -314,4 +314,84 @@ console.log(
   for (const line of source.split('\n'))
     if (/\bsignal,\s*$/.test(line) === false && /\/\/.*\bsignal,/.test(line))
       assert.fail('a line comment swallows "signal," here: ' + line.trim());
+}
+
+// SD-free recovery upload against a model of Portal's /api/recovery and Firmware's direct session.
+{
+  const image = new Uint8Array(20000).map((_, i) => (i * 7) % 256), file = new Blob([image]);
+  const device = (faults = {}) => {
+    const d = {id: 0, offset: 0, total: 0, state: 'idle', written: [], aborts: 0, finishes: 0};
+    d.api = async (url, body, signal, headers) => {
+      signal?.throwIfAborted();
+      const status = () => ({ok: true, id: d.id, offset: d.offset, total: d.total, chunkBytes: 8192,
+                             state: d.state, message: d.message || ''});
+      if (url === '/api/recovery') {
+        if (body.op === 'begin') {
+          Object.assign(d, {id: body.id, total: body.total, offset: 0, state: 'receiving'});
+          return status();
+        }
+        if (body.op === 'status') {
+          if (d.state === 'verifying') d.state = faults.badSignature ? 'failed' : 'success';
+          if (d.state === 'failed') d.id = 0;
+          return status();
+        }
+        if (body.op === 'abort') {
+          d.aborts++;
+          Object.assign(d, {id: 0, state: 'failed'});
+          return status();
+        }
+        if (body.op === 'finish') {
+          assert.equal(d.offset, d.total);
+          d.finishes++;
+          d.state = 'verifying';
+          return status();
+        }
+      }
+      assert.equal(url, '/api/recovery/raw');
+      const data = new Uint8Array(await body.arrayBuffer()), at = Number(headers['X-NOVA-Offset']);
+      assert.equal(Number(headers['X-NOVA-Transfer']), d.id);
+      assert.equal(Number(headers['X-NOVA-CRC']), crc32(data));
+      if (faults.dropOnce === at) {
+        delete faults.dropOnce;
+        throw new Error('network');
+      }
+      if (faults.loseReplyOnce === at) {
+        delete faults.loseReplyOnce;
+        d.written.push(...data);
+        d.offset += data.length;
+        throw new Error('network');
+      }
+      assert.equal(at, d.offset);
+      d.written.push(...data);
+      d.offset += data.length;
+      return status();
+    };
+    return d;
+  };
+  const seen = [];
+  let d = device();
+  const done = await uploadRecovery(file, d.api, new AbortController().signal, v => seen.push(v), 11, 0);
+  assert.equal(done.state, 'success');
+  assert.deepEqual(Uint8Array.from(d.written), image);
+  assert.equal(seen.at(-1), 1);
+  assert.equal(d.finishes, 1);
+  // A dropped request is resent; a lost reply is detected through status and not resent.
+  d = device({dropOnce: 8192, loseReplyOnce: 16384});
+  await uploadRecovery(file, d.api, new AbortController().signal, () => {}, 12, 0);
+  assert.deepEqual(Uint8Array.from(d.written), image);
+  // Signature rejection after the transfer surfaces as an error; the device keeps its firmware.
+  d = device({badSignature: true});
+  d.message = 'Recovery image signature rejected; current firmware retained';
+  await assert.rejects(uploadRecovery(file, d.api, new AbortController().signal, () => {}, 13, 0),
+                       /signature rejected/);
+  // Cancel aborts the device session.
+  d = device();
+  const cancelled = new AbortController();
+  await assert.rejects(uploadRecovery(file, d.api, cancelled.signal, v => v > 0.3 && cancelled.abort(new Error('stop')), 14, 0),
+                       /stop/);
+  assert.equal(d.aborts, 1);
+  assert.equal(d.finishes, 0);
+  await assert.rejects(uploadRecovery(new Blob([new Uint8Array(10)]), d.api, new AbortController().signal, () => {}, 15, 0),
+                       /6 MiB/);
+  console.log('Recovery upload: chunk CRC/offsets, resend, lost reply, signature failure and cancel passed');
 }

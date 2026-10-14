@@ -7,7 +7,11 @@ inline constexpr int ESP_OTA_IMG_PENDING_VERIFY = 1;
 inline constexpr int ESP_OTA_IMG_VALID = 2;
 inline int testBootState = 0, testStateResult = ESP_OK, testConfirmResult = ESP_OK;
 inline unsigned testConfirmCalls = 0;
-inline const void *esp_ota_get_running_partition() { return nullptr; }
+inline constexpr int ESP_ERR_INVALID_ARG = 0x102, ESP_ERR_NOT_FOUND = 0x105,
+                     ESP_ERR_NOT_SUPPORTED = 0x106;
+inline const int testRunningSlot = 0;
+inline const void *testRunningPartition = &testRunningSlot;
+inline const void *esp_ota_get_running_partition() { return testRunningPartition; }
 inline int esp_ota_get_state_partition(const void *, int *state) {
   *state = testBootState;
   return testStateResult;

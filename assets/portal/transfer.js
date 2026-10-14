@@ -106,6 +106,70 @@ export class TransferStore {
     return this.finish();
   }
 }
+// SD-free recovery: the image goes straight to the device's inactive firmware slot. The file is
+// read directly, so a browser without IndexedDB can still repair the device.
+export async function uploadRecovery(file, api, signal, progress, id = 0, wait = 700) {
+  signal.throwIfAborted();
+  if (!(file.size >= 1024 && file.size <= 6291456))
+    throw new Error('6 MiB 이하의 서명된 펌웨어를 선택하세요.');
+  if (!id) id = crypto.getRandomValues(new Uint32Array(1))[0] >>> 1 | 1;
+  const begun = await api('/api/recovery', {op: 'begin', id, total: file.size}, signal);
+  const step = begun.chunkBytes;
+  if (begun.id !== id || begun.offset !== 0 || !Number.isSafeInteger(step) || step < 4096)
+    throw new Error('기기가 복구 업로드를 시작하지 못했습니다.');
+  const cancel = () => api('/api/recovery', {op: 'abort', id}).catch(() => {});
+  try {
+    let offset = 0;
+    while (offset < file.size) {
+      signal.throwIfAborted();
+      const part = new Uint8Array(await file.slice(offset, offset + step).arrayBuffer());
+      const headers = {
+        'X-NOVA-Transfer': String(id),
+        'X-NOVA-Offset': String(offset),
+        'X-NOVA-CRC': String(crc32(part))
+      };
+      let next;
+      for (let attempt = 0;; ++attempt) {
+        try {
+          next = await api('/api/recovery/raw', new Blob([part]), signal, headers);
+          break;
+        } catch (error) {
+          signal.throwIfAborted();
+          if (attempt >= 3) throw error;
+          await new Promise(resolve => setTimeout(resolve, wait * (attempt + 1)));
+          // The reply may have been lost after the device wrote the chunk.
+          next = await api('/api/recovery', {op: 'status'}, signal);
+          if (next.id !== id) throw new Error(next.message || '기기가 복구 업로드를 중단했습니다.');
+          if (next.offset === offset + part.length) break;
+          if (next.offset !== offset) throw new Error('복구 전송 체크포인트 불일치');
+        }
+      }
+      if (next.id !== id || next.offset !== offset + part.length)
+        throw new Error('복구 전송 체크포인트 불일치');
+      offset = next.offset;
+      progress(offset / file.size);
+    }
+    signal.throwIfAborted();
+    await api('/api/recovery', {op: 'finish', id}, signal);
+  } catch (error) {
+    await cancel();
+    throw error;
+  }
+  // The device verifies the RSA signature before selecting the new image, then restarts.
+  for (let polls = 0; polls < 120; ++polls) {
+    await new Promise(resolve => setTimeout(resolve, wait));
+    let state;
+    try {
+      state = await api('/api/recovery', {op: 'status'});
+    } catch (error) {
+      if (polls < 3) continue;
+      throw new Error('서명 확인 중 연결이 끊겼습니다. 기기가 재시작했는지 확인하세요.');
+    }
+    if (state.state === 'success') return state;
+    if (state.state !== 'verifying') throw new Error(state.message || '서명 확인에 실패했습니다.');
+  }
+  throw new Error('서명 확인 시간이 초과되었습니다.');
+}
 export async function uploadPrepared(store, api, signal, progress, committing, retried) {
   signal.throwIfAborted();
   const meta = await store.get();

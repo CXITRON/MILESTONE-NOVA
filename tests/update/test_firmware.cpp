@@ -4,6 +4,7 @@
 #include "settings/Store.h"
 #include <Preferences.h>
 #include <Update.h>
+#include <esp_ota_ops.h>
 #include <cassert>
 #include <fstream>
 #include <iostream>
@@ -265,5 +266,122 @@ int main(int argc, char **argv) {
   run(noRecord, Firmware::Work::AutoInstall);
   testNvsWriteFail = false;
   assert(noRecord.state() == Firmware::State::Failed && testFlashBegins == 2);
+
+  // SD-free recovery upload: the image streams straight into the inactive slot.
+  const auto send = [](Firmware &f, uint32_t id, const Bytes &bytes, uint32_t from = 0) {
+    for (uint32_t at = from; at < bytes.size();) {
+      const uint32_t n = std::min<uint32_t>(4096, bytes.size() - at);
+      if (!f.directChunk(id, at, bytes.data() + at, n, crc32(bytes.data() + at, n)))
+        return false;
+      at += n;
+    }
+    return true;
+  };
+  const auto finish = [](Firmware &f, uint32_t id) {
+    if (!f.directFinish(id)) return false;
+    assert(f.installing());
+    f.process();
+    return f.state() == Firmware::State::Success;
+  };
+  {
+    Firmware f;
+    f.begin(storage, key.c_str());
+    assert(!f.directBegin(5, image.size()) && !f.busy()); // No worker yet.
+    f.serviceReady(true);
+    assert(!f.directBegin(5, image.size()) && !f.busy()); // App has not marked power safe.
+    f.directPermitted(true);
+    const unsigned begins = testFlashBegins;
+    assert(f.directBegin(5, image.size()) && f.busy() && f.directTotal() == image.size());
+    assert(!f.directBegin(6, image.size()) && f.directId() == 5); // One session at a time.
+    assert(!f.request(Firmware::Work::Check) && !f.request(Firmware::Work::DirectInstall));
+    Bytes bad(image.begin(), image.begin() + 4096);
+    assert(!f.directChunk(5, 0, bad.data(), bad.size(), crc32(bad.data(), bad.size()) ^ 1));
+    assert(!f.directChunk(9, 0, bad.data(), bad.size(), crc32(bad.data(), bad.size())));
+    assert(!f.directChunk(5, 4096, image.data() + 4096, 4096, crc32(image.data() + 4096, 4096)));
+    assert(f.directReceived() == 0 && f.busy()); // Rejected chunks keep the session.
+    assert(f.directChunk(5, 0, image.data(), 4096, crc32(image.data(), 4096)));
+    // A resend after a lost reply is acknowledged without writing twice.
+    assert(f.directChunk(5, 0, image.data(), 4096, crc32(image.data(), 4096)));
+    assert(f.directReceived() == 4096 && testFlash.size() == 4096);
+    assert(!f.directFinish(5)); // Incomplete.
+    assert(send(f, 5, image, 4096) && f.directReceived() == image.size());
+    assert(finish(f, 5) && testFlash == image && testFlashBegins == begins + 1);
+    assert(!f.busy() && f.directId() == 0);
+  }
+  const auto rejected = [&](const Bytes &bytes, bool recovery, size_t flashed) {
+    Firmware f;
+    f.begin(storage, key.c_str());
+    f.recoveryMode(recovery);
+    f.serviceReady(true);
+    f.directPermitted(true);
+    assert(f.directBegin(3, bytes.size()));
+    const bool sent = send(f, 3, bytes);
+    const bool ok = sent && finish(f, 3);
+    assert(!ok && f.state() == Firmware::State::Failed && !f.busy());
+    assert(testFlash.size() == flashed); // Aborted slot, boot partition never selected.
+    return sent;
+  };
+  Bytes tampered = image;
+  tampered[image.size() / 2] ^= 1;
+  assert(rejected(tampered, true, 0));     // Signature rejected at the end.
+  assert(rejected(wrongImage, true, 0));   // Signed by another key.
+  Bytes foreign = image;
+  foreign[0] = 0;
+  assert(!rejected(foreign, true, 0));     // Header rejected before the first write.
+  Bytes sameVersion = image;
+  memset(sameVersion.data() + 48, 0, 32);
+  strcpy(reinterpret_cast<char *>(sameVersion.data() + 48), "0.0.0");
+  assert(!rejected(sameVersion, false, 0)); // Same version needs recovery mode.
+  assert(rejected(sameVersion, true, 0));   // Accepted in recovery; its signature then fails.
+  {
+    Firmware f;
+    f.begin(storage, key.c_str());
+    f.serviceReady(true);
+    f.directPermitted(true);
+    assert(!f.directBegin(1, 1023) && f.state() == Firmware::State::Failed && !f.busy());
+    assert(f.directBegin(1, 4096) && !f.directChunk(1, 0, image.data(), 4096 + 1,
+                                                    crc32(image.data(), 4096 + 1)));
+    assert(!f.busy()); // Larger than announced aborts.
+    assert(f.directBegin(2, image.size()) && f.directChunk(2, 0, image.data(), 4096,
+                                                           crc32(image.data(), 4096)));
+    assert(!f.directAbort(7) && f.directAbort(2) && !f.busy() && testFlash.empty());
+    assert(f.directBegin(4, image.size()) && f.directChunk(4, 0, image.data(), 4096,
+                                                           crc32(image.data(), 4096)));
+    testMillis += 60000;
+    f.process();
+    assert(f.busy());
+    testMillis += 1;
+    f.process(); // Disconnected browser: the open session expires.
+    assert(!f.busy() && f.state() == Firmware::State::Failed && testFlash.empty());
+    // Thermal, battery or shutdown gates close mid-transfer: worker step or next chunk aborts.
+    assert(f.directBegin(9, image.size()) && f.directChunk(9, 0, image.data(), 4096,
+                                                           crc32(image.data(), 4096)));
+    f.directPermitted(false);
+    f.process();
+    assert(!f.busy() && f.state() == Firmware::State::Failed && testFlash.empty());
+    f.directPermitted(true);
+    assert(f.directBegin(10, image.size()) && send(f, 10, image));
+    f.directPermitted(false);
+    assert(!f.directFinish(10) && !f.busy() && testFlash.empty());
+    f.directPermitted(true);
+    testBootState = ESP_OTA_IMG_PENDING_VERIFY;
+    assert(!f.directBegin(8, image.size()) && !f.busy());
+    testBootState = 0;
+    // Unknown slot state never erases the other slot; a missing otadata record cannot be pending.
+    for (const int result : {ESP_ERR_INVALID_ARG, -1}) {
+      testStateResult = result;
+      assert(!f.directBegin(8, image.size()) && !f.busy());
+    }
+    for (const int result : {ESP_ERR_NOT_FOUND, ESP_ERR_NOT_SUPPORTED}) {
+      testStateResult = result;
+      assert(f.directBegin(8, image.size()) && f.directAbort(8));
+    }
+    testStateResult = ESP_OK;
+    testRunningPartition = nullptr;
+    assert(!f.directBegin(8, image.size()) && !f.busy());
+    testRunningPartition = &testRunningSlot;
+    assert(f.directBegin(8, image.size()) && f.directAbort(8));
+  }
+  std::cout << "SD-free recovery upload: order/CRC/resend, header and version gate, signature, abort and stall passed\n";
   std::cout << "Actual Firmware worker: GitHub manifest/download, RSA, changed candidates, abort, rollback retry suppression and NVS preservation passed\n";
 }

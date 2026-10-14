@@ -42,11 +42,11 @@
     </div>
     <nav aria-label="설정 페이지">
       <button data-page="home" class="active"><svg class="ic"><use href="#i-device"/></svg><span>기기</span></button>
-      <button data-page="media"><svg class="ic"><use href="#i-film"/></svg><span>미디어</span></button>
-      <button data-page="sync"><svg class="ic"><use href="#i-wave"/></svg><span>AP Sync</span></button>
-      <button data-page="now"><svg class="ic"><use href="#i-music"/></svg><span>NOW / 아트</span></button>
-      <button data-page="network"><svg class="ic"><use href="#i-wifi"/></svg><span>연결</span></button>
-      <button data-page="settings"><svg class="ic"><use href="#i-sliders"/></svg><span>화면·환경</span></button>
+      <button data-page="media" data-normal><svg class="ic"><use href="#i-film"/></svg><span>미디어</span></button>
+      <button data-page="sync" data-normal><svg class="ic"><use href="#i-wave"/></svg><span>AP Sync</span></button>
+      <button data-page="now" data-normal><svg class="ic"><use href="#i-music"/></svg><span>NOW / 아트</span></button>
+      <button data-page="network" data-normal><svg class="ic"><use href="#i-wifi"/></svg><span>연결</span></button>
+      <button data-page="settings" data-normal><svg class="ic"><use href="#i-sliders"/></svg><span>화면·환경</span></button>
       <button data-page="maintenance"><svg class="ic"><use href="#i-tool"/></svg><span>관리</span></button>
     </nav>
   </header>
@@ -56,13 +56,21 @@
     <section id="home" class="page">
       <div class="page-head">
         <h2>나의 MILESTONE</h2>
-        <p class="lead">기기 MENU에서 모드를 선택하고 OK로 적용합니다. AP를 닫으면 선택한 모드로 돌아갑니다. NOW의 iPhone 연결은 AP 종료 후 시작됩니다.</p>
+        <p class="lead" data-normal>기기 MENU에서 모드를 선택하고 OK로 적용합니다. AP를 닫으면 선택한 모드로 돌아갑니다. NOW의 iPhone 연결은 AP 종료 후 시작됩니다.</p>
+      </div>
+
+      <div id="recovery-panel" class="panel danger-zone" hidden>
+        <h3 class="panel-title">복구 모드</h3>
+        <p class="lead">SD 카드, 미디어, 아트워크, 가사, BLE를 끄고 시작했습니다. SD 파일과 기기 설정은 그대로 있습니다. 관리 › 서명 업데이트에서 서명된 펌웨어(.bin)를 SD 없이 설치하거나, 정상 부팅을 다시 시도하세요. 기기에서 BACK을 길게 눌러도 정상 부팅을 다시 시도합니다.</p>
+        <div class="actions">
+          <button id="recovery-resume" class="primary">정상 부팅 다시 시도</button>
+        </div>
       </div>
 
       <dl id="overview" class="stats">
       </dl>
 
-      <div class="panel">
+      <div class="panel" data-normal>
         <h3 class="panel-title">모드</h3>
         <div class="modes">
           <button data-mode="0" type="button"><svg class="ic"><use href="#i-clock"/></svg><b>CORE</b><small>시계 · D-Day</small></button>
@@ -72,8 +80,9 @@
       </div>
 
       <div class="panel">
-        <h3 class="panel-title">빠른 작업</h3>
-        <div class="actions">
+        <h3 class="panel-title" data-normal>빠른 작업</h3>
+        <h3 class="panel-title" data-recovery hidden>기기 메시지</h3>
+        <div class="actions" data-normal>
           <button data-action="apClose" class="primary">설정 AP 닫기</button>
           <button id="set-time">브라우저 시간 적용</button>
           <button data-action="ntp">NTP 동기화</button>
@@ -340,10 +349,10 @@
       <div class="panel">
         <h3 class="panel-title">진단</h3>
         <div class="actions">
-          <button data-action="sensor">환경 센서 재검색</button>
-          <button id="logs">환경 기록 목록</button>
+          <button data-action="sensor" data-normal>환경 센서 재검색</button>
+          <button id="logs" data-normal>환경 기록 목록</button>
           <button id="diag-export">진단 내보내기</button>
-          <button id="diag-clear">오류 이력 지우기</button>
+          <button id="diag-clear" data-normal>오류 이력 지우기</button>
         </div>
         <div id="log-list" class="loglist"></div>
         <pre id="diagnostics"></pre>
@@ -351,28 +360,31 @@
 
       <div class="panel">
         <h3 class="panel-title"><svg class="ic"><use href="#i-download"/></svg>서명 업데이트</h3>
-        <p class="lead">기기는 부팅 후와 하루 한 번 GitHub Releases의 새 정식 버전을 확인해 알려 줍니다. 내려받은 파일은 펌웨어에 내장된 NOVA 공개키로 서명을 검증합니다. 자동 업데이트를 켜면 새 버전을 찾았을 때 기기 버튼 없이 설치 후 재시작하고, 꺼 두면 기기에서 OK를 길게 눌러 설치합니다.</p>
-        <p id="auto-update-state" class="state">자동 업데이트 상태 확인 중</p>
-        <div class="actions">
+        <p class="lead" data-normal>기기는 부팅 후와 하루 한 번 GitHub Releases의 새 정식 버전을 확인해 알려 줍니다. 내려받은 파일은 펌웨어에 내장된 NOVA 공개키로 서명을 검증합니다. 자동 업데이트를 켜면 새 버전을 찾았을 때 기기 버튼 없이 설치 후 재시작하고, 꺼 두면 기기에서 OK를 길게 눌러 설치합니다.</p>
+        <p id="auto-update-state" class="state" data-normal>자동 업데이트 상태 확인 중</p>
+        <div class="actions" data-normal>
           <button id="auto-update-on" class="primary">자동 업데이트 켜기</button>
           <button id="auto-update-off">자동 업데이트 끄기</button>
           <button data-action="updateCheck">인터넷 버전 확인</button>
           <button data-action="updateDownload">후보 다운로드</button>
         </div>
-        <details class="more">
-          <summary>SD로 직접 설치 (고급)</summary>
+        <details id="firmware-more" class="more">
+          <summary id="firmware-summary">SD로 직접 설치 (고급)</summary>
+          <p id="firmware-direct-note" class="lead" hidden>SD 없이 설치합니다. 지금 실행 중인 펌웨어는 그대로 두고 다른 펌웨어 칸에 기록하며, 그 칸에 남아 있던 이전 버전(되돌리기용)은 지워집니다. 서명이나 버전 확인에 실패하거나 전송이 끊기면 지금 펌웨어로 계속 부팅합니다. 다운그레이드는 거절하고, 같은 버전 재설치는 복구 모드에서만 허용합니다.</p>
           <label>
             서명된 펌웨어 (.bin)
             <input id="firmware" type="file" accept=".bin">
           </label>
           <div class="actions">
             <button id="firmware-upload">SD에 후보 저장</button>
-            <button data-action="updatePrepare">SD 후보 설치 준비</button>
+            <button id="firmware-prepare" data-action="updatePrepare">SD 후보 설치 준비</button>
           </div>
+          <progress id="firmware-progress" max="1" value="0" hidden></progress>
+          <p id="firmware-state" class="state" role="status"></p>
         </details>
       </div>
 
-      <div class="panel">
+      <div class="panel" data-normal>
         <h3 class="panel-title">이전 설정</h3>
         <p class="lead">이 기기의 NVS에 남아 있는 MILESTONE schema 1~12 설정을 읽어 NOVA 형식으로 가져옵니다. 원본 namespace는 보존됩니다.</p>
         <div class="actions">
@@ -383,16 +395,17 @@
       <div class="panel danger-zone">
         <h3 class="panel-title">초기화와 재시작</h3>
         <div class="actions">
-          <button id="defaults">설정 기본값</button>
+          <button id="defaults" data-normal>설정 기본값</button>
           <button id="restart">재시작</button>
-          <button id="factory" class="danger">기기 설정·자격증명 초기화</button>
+          <button id="factory" class="danger" data-normal>기기 설정·자격증명 초기화</button>
         </div>
       </div>
     </section>
   </main>
 
   <div id="toast" role="status" aria-live="polite"></div>
-  <footer>기기의 BACK 버튼으로 AP를 종료할 수 있습니다.</footer>
+  <footer data-normal>기기의 BACK 버튼으로 AP를 종료할 수 있습니다.</footer>
+  <footer data-recovery hidden>복구 모드: 기기의 BACK을 길게 누르면 정상 부팅을 다시 시도합니다.</footer>
   <script type="module" src="/app.js"></script>
 </body>
 </html>

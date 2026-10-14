@@ -1,4 +1,5 @@
 #include "Storage.h"
+#include "../update/Recovery.h"
 #include "../core/Text.h"
 #include "../logging/Log.h"
 #include <algorithm>
@@ -31,6 +32,11 @@ void Storage::importConfig(Settings &s, Secrets &secrets, bool importSettings) {
   for (const char *path : {"/config/device.ini", "/config/secrets.ini"}) {
     if (!importSettings && !strcmp(path, "/config/device.ini"))
       continue;
+    if (Recovery::blocked(path)) {
+      log("RECOVERY", "skipping config path %s", path);
+      continue;
+    }
+    Recovery::FileScope scope(path);
     File file = SD.open(path, FILE_READ);
     if (!file || file.size() > 8192)
       continue;
@@ -129,7 +135,7 @@ bool Storage::request(const char *key, uint32_t generation) {
   return xQueueOverwrite(requests_, &r) == pdTRUE;
 }
 bool Storage::requestFile(const char *path, uint32_t pos, uint32_t gen) {
-  if (!mounted_ || stopping_ || !safeStoragePath(path))
+  if (!mounted_ || stopping_ || !safeStoragePath(path) || Recovery::blocked(path))
     return false;
   AssetRequest r;
   r.kind = AssetKind::Media;
@@ -193,16 +199,19 @@ void Storage::readTrack(AssetResult &r) {
     r.error = true;
     return;
   }
-  File lrc = SD.open(path, FILE_READ);
-  if (lrc) {
-    const size_t n = lrc.size();
-    if (n <= maxLyricsBytes && readExact(lrc, reinterpret_cast<uint8_t *>(r.lyrics), n)) {
-      r.lyricsBytes = n;
-      r.lyrics[n] = 0;
-      r.lyricsPresent = true;
-    } else
-      r.error = true;
-    lrc.close();
+  {
+    Recovery::FileScope lyricScope(path);
+    File lrc = Recovery::blocked(path) ? File{} : SD.open(path, FILE_READ);
+    if (lrc) {
+      const size_t n = lrc.size();
+      if (n <= maxLyricsBytes && readExact(lrc, reinterpret_cast<uint8_t *>(r.lyrics), n)) {
+        r.lyricsBytes = n;
+        r.lyrics[n] = 0;
+        r.lyricsPresent = true;
+      } else
+        r.error = true;
+      lrc.close();
+    }
   }
   snprintf(path, sizeof(path), "/artwork/%.16s.block", r.request.name);
   r.blocked = SD.exists(path);
@@ -214,7 +223,8 @@ void Storage::readTrack(AssetResult &r) {
   }
   // Blocking automatic lookup does not hide a successfully cached image.
   snprintf(path, sizeof(path), "/artwork/%.16s.nvi", r.request.name);
-  if (SD.exists(path)) {
+  if (!Recovery::blocked(path) && SD.exists(path)) {
+    Recovery::FileScope artScope(path);
     uint32_t duration = 0;
     r.artPresent = decoder_.frame(path, 0, r.pixels, duration, board::artSide);
     if (!r.artPresent) {
@@ -237,6 +247,11 @@ void Storage::readTrack(AssetResult &r) {
 }
 void Storage::readMedia(AssetResult &r) {
   const char *path = r.request.name;
+  if (Recovery::blocked(path)) {
+    r.error = true;
+    return;
+  }
+  Recovery::FileScope scope(path);
   const int64_t started = esp_timer_get_time();
   if (!decoder_.frame(path, r.request.position, r.pixels, r.durationMs, board::mediaSide)) {
     // A missing or invalid header/index needs the full validation that rebuilds it. A single bad

@@ -1,5 +1,5 @@
 import {ART_SIDE, convert, drawNvi, imageBytes, loadImage} from './convert.js';
-import {matchesSource, SyncClock, TransferStore, uploadPrepared} from './transfer.js';
+import {matchesSource, SyncClock, TransferStore, uploadPrepared, uploadRecovery} from './transfer.js';
 
 const $ = s => document.querySelector(s), all = s => [...document.querySelectorAll(s)];
 // Theme: follow the system until the user picks one; the choice is remembered when storage allows.
@@ -18,6 +18,7 @@ $('#theme').onclick = () => {
   } catch (error) {
   }
 };
+let recoveryShown = false;
 let token = '', latest = null, busy = false, controller = null, toastTimer, previewUrl = '',
     syncUrl = '';
 let store;
@@ -121,6 +122,21 @@ async function poll() {
         `${s.network.connected ? 'Wi-Fi 연결됨' : '설정 AP'} · ${s.sd ? 'SD 준비됨' : 'SD 없음'}`;
     $('#connection').dataset.state = s.network.connected ? 'ok' : 'ap';
     $('#device-message').textContent = s.message;
+    $('#recovery-panel').hidden = !s.recovery;
+    // Recovery runs without SD, media, BLE or settings services; show only what still works.
+    all('[data-normal]').forEach(e => e.hidden = s.recovery);
+    all('[data-recovery]').forEach(e => e.hidden = !s.recovery);
+    const page = $('nav button.active');
+    if (s.recovery && page?.hidden) $('nav button[data-page="home"]').click();
+    if (s.recovery) $('#connection').textContent += ' · 복구 모드';
+    $('#firmware-direct-note').hidden = !s.directUpdate;
+    $('#firmware-prepare').hidden = s.directUpdate;
+    $('#firmware-summary').textContent = s.directUpdate ? 'SD 없이 직접 설치' : 'SD로 직접 설치 (고급)';
+    $('#firmware-upload').textContent = s.directUpdate ? '서명 확인 후 바로 설치' : 'SD에 후보 저장';
+    if (s.recovery && !recoveryShown) {
+      recoveryShown = true;
+      $('#firmware-more').open = true;
+    }
     $('#diagnostics').textContent = s.diagnostics;
     $('#auto-update-state').textContent = s.autoUpdate ?
         '자동 업데이트 켜짐 · 부팅 30초 후와 하루 한 번 확인 · 새 버전은 자동 설치 후 재시작' :
@@ -509,8 +525,8 @@ function syncProgress(phase) {
     progress(v);
   };
 }
-async function operation(fn) {
-  if (!store)
+async function operation(fn, needsStore = true) {
+  if (needsStore && !store)
     throw new Error('브라우저 저장소를 사용할 수 없어 파일을 준비하거나 전송할 수 없습니다.');
   if (busy) throw new Error('현재 작업을 먼저 마치거나 중단하세요.');
   busy = true;
@@ -765,15 +781,37 @@ for (
     await action({op, confirmed: true});
     toast(done);
   });
-$('#firmware-upload').onclick =
-    run(() => operation(async signal => {
-          const file = $('#firmware').files[0];
-          if (!file || file.size > 6291456)
-            throw new Error('6 MiB 이하의 서명된 펌웨어를 선택하세요.');
-          await store.fromFile(file, '/update/candidate.bin', signal, progress);
-          await uploadPrepared(store, api, signal, progress);
-          toast('후보 저장됨. 설치 준비 후 기기에서 확인하세요.');
-        }));
+$('#firmware-upload').onclick = run(async () => {
+  const file = $('#firmware').files[0];
+  if (!file || file.size > 6291456) throw new Error('6 MiB 이하의 서명된 펌웨어를 선택하세요.');
+  if (!latest?.directUpdate)
+    return operation(async signal => {
+      await store.fromFile(file, '/update/candidate.bin', signal, progress);
+      await uploadPrepared(store, api, signal, progress);
+      toast('후보 저장됨. 설치 준비 후 기기에서 확인하세요.');
+    });
+  if (!confirm(`${file.name}을(를) SD 없이 설치할까요? 서명이 확인되면 기기가 재시작합니다.`)) return;
+  const bar = $('#firmware-progress'), state = $('#firmware-state');
+  bar.hidden = false;
+  bar.value = 0;
+  state.textContent = '전송 중';
+  try {
+    await operation(signal => uploadRecovery(file, api, signal, value => {
+      bar.value = Math.min(1, value);
+      state.textContent = value < 1 ? `전송 중 ${Math.round(value * 100)}%` : '서명 확인 중';
+    }), false);
+    state.textContent = '서명 확인 완료. 기기가 재시작합니다. 잠시 후 다시 연결하세요.';
+  } catch (error) {
+    state.textContent = '설치하지 않았습니다. 지금 펌웨어는 그대로입니다: ' + error.message;
+    throw error;
+  }
+});
+$('#recovery-resume').onclick = run(async () => {
+  if (!confirm('복구 모드를 끝내고 정상 부팅을 다시 시도할까요? 같은 문제가 반복되면 다시 복구 모드로 시작합니다.'))
+    return;
+  await action({op: 'recoveryResume', confirmed: true});
+  toast('정상 부팅을 다시 시도합니다. 잠시 후 다시 연결하세요.');
+});
 try {
   const meta = await store?.get();
   if (meta?.ready) $('#transfer-state').textContent = '재개 가능한 자료: ' + meta.name;

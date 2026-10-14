@@ -40,6 +40,12 @@ void App::portalCommands(uint32_t now) {
     portal_.reply(*c);
     return;
   }
+  if (recovery_.active() && c->kind != CommandKind::Restart &&
+      c->kind != CommandKind::RecoveryResume) {
+    strcpy(c->error, "복구 모드에서는 펌웨어 복구와 정상 부팅 재시도만 가능합니다.");
+    portal_.reply(*c);
+    return;
+  }
   switch (c->kind) {
   case CommandKind::Settings:
     if (validSettings(c->settings) && store_.save(c->settings)) {
@@ -212,8 +218,16 @@ void App::portalCommands(uint32_t now) {
   case CommandKind::LogsClear:
     c->ok = diagnostics_.clear();
     break;
+  case CommandKind::RecoveryResume:
+    if (recovery_.active()) {
+      recovery_.resumeNormal();
+      rebootRequested_ = true;
+      c->ok = true;
+    }
+    break;
   case CommandKind::Restart:
-    if (!bootConfirm_.pending()) {
+    if (!bootConfirm_.pending() || recovery_.active()) {
+      if (recovery_.active()) recovery_.resumeNormal();
       rebootRequested_ = true;
       c->ok = true;
     }
@@ -226,11 +240,14 @@ void App::portalCommands(uint32_t now) {
   portal_.reply(*c);
 }
 void App::publish(uint32_t now, bool force) {
+  firmware_.directPermitted(battery_.valid() && !battery_.critical() && thermalState_ < 2 &&
+                            !shutdownStarted_ && !power_.pending() && !bootConfirm_.pending());
   if (!snapshot_ || (!force && now - lastPublish_ < 250))
     return;
   lastPublish_ = now;
   auto &s = *snapshot_;
   s.settings = settings_;
+  s.recovery = recovery_.active();
   network_.snapshot(s.network);
   s.track = session_.track();
   s.wifiCount = secrets_.networkCount;
@@ -253,15 +270,17 @@ void App::publish(uint32_t now, bool force) {
   s.sensor = settings_.environmentEnabled && environment_.valid(now);
   cleanUtf8(s.ble, sizeof(s.ble), ble_.status());
   cleanUtf8(s.message, sizeof(s.message), notice_);
-  if (screen_ == Screen::Updates || screen_ == Screen::Recovery)
+  if (screen_ == Screen::Updates || screen_ == Screen::Recovery || recovery_.active())
     firmware_.status(s.message, sizeof(s.message));
+  char skipped[128];
+  Recovery::suspect(skipped, sizeof(skipped));
   const int n = snprintf(
       s.diagnostics, sizeof(s.diagnostics),
       "NOVA %s\nreset=%d uptime=%lus\nheap=%u min=%u PSRAM=%u stack=%u\nloop_max_us=%lu\nSD=%d "
       "writing=%d progress=%lu catalog=%u\nWi-Fi=%s ip=%s\nBLE=%s\nRTC=%d AHT=%d "
       "sample_ms=%lu\nbattery=%.3fV low=%d critical=%d\nchip=%.1fC thermal_state=%d "
       "cpu=%uMHz\nupdate_pending=%d\nnvs=%u/%u\nprofile=%u core=%u layout=%u\nsync=%lu "
-      "position=%lu stale=%d\nmedia=%s\nHistory (UTC epoch, uptime, event):\n",
+      "position=%lu stale=%d\nmedia=%s\nrecovery=%d boot_failures=%u skipped=%s\nHistory (UTC epoch, uptime, event):\n",
       board::version, int(esp_reset_reason()), static_cast<unsigned long>(s.uptime),
       unsigned(s.heap), unsigned(ESP.getMinFreeHeap()), unsigned(s.psram),
       unsigned(uxTaskGetStackHighWaterMark(nullptr)), static_cast<unsigned long>(loopMax_), s.sd,
@@ -272,7 +291,8 @@ void App::publish(uint32_t now, bool force) {
       bootConfirm_.pending(), store_.nvsUsageFree(), store_.nvsUsageTotal(), s.mode,
       navigation_.core(),
       settings_.nowLayout, static_cast<unsigned long>(s.syncSession),
-      static_cast<unsigned long>(s.position), s.syncStale, mediaStats_);
+      static_cast<unsigned long>(s.position), s.syncStale, mediaStats_,
+      int(recovery_.active()), recovery_.failures(), skipped[0] ? skipped : "--");
   if (n > 0 && size_t(n) < sizeof(s.diagnostics))
     diagnostics_.format(s.diagnostics + n, sizeof(s.diagnostics) - n);
   portal_.publish(s);

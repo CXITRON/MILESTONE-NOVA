@@ -3,6 +3,7 @@
 #include "../media/Session.h"
 #include "Journal.h"
 #include "Storage.h"
+#include "../update/Recovery.h"
 #include <algorithm>
 #include <cstring>
 #include <memory>
@@ -110,6 +111,9 @@ void Storage::publishCatalog() {
   mediaCount_ = catalog_->count;
   xSemaphoreTake(catalogMutex_, portMAX_DELAY);
   *published_ = *catalog_;
+  // Isolation is a playback hint, never a user's persisted enabled setting.
+  for (unsigned i = 0; i < published_->count; ++i)
+    if (Recovery::blocked(published_->entries[i].path)) published_->entries[i].enabled = false;
   xSemaphoreGive(catalogMutex_);
 }
 bool Storage::saveCatalog() {
@@ -122,6 +126,9 @@ bool Storage::saveCatalog() {
   memcpy(bytes + 16, catalog_->entries, catalog_->count * sizeof(MediaEntry));
   write32(bytes + 12, crc32(bytes + 16, n - 16));
   const char *path = (catalogSequence_ & 1) ? "/media/catalog.a" : "/media/catalog.b";
+  if (Recovery::blocked(path))
+    path = (catalogSequence_ & 1) ? "/media/catalog.b" : "/media/catalog.a";
+  if (Recovery::blocked(path)) return false;
   const bool ok = atomicWrite(path, bytes, n);
   if (ok)
     publishCatalog();
@@ -135,6 +142,8 @@ bool Storage::scan() {
   // Recover the newest validated catalog, then reconcile with files once per explicit scan.
   uint32_t best = catalogSequence_;
   for (const char *name : {"/media/catalog.a", "/media/catalog.b"}) {
+    if (Recovery::blocked(name)) continue;
+    Recovery::FileScope scope(name);
     File f = SD.open(name, FILE_READ);
     if (!f || f.size() < 16 || f.size() > 16 + maxMediaEntries * sizeof(MediaEntry))
       continue;
@@ -165,6 +174,11 @@ bool Storage::scan() {
   catalogSequence_ = best;
   // Reclaim interrupted replacement names, never format or delete unrelated files.
   for (const char *dir : {"/media", "/media/photo", "/media/video", "/artwork", "/update", "/lyrics"}) {
+    if (Recovery::blocked(dir)) {
+      log("RECOVERY", "skipping scan directory %s", dir);
+      continue;
+    }
+    Recovery::FileScope directoryScope(dir);
     File folder = SD.open(dir);
     if (!folder)
       continue;
@@ -176,6 +190,8 @@ bool Storage::scan() {
       if (stopping_)
         return false;
       ++recoveredVisits;
+      if (Recovery::blocked(f.path())) continue;
+      Recovery::FileScope entryScope(f.path());
       char name[144];
       snprintf(name, sizeof(name), "%s", f.path());
       f.close();
@@ -196,6 +212,12 @@ bool Storage::scan() {
     vTaskDelay(1);
     if (stopping_)
       return false;
+    if (Recovery::blocked(catalog_->entries[i].path)) {
+      // Keep the persisted entry unchanged; publishCatalog applies the transient overlay.
+      ++i;
+      continue;
+    }
+    Recovery::FileScope entryScope(catalog_->entries[i].path);
     if (!SD.exists(catalog_->entries[i].path)) {
       for (unsigned n = i + 1; n < catalog_->count; ++n)
         catalog_->entries[n - 1] = catalog_->entries[n];
@@ -204,6 +226,11 @@ bool Storage::scan() {
       ++i;
   }
   for (const char *dir : {"/media", "/media/photo", "/media/video"}) {
+    if (Recovery::blocked(dir)) {
+      log("RECOVERY", "skipping scan directory %s", dir);
+      continue;
+    }
+    Recovery::FileScope directoryScope(dir);
     File folder = SD.open(dir);
     if (!folder)
       continue;
@@ -217,6 +244,8 @@ bool Storage::scan() {
       if (f.isDirectory())
         continue;
       const char *path = f.path();
+      if (Recovery::blocked(path)) continue;
+      Recovery::FileScope entryScope(path);
       if (!safeStoragePath(path) || !mediaExtension(path) || !strncmp(path, "/media/sync.", 12))
         continue;
       bool exists = false;
@@ -235,7 +264,11 @@ bool Storage::scan() {
       }
     }
   }
-  const bool ok = saveCatalog();
+  char skipped[128];
+  Recovery::suspect(skipped, sizeof(skipped));
+  bool ok = true;
+  if (skipped[0]) publishCatalog();
+  else ok = saveCatalog();
   log("SD", "scan done ok=%d recovery=%u media=%u entries=%u elapsed_ms=%llu", int(ok),
       recoveredVisits, mediaVisits, unsigned(catalog_->count),
       static_cast<unsigned long long>((esp_timer_get_time() - started) / 1000));
@@ -299,6 +332,11 @@ void Storage::fileJob(FileJob &j) {
   j.error[0] = 0;
   j.actual = 0;
   const auto fail = [&](const char *s) { cleanUtf8(j.error, sizeof(j.error), s); };
+  if (j.path[0] && Recovery::blocked(j.path)) {
+    fail("Path isolated after crash; normal boot retry clears it");
+    return;
+  }
+  Recovery::FileScope jobScope(j.path[0] ? j.path : nullptr);
   if (j.path[0] && !safeStoragePath(j.path)) {
     fail("Invalid path");
     return;

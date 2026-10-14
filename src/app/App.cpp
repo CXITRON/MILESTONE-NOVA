@@ -22,14 +22,28 @@ void App::begin() {
     gpio_hold_dis(static_cast<gpio_num_t>(p));
   startLog();
   boot_ = millis();
+  // Sample an explicit chord before any SD access or background media work starts.
+  pinMode(board::back, INPUT_PULLUP);
+  pinMode(board::menu, INPUT_PULLUP);
+  const bool held = digitalRead(board::back) == LOW && digitalRead(board::menu) == LOW;
+  if (held) delay(40);
+  const bool manual = held && digitalRead(board::back) == LOW && digitalRead(board::menu) == LOW;
+  const auto reset = esp_reset_reason();
+  const bool crash = reset == ESP_RST_PANIC || reset == ESP_RST_INT_WDT ||
+                     reset == ESP_RST_TASK_WDT || reset == ESP_RST_WDT;
+  recovery_.begin(boot_, manual, crash, reset == ESP_RST_POWERON || reset == ESP_RST_BROWNOUT);
   bootConfirm_.begin();
   log("BOOT", "NOVA %s reset=%d PSRAM=%u", board::version, int(esp_reset_reason()),
       unsigned(ESP.getPsramSize()));
-  rgb_.begin();
+  if (!recovery_.active()) rgb_.begin();
   log("INPUT", buttons_.begin() ? "5 ms sampler ready" : "sampler unavailable; polling fallback");
   const bool nvs = store_.load(settings_, secrets_);
   log("SETTINGS",
       nvs ? "NVS loaded; validated defaults available" : "NVS unavailable; using defaults");
+  if (recovery_.active()) {
+    settings_.lcdHz = board::lcdHz;
+    settings_.lcdBrightness = 96;
+  }
   const bool lcd =
       display_.begin(settings_.lcdHz, settings_.lcdBrightness, settings_.displayInverted);
   log("LCD",
@@ -50,6 +64,10 @@ void App::begin() {
       display_.flush();
       yield();
     }
+  }
+  if (recovery_.active()) {
+    beginRecovery();
+    return;
   }
   const Settings oldSettings = settings_;
   auto oldSecrets = std::unique_ptr<Secrets>(new (std::nothrow) Secrets(secrets_));
@@ -101,6 +119,7 @@ void App::begin() {
   artwork_.begin(storage_);
   onlineLyrics_.begin(storage_);
   firmware_.begin(storage_);
+  firmware_.recoveryMode(false);
   autoUpdate_.begin(millis());
   log("UPDATE", "GitHub Releases ready; automatic=%d", int(store_.autoUpdate()));
   serviceReady_ = portal_.begin(storage_, artwork_, onlineLyrics_, firmware_);
@@ -112,6 +131,52 @@ void App::begin() {
   log("BTN", "active-low; held startup keys suppressed");
   log("POWER", "hold MENU for OFF; wake on OK only");
   log("UI", "ready; USB console: help");
+}
+void App::beginRecovery() {
+  // Temporary presentation defaults are never saved to NVS. No SD/RTC/AHT/BLE/asset initialization.
+  settings_.profile = 0;
+  settings_.cycle = settings_.environmentEnabled = settings_.environmentLog = false;
+  settings_.ledsEnabled = false;
+  settings_.apMode = 0; // A random password is displayed even if a saved custom password is unusable.
+  settings_.lcdBrightness = 96;
+  display_.brightness(settings_.lcdBrightness);
+  battery_.begin();
+  network_.begin(secrets_, settings_);
+  timer_.reset(settings_.focusSeconds);
+  if (auto *p = heap_caps_malloc(sizeof(PortalSnapshot), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT))
+    snapshot_ = new (p) PortalSnapshot{};
+  diagnostics_.begin();
+  char message[96], suspect[128];
+  Recovery::suspect(suspect, sizeof(suspect));
+  snprintf(message, sizeof(message), "Recovery boot reset=%d failures=%u", int(esp_reset_reason()), recovery_.failures());
+  diagnostics_.record(message);
+  if (suspect[0]) log("RECOVERY", "temporarily skipped path: %s", suspect);
+  firmware_.begin(storage_);
+  firmware_.recoveryMode(true);
+  serviceReady_ = portal_.begin(storage_, artwork_, onlineLyrics_, firmware_);
+  firmware_.serviceReady(serviceReady_);
+  navigation_.select(Profile::Core);
+  navigation_.page(Screen::Setup);
+  screen_ = Screen::Setup;
+  const bool ap = network_.openAp(secrets_, settings_);
+  portal_.open(ap);
+  savedAt_ = lastRtc_ = lastInput_ = lastCycle_ = millis();
+  log("RECOVERY", "SD skipped; AP=%d service=%d; BACK hold retries normal boot", int(ap), int(serviceReady_));
+}
+void App::tickRecovery(uint32_t now) {
+  network_.tick(now, false);
+  battery_.tick(now, settings_.batteryGain, settings_.batteryOffset);
+  if (now - lastThermal_ >= 2000) {
+    lastThermal_ = now;
+    chipTemperature_ = temperatureRead();
+    thermalState_ = thermalLevel(chipTemperature_, thermalState_, settings_.thermalWarn,
+                                settings_.thermalThrottle, settings_.thermalStop);
+  }
+  publish(now);
+  render(now);
+  display_.flush();
+  shutdown(millis());
+  vTaskDelay(1);
 }
 void App::notice(const char *message, uint32_t now) {
   cleanUtf8(notice_, sizeof(notice_), message);
@@ -192,6 +257,18 @@ void App::input(const InputEvent &e, uint32_t now) {
     display_.brightness(settings_.lcdBrightness);
     return;
   }
+  if (recovery_.active()) {
+    if (e.key == Key::Back && e.press == Press::Long && !firmware_.busy()) {
+      recovery_.resumeNormal();
+      rebootRequested_ = true;
+    } else if (e.key == Key::Menu && e.press == Press::Long) {
+      power_.request(now, firmware_.busy() || bootConfirm_.pending());
+    } else if (e.press == Press::Short && (e.key == Key::Next || e.key == Key::Prev)) {
+      navigation_.page(screen_ == Screen::Diagnostics ? Screen::Setup : Screen::Diagnostics);
+      screen_ = navigation_.screen();
+    }
+    return;
+  }
   const bool updateBusy = firmware_.busy() || bootConfirm_.pending();
   if (e.key == Key::Menu && e.press == Press::Long) {
     if (!power_.request(now, updateBusy))
@@ -207,8 +284,10 @@ void App::input(const InputEvent &e, uint32_t now) {
   if (e.key == Key::Back && e.press == Press::Short) {
     if (settingsEditing_)
       settingsEditing_ = false;
-    else if (network_.ap() && screen_ != Screen::Menu)
-      closeAp(now);
+    else if (network_.ap() && screen_ != Screen::Menu) {
+      if (firmware_.busy()) notice("펌웨어 전송 중 AP를 닫을 수 없습니다", now);
+      else closeAp(now);
+    }
     else {
       navigation_.back();
       screen_ = navigation_.screen();
@@ -345,6 +424,10 @@ void App::input(const InputEvent &e, uint32_t now) {
     systemPage_ = (systemPage_ + 1) % 12;
 }
 void App::console(const char *cmd, uint32_t now) {
+  if ((recovery_.active() || firmware_.busy()) && strcmp(cmd, "status") && strcmp(cmd, "help")) {
+    notice("복구 / 업데이트 중에는 설정을 변경하지 않습니다", now);
+    return;
+  }
   if (power_.pending() || shutdownStarted_)
     return;
   if (!strncmp(cmd, "set ", 4)) {
@@ -694,15 +777,19 @@ void App::shutdown(uint32_t now) {
   if (!storage_.stopped())
     return;
   if (reboot) {
-    if (now - shutdownAt_ >= 1200)
+    if (now - shutdownAt_ >= 1200) {
+      if (firmware_.state() == Firmware::State::Success) recovery_.resumeNormal();
       ESP.restart();
+    }
     return;
   }
   if (!peripheralsOff_) {
     network_.stop();
     display_.sleep();
-    rgb_.off();
-    Wire.end();
+    if (!recovery_.active()) {
+      rgb_.off();
+      Wire.end();
+    }
     peripheralsOff_ = true;
     power_.peripheralsStopped(now);
     log("POWER", "files closed; entering deep sleep after OK release");
@@ -813,6 +900,8 @@ void App::render(uint32_t now) {
   v.notice = now - noticed_ < 4000 ? notice_ : "";
   if (bootConfirm_.pending())
     v.notice = "새 펌웨어 검증 중 (60초)";
+  if (recovery_.active())
+    v.notice = bootConfirm_.pending() ? "복구: BACK 길게 / 이전 펌웨어로 복귀" : "복구 모드: SD 생략 / BACK 길게 재시도";
   v.sleeping = power_.pending();
   renderBuildUs_ += uint64_t(esp_timer_get_time() - buildStart);
   ++renders_;
@@ -832,6 +921,10 @@ void App::tick() {
   portalCommands(now);
   if (const char *cmd = console_.poll())
     console(cmd, now);
+  if (recovery_.active()) {
+    tickRecovery(now);
+    return;
+  }
   if (!shutdownStarted_) {
     network_.tick(now, ble_.connected());
     // At most one history line every two minutes, so a flapping link cannot wear the flash.
@@ -1062,6 +1155,7 @@ void App::tick() {
         static_cast<unsigned long>(buttons_.dropped()));
   }
   bootConfirm_.tick(now);
+  recovery_.tick(now);
   internetUpdate(now);
   publish(now);
   const int64_t phaseRender = esp_timer_get_time();

@@ -162,6 +162,9 @@ void Portal::status() {
   cJSON_AddStringToObject(root, "ble", v.ble);
   cJSON_AddBoolToObject(root, "sd", v.sd);
   cJSON_AddBoolToObject(root, "autoUpdate", v.autoUpdate);
+  // Firmware's flag is valid before App publishes its first snapshot.
+  cJSON_AddBoolToObject(root, "recovery", recoveryMode());
+  cJSON_AddBoolToObject(root, "directUpdate", recoveryMode() || !v.sd);
   cJSON_AddNumberToObject(root, "uptime", v.uptime);
   cJSON_AddNumberToObject(root, "heap", v.heap);
   cJSON_AddNumberToObject(root, "psram", v.psram);
@@ -198,7 +201,7 @@ void Portal::status() {
   for (unsigned i = 0; i < v.wifiCount; ++i)
     cJSON_AddItemToArray(saved, cJSON_CreateString(v.wifiSaved[i]));
   cJSON_AddStringToObject(root, "diagnostics", v.diagnostics);
-  cJSON_AddNumberToObject(root, "storageProgress", storage_->progress());
+  cJSON_AddNumberToObject(root, "storageProgress", recoveryMode() ? 0 : storage_->progress());
   json(root);
 }
 void Portal::settings() {
@@ -276,6 +279,11 @@ void Portal::action() {
     else
       syncCheck_ = Commit::Idle;
     respond(true);
+    return;
+  }
+  // Recovery boots without SD, artwork or lyrics services; App guards the remaining commands.
+  if (recoveryMode() && (!strncmp(op, "sync", 4) || !strcmp(op, "artRefresh"))) {
+    respond(false, "Recovery mode: SD services are off");
     return;
   }
   if (syncCheck_ == Commit::Running && strcmp(op, "syncStart")) {
@@ -397,6 +405,9 @@ void Portal::action() {
   } else if (!strcmp(op, "restart")) {
     command_.kind = CommandKind::Restart;
     valid = yes(root.get(), "confirmed");
+  } else if (!strcmp(op, "recoveryResume")) {
+    command_.kind = CommandKind::RecoveryResume;
+    valid = recoveryMode() && yes(root.get(), "confirmed");
   } else
     valid = false;
   if (!valid) {
@@ -656,6 +667,67 @@ void Portal::transfer() {
   cJSON_AddBoolToObject(out, "rawChunkHeaders", true);
   json(out);
 }
+void Portal::recoveryStatus(int code) {
+  snapshot();
+  auto &f = *firmware_;
+  const bool open = f.directId() != 0;
+  auto *out = cJSON_CreateObject();
+  char message[128];
+  f.status(message, sizeof(message));
+  cJSON_AddBoolToObject(out, "ok", code == 200);
+  cJSON_AddBoolToObject(out, "available", recoveryMode() || !view_->sd);
+  cJSON_AddStringToObject(out, "state", open && f.installing() ? "verifying"
+                                        : open                 ? "receiving"
+                                        : f.state() == Firmware::State::Success ? "success"
+                                        : f.state() == Firmware::State::Failed  ? "failed"
+                                        : f.busy()                               ? "busy"
+                                                                                 : "idle");
+  cJSON_AddNumberToObject(out, "id", f.directId());
+  cJSON_AddNumberToObject(out, "offset", f.directReceived());
+  cJSON_AddNumberToObject(out, "total", f.directTotal());
+  cJSON_AddNumberToObject(out, "progress", f.progress());
+  cJSON_AddNumberToObject(out, "chunkBytes", uploadCapacity_);
+  cJSON_AddStringToObject(out, "message", message);
+  json(out, code);
+}
+void Portal::recovery() {
+  if (!authorized()) {
+    respond(false, "AP session expired");
+    return;
+  }
+  auto root = parse(body());
+  if (!root) {
+    respond(false, "Invalid JSON");
+    return;
+  }
+  snapshot();
+  const char *op = str(root.get(), "op");
+  uint32_t id = 0, total = 0;
+  bool ok = false;
+  if (!strcmp(op, "status")) {
+    recoveryStatus();
+    return;
+  }
+  if (!strcmp(op, "begin")) {
+    // Normal boots with a mounted card keep the SD candidate path and its physical confirmation.
+    ok = (recoveryMode() || !view_->sd) && num(root.get(), "id", id) && id &&
+         num(root.get(), "total", total, 6291456) && firmware_->directBegin(id, total);
+  } else if (!strcmp(op, "finish"))
+    ok = num(root.get(), "id", id) && firmware_->directFinish(id);
+  else if (!strcmp(op, "abort"))
+    ok = num(root.get(), "id", id) && firmware_->directAbort(id);
+  recoveryStatus(ok ? 200 : 400);
+}
+void Portal::recoveryChunk() {
+  uint32_t id = 0, offset = 0, crc = 0;
+  const bool ok = authorized() && uploadOk_ && received_ &&
+                  decimal(server_.header("X-NOVA-Transfer"), id) &&
+                  decimal(server_.header("X-NOVA-Offset"), offset) &&
+                  decimal(server_.header("X-NOVA-CRC"), crc) &&
+                  firmware_->directChunk(id, offset, bytes_, received_, crc);
+  // The reply carries the accepted offset, so a client resumes after any rejected chunk.
+  recoveryStatus(ok ? 200 : 400);
+}
 String Portal::body() {
   if (!jsonReady_)
     return String();
@@ -891,6 +963,12 @@ void Portal::routes() {
       return true;
     }
     const bool action = server.uri() == "/api/action";
+    if (recoveryMode() && server.uri().startsWith("/api/") && server.uri() != "/api/status" &&
+        server.uri() != "/api/settings" && !action && !server.uri().startsWith("/api/recovery")) {
+      server.send(409, "application/json",
+                  "{\"ok\":false,\"message\":\"Recovery mode: SD services are off\"}");
+      return true;
+    }
     if (syncCheck_ == Commit::Running && server.uri().startsWith("/api/") &&
         server.uri() != "/api/status" && !action) {
       server.send(409, "application/json", "{\"ok\":false,\"message\":\"Sync validation in progress\"}");
@@ -919,6 +997,8 @@ void Portal::routes() {
   server_.on("/api/transfer", HTTP_POST, [this] { transfer(); }, [this] { readJson(); });
   server_.on("/api/blob", HTTP_POST, [this] { chunk(); }, [this] { upload(); });
   server_.on("/api/blob/raw", HTTP_POST, [this] { chunk(); }, [this] { rawUpload(); });
+  server_.on("/api/recovery", HTTP_POST, [this] { recovery(); }, [this] { readJson(); });
+  server_.on("/api/recovery/raw", HTTP_POST, [this] { recoveryChunk(); }, [this] { rawUpload(); });
   server_.on("/api/artwork", HTTP_POST, [this] { artwork(); }, [this] { readJson(); });
   server_.onNotFound([this] {
     server_.sendHeader("Location", "http://192.168.4.1/");
@@ -938,7 +1018,7 @@ void Portal::run() {
       server_.begin();
       running = true;
     }
-    if (cleanupSync_.exchange(false)) {
+    if (cleanupSync_.exchange(false) && !recoveryMode()) {
       FileJob cleanup;
       cleanup.op = FileOp::Remove;
       strcpy(cleanup.path, "/media/sync.njv");
@@ -956,7 +1036,9 @@ void Portal::run() {
       quiescent_ = true;
     }
     LogLine entry;
-    const bool hadLog = syncCheck_ != Commit::Running && xQueueReceive(logs_, &entry, 0) == pdTRUE;
+    // Recovery never mounts SD; queued lines are dropped instead of reaching Storage.
+    const bool hadLog = syncCheck_ != Commit::Running && xQueueReceive(logs_, &entry, 0) == pdTRUE &&
+                        !recoveryMode();
     if (hadLog) {
       FileJob job;
       job.op = FileOp::Log;
@@ -975,7 +1057,7 @@ void Portal::run() {
     if (running) {
       dns_.processNextRequest();
       server_.handleClient();
-    } else {
+    } else if (!recoveryMode()) {
       artwork_->process();
       // AP/OFF may have been requested while the preceding HTTPS lookup was in progress.
       if (!requested_ && !suspendRequested_)

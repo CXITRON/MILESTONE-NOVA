@@ -16,6 +16,7 @@
 #include "../ui/Ui.h"
 #include "../update/AutoUpdate.h"
 #include "../update/BootConfirm.h"
+#include "../update/Recovery.h"
 namespace nova {
 class App {
 public:
@@ -24,6 +25,8 @@ public:
 
 private:
   void input(const InputEvent &event, uint32_t now);
+  void beginRecovery();
+  void tickRecovery(uint32_t now);
   void console(const char *command, uint32_t now);
   void changeSetting(int direction, uint32_t now);
   void assets(uint32_t now);
@@ -55,6 +58,7 @@ private:
   MediaSession session_;
   Network network_;
   BootConfirm bootConfirm_;
+  Recovery recovery_;
   Power power_;
   FocusTimer timer_;
   Ui ui_;

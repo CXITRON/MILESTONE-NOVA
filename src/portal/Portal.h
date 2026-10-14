@@ -32,7 +32,8 @@ enum class CommandKind : uint8_t {
   UpdatePrepare,
   UpdateAuto,
   LogsClear,
-  Restart
+  Restart,
+  RecoveryResume // Leave recovery and retry a normal boot; App owns the policy.
 };
 struct PortalCommand {
   CommandKind kind = CommandKind::Settings;
@@ -52,6 +53,7 @@ struct PortalSnapshot {
   uint32_t uptime = 0, heap = 0, psram = 0, position = 0, syncSession = 0;
   float temperature = 0, humidity = 0, volts = 0;
   bool sensor = false, sd = false, playing = false, syncStale = false, autoUpdate = false;
+  bool recovery = false;
 };
 // HTTP/DNS and outbound I/O have one worker; hardware/NVS/UI remain on App's loop.
 class Portal {
@@ -84,6 +86,10 @@ private:
   void files();
   void file();
   void transfer();
+  void recovery();
+  void recoveryChunk();
+  void recoveryStatus(int code = 200);
+  bool recoveryMode() const { return firmware_->recoveryMode(); }
   void chunk();
   void upload();
   void rawUpload();

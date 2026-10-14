@@ -15,7 +15,21 @@
 #include <esp_heap_caps.h>
 #include <esp_ota_ops.h>
 #include <mbedtls/pk.h>
+#include <new>
 namespace nova {
+namespace {
+constexpr size_t imagePrefix =
+    sizeof(esp_image_header_t) + sizeof(esp_image_segment_header_t) + sizeof(esp_app_desc_t);
+bool novaImage(const uint8_t *bytes, esp_app_desc_t &desc) {
+  esp_image_header_t header;
+  memcpy(&header, bytes, sizeof(header));
+  memcpy(&desc, bytes + sizeof(header) + sizeof(esp_image_segment_header_t), sizeof(desc));
+  return header.magic == ESP_IMAGE_HEADER_MAGIC && header.chip_id == ESP_CHIP_ID_ESP32S3 &&
+         desc.magic_word == ESP_APP_DESC_MAGIC_WORD &&
+         !strncmp(desc.project_name, "MILESTONE-NOVA", sizeof(desc.project_name)) &&
+         memchr(desc.version, 0, sizeof(desc.version));
+}
+} // namespace
 void Firmware::begin(Storage &s, const char *override) {
   storage_ = &s;
   cleanUtf8(key_, sizeof(key_), override && override[0] ? override : releasePublicKey);
@@ -49,6 +63,7 @@ void Firmware::latest(char *out, size_t capacity) {
 }
 bool Firmware::request(Work work) {
   if (!serviceReady_ || !mutex_ || !bytes_ || busy() || work == Work::None ||
+      work == Work::Direct || work == Work::DirectInstall ||
       ((work == Work::Install || work == Work::AutoInstall) && state_ != State::Ready) ||
       (work == Work::Download && !url_[0]))
     return false;
@@ -220,20 +235,13 @@ bool Firmware::prepare(bool release) {
   uint8_t *bytes = bytes_;
   job.op = FileOp::Read;
   job.data = bytes;
-  job.length =
-      sizeof(esp_image_header_t) + sizeof(esp_image_segment_header_t) + sizeof(esp_app_desc_t);
+  job.length = imagePrefix;
   if (!storage_->execute(job) || job.actual != job.length) {
     message("Candidate header read failed");
     return false;
   }
-  esp_image_header_t header;
-  memcpy(&header, bytes, sizeof(header));
   esp_app_desc_t desc;
-  memcpy(&desc, bytes + sizeof(header) + sizeof(esp_image_segment_header_t), sizeof(desc));
-  if (header.magic != ESP_IMAGE_HEADER_MAGIC || header.chip_id != ESP_CHIP_ID_ESP32S3 ||
-      desc.magic_word != ESP_APP_DESC_MAGIC_WORD ||
-      strncmp(desc.project_name, "MILESTONE-NOVA", sizeof(desc.project_name)) ||
-      !memchr(desc.version, 0, sizeof(desc.version))) {
+  if (!novaImage(bytes, desc)) {
     message("Candidate is not a NOVA ESP32-S3 image");
     return false;
   }
@@ -367,10 +375,143 @@ bool Firmware::rollback() {
   message("Previous validated firmware selected");
   return true;
 }
+bool Firmware::directBegin(uint32_t id, uint32_t total) {
+  Work idle = Work::None;
+  if (!serviceReady_ || !mutex_ || state_ == State::Working ||
+      !work_.compare_exchange_strong(idle, Work::Direct))
+    return false; // Leave the running job's status untouched.
+  if (!directPermitted_)
+    return directFail("Power or temperature unsafe for update");
+  // Writing the other slot is safe only when the running image is not awaiting confirmation.
+  // NOT_FOUND (no otadata record, e.g. after a USB flash) and NOT_SUPPORTED (non-OTA app) cannot
+  // be pending. Any other failure leaves the state unknown, so the other slot stays untouched.
+  const auto *partition = esp_ota_get_running_partition();
+  esp_ota_img_states_t running;
+  const auto result =
+      partition ? esp_ota_get_state_partition(partition, &running) : ESP_ERR_INVALID_ARG;
+  if (result == ESP_OK ? running == ESP_OTA_IMG_PENDING_VERIFY
+                       : result != ESP_ERR_NOT_FOUND && result != ESP_ERR_NOT_SUPPORTED)
+    return directFail("Pending update not confirmed or slot state unknown");
+  if (!id || total < 1024 || total > 6291456)
+    return directFail("Invalid recovery image size");
+  verifier_ = new (std::nothrow)
+      UpdaterRSAVerifier(reinterpret_cast<const uint8_t *>(key_), strlen(key_) + 1, HASH_SHA256);
+  updater_ = new (std::nothrow) UpdateClass;
+  if (!verifier_ || !updater_ || !updater_->installSignature(verifier_) ||
+      !updater_->begin(total, U_FLASH))
+    return directFail("Inactive update partition unavailable");
+  directId_ = id;
+  directTotal_ = total;
+  directAt_ = 0;
+  directLastLength_ = 0;
+  directSeen_ = millis();
+  progress_ = 0;
+  state_ = State::Working;
+  message("Receiving recovery image");
+  return true;
+}
+bool Firmware::directChunk(uint32_t id, uint32_t offset, const uint8_t *data, size_t length,
+                           uint32_t crc) {
+  if (work_ != Work::Direct || !id || id != directId_ || !length)
+    return false;
+  if (!directPermitted_)
+    return directFail("Power or temperature unsafe; current firmware retained");
+  if (crc32(data, length) != crc) {
+    message("Chunk checksum mismatch; resend");
+    return false;
+  }
+  const uint32_t at = directAt_;
+  // A lost reply makes the browser resend the chunk that was already written.
+  if (directLastLength_ && offset == directLastOffset_ && length == directLastLength_ &&
+      crc == directLastCrc_ && offset + length == at) {
+    directSeen_ = millis();
+    return true;
+  }
+  if (offset != at)
+    return false; // The browser resumes from directReceived().
+  if (length > directTotal_ - at)
+    return directFail("Recovery image larger than announced");
+  if (!at) {
+    // Reject foreign or older images before the first flash write.
+    esp_app_desc_t desc;
+    int order = 0;
+    if (length < imagePrefix || !novaImage(data, desc))
+      return directFail("Not a NOVA ESP32-S3 image");
+    if (!compareReleaseVersions(desc.version, board::version, order))
+      return directFail("Recovery image version invalid");
+    if (order < 0)
+      return directFail("Older firmware rejected");
+    if (!order && !recovery_)
+      return directFail("Same version reinstall only in recovery mode");
+  }
+  if (updater_->write(const_cast<uint8_t *>(data), length) != length)
+    return directFail("Flash write failed; current firmware retained");
+  directLastOffset_ = offset;
+  directLastLength_ = length;
+  directLastCrc_ = crc;
+  directAt_ = at + length;
+  directSeen_ = millis();
+  progress_ = uint64_t(at + length) * 100 / directTotal_;
+  return true;
+}
+bool Firmware::directFinish(uint32_t id) {
+  Work open = Work::Direct;
+  if (!directPermitted_ && work_ == Work::Direct && id && id == directId_)
+    return directFail("Power or temperature unsafe; current firmware retained");
+  if (!id || id != directId_ || directAt_ != directTotal_ ||
+      !work_.compare_exchange_strong(open, Work::DirectInstall))
+    return false;
+  message("Verifying recovery image signature");
+  return true;
+}
+bool Firmware::directAbort(uint32_t id) {
+  if (work_ != Work::Direct || !id || id != directId_)
+    return false;
+  directFail("Recovery upload cancelled; current firmware retained");
+  return true;
+}
+bool Firmware::directFail(const char *reason) {
+  if (updater_)
+    updater_->abort();
+  delete updater_;
+  delete verifier_;
+  updater_ = nullptr;
+  verifier_ = nullptr;
+  directId_ = 0;
+  directAt_ = 0;
+  directTotal_ = 0;
+  directLastLength_ = 0;
+  progress_ = 0;
+  message(reason);
+  state_ = State::Failed;
+  work_ = Work::None;
+  return false;
+}
+bool Firmware::directInstall() {
+  if (!directPermitted_)
+    return directFail("Power or temperature unsafe; current firmware retained");
+  // end() checks the RSA signature before it selects the new boot partition.
+  if (!updater_ || !updater_->end())
+    return directFail("Recovery image signature rejected; current firmware retained");
+  delete updater_;
+  delete verifier_;
+  updater_ = nullptr;
+  verifier_ = nullptr;
+  directId_ = 0;
+  message("Verified; restarting");
+  return true;
+}
 void Firmware::process() {
   const Work w = work_.load();
   if (w == Work::None)
     return;
+  if (w == Work::Direct) {
+    if (!directPermitted_)
+      directFail("Power or temperature unsafe; current firmware retained");
+    else if (millis() - directSeen_ > 60000)
+      directFail("Recovery upload stalled; current firmware retained");
+    return;
+  }
   state_ = State::Working;
   progress_ = 0;
   bool ok = false;
@@ -393,12 +534,17 @@ void Firmware::process() {
   case Work::Rollback:
     ok = rollback();
     break;
+  case Work::DirectInstall:
+    ok = directInstall();
+    break;
   default:
     break;
   }
   state_ = !ok ? State::Failed
            : w == Work::Check ? (url_[0] ? State::Available : State::Current)
-           : w == Work::Install || w == Work::AutoInstall || w == Work::Rollback ? State::Success
+           : w == Work::Install || w == Work::AutoInstall || w == Work::Rollback ||
+                   w == Work::DirectInstall
+               ? State::Success
                                                                                 : State::Ready;
   work_ = Work::None;
 }

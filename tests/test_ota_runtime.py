@@ -24,6 +24,17 @@ class BootConfirmTests(unittest.TestCase):
         ], check=True)
         subprocess.run([str(output)], check=True, env={**os.environ, "ASAN_OPTIONS": "detect_leaks=0"})
 
+    def test_recovery_boot(self):
+        output = ROOT / "build/tests/recovery"
+        output.parent.mkdir(parents=True, exist_ok=True)
+        subprocess.run([
+            os.environ.get("CXX", "g++"), "-std=c++17", "-Wall", "-Wextra", "-Werror",
+            "-g", "-O1", "-fsanitize=address,undefined", "-fno-omit-frame-pointer",
+            "-I" + str(ROOT / "src"), str(ROOT / "tests/update/test_recovery.cpp"),
+            str(ROOT / "src/update/Recovery.cpp"), "-o", str(output)
+        ], check=True)
+        subprocess.run([str(output)], check=True, env={**os.environ, "ASAN_OPTIONS": "detect_leaks=0"})
+
 
 if __name__ == "__main__":
     unittest.main()
