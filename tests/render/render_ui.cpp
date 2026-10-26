@@ -1,3 +1,4 @@
+#include "display/SironFont.h"
 #include "ui/Ui.h"
 #include <algorithm>
 #include <cassert>
@@ -324,6 +325,83 @@ int main(int argc, char **argv) {
       std::abort();
     }
   }
+  // Siron screen language: same screens with the Korean UI text replaced (ui-strings.tsv).
+  assert(!strcmp(tr("완료"), "완료"));
+  setLanguage(Language::Siron);
+  assert(strcmp(tr("완료"), "완료") && !strcmp(tr("NOVA"), "NOVA"));
+  assert(c.textWidth("\xee\x80\x80") == siron::glyph(0xE000)->width);  // U+E000, Siron p
+  // One-line hints must fit their boxes (Ui.cpp: update hint 216 px, footer 220 px).
+  assert(c.textWidth(tr("길게 OK: 설치 후 재시작")) <= 216);
+  assert(c.textWidth(tr("<> Layout  제어 불가")) <= 220);
+  {
+    char out[160];
+    assert(trFormatted("새 버전 v0.2.0 사용 가능 (현재 v0.1.0)", out, sizeof(out)));
+    assert(strstr(out, "v0.2.0") && strstr(out, "v0.1.0") &&
+           strstr(out, "v0.2.0") < strstr(out, "v0.1.0"));
+    assert(trFormatted("12일 남음", out, sizeof(out)) && !strncmp(out, "12 ", 3));
+    assert(!trFormatted("Setting applied", out, sizeof(out)));
+    assert(!trFormatted("새 버전 v0.2.0 사용 가능 (현재 v0.1.0)", out, 8));
+  }
+  for (Screen screen : {Screen::Clock, Screen::Timer, Screen::Environment, Screen::Menu,
+                        Screen::Setup, Screen::Updates, Screen::Recovery, Screen::Settings,
+                        Screen::Message, Screen::Dashboard}) {
+    reset(screen);
+    if (screen == Screen::Menu)
+      v.menu = 3;
+    if (screen == Screen::Setup)
+      v.apPassword = "";
+    if (screen == Screen::Settings)
+      v.setting = 4;
+    save("시론어", titles[static_cast<unsigned>(screen)]);
+  }
+  reset(Screen::DDay);
+  settings.ddayText = true;
+  save("시론어", "D-Day · 남은 날");
+  reset(Screen::Timer);
+  v.timer = &finished;
+  save("시론어", "집중 타이머 · 완료");
+  reset(Screen::Environment);
+  v.environmentValid = false;
+  save("시론어", "환경 센서 응답 대기");
+  reset(Screen::Environment);
+  v.temperature = 41;
+  save("시론어", "환경 위험 임계값");
+  reset(Screen::Clock);
+  v.epoch = 0;
+  save("시론어", "시간 설정 전");
+  reset(Screen::Now);
+  v.media = &unknown;
+  save("시론어", "재생 위치 수신 대기");
+  reset(Screen::Now);
+  v.media = &empty;
+  v.artwork = nullptr;
+  v.lyrics = nullptr;
+  save("시론어", "미디어 수신 대기 · 제어 불가");
+  reset(Screen::Media);
+  v.mediaPixels = nullptr;
+  v.sync = v.syncStale = true;
+  save("시론어", "미디어 없음 · 동기 끊김");
+  reset(Screen::Settings);
+  v.sleeping = true;
+  save("시론어", "전원 끄는 중");
+  reset(Screen::System);
+  v.systemPage = 8;
+  save("시론어", "진단 · 칩 온도");
+  reset(Screen::Updates);
+  v.updateReady = false;
+  v.updateStatus = "새 버전 v0.2.0 사용 가능 (현재 v0.1.0)";
+  save("시론어", "업데이트 · 형식 문구");
+  for (const char *notice : {"AP 준비 불가: 업데이트 또는 메모리 상태 확인",
+                             "미디어 형식 / 읽기 오류 - NEXT로 다음 파일",
+                             "새 버전 v0.2.0 / MENU > 업데이트", "Setting applied"}) {
+    reset(Screen::Clock);
+    v.notice = notice;
+    save("시론어", notice);
+  }
+  setLanguage(Language::Korean);
+  reset(Screen::Settings);
+  v.setting = 4;
+  save("메뉴 / 설정", "기기 설정 · 언어 한국어");
   if (fclose(manifest))
     return 2;
   printf("Rendered %u scenes using the firmware UI\n", count);

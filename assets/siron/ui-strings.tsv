@@ -1,0 +1,84 @@
+# NOVA 화면 문구의 시론어 표. 사용자 결정(2026-10-25/26): 한국어 UI는 전부 시론어로, 영어는 그대로.
+# 열: 한국어(코드에 있는 문자열 그대로, %s %d 형식 포함) / 시론어 로마자 / 처음 쓰인 곳.
+# 로마자 규칙: {중괄호} 안은 영어 그대로, %s·%d 형식은 그대로, 나머지 소문자와 ^는 시론 글자로 바꾼다.
+# 원본 초안과 근거: ~/Documents/Dev/conlang/nova-ui-translation.md (89문장, 베스퍼 역번역 대조 완료).
+# 포털(브라우저)로만 가는 문구 12개(Network 시험 상태 6, AppServices 포털 오류 4, Portal 응답 2)는 브라우저에 시론 글꼴이 없어 넣지 않았다.
+# 고친 뒤: python3 scripts/build/siron_assets.py
+재생 위치를 기다리는 중	vimel phozre chifeshuwamo	lyrics/Renderer.cpp:12,44
+가사가 곧 시작됩니다	sorrra sak einmulo	lyrics/Renderer.cpp:16,48
+오늘도 한 걸음	khoosta 1 sireusa	settings/Values.h:17
+미디어 수신 대기	mitieo ravithi chife	ui/NowScreen.cpp:23
+<> Layout  제어 불가	<> {Layout}  kheril pa^kazhu	ui/Ui.cpp:42
+전원을 끄는 중	volthakre khilshuwamo	ui/Ui.cpp:153
+OK 버튼을 놓아 주세요	{OK} peotheunre civva	ui/Ui.cpp:154
+기기 설정	lefeun ruufe	ui/Ui.cpp:159
+설정 AP	ruufe {AP}	ui/Ui.cpp:159
+업데이트	nevis	ui/Ui.cpp:160
+복구	zhurr	ui/Ui.cpp:160
+진단	eshuf	ui/Ui.cpp:160
+재시작	kra ein	ui/Ui.cpp:160
+전원 OFF	volthak {OFF}	ui/Ui.cpp:160
+OPEN / 암호 없음	{OPEN} / sheneon nul	ui/Ui.cpp:173
+BACK으로 AP 종료	{BACK}ro {AP} tiim	ui/Ui.cpp:176
+새 버전 확인	nuv vareupe phrav	ui/Ui.cpp:180
+다운로드 + 서명 검증	ravithi + sikel sevit	ui/Ui.cpp:180
+이전 펌웨어로 복구	yas feomweeoro zhurr	ui/Ui.cpp:181
+현재 v%s	rras {v}%s	ui/Ui.cpp:183
+길게 OK: 설치 후 재시작	rrom {OK}: afel ash kra ein	ui/Ui.cpp:193
+길게 OK: 이전 버전 복구	rrom {OK}: yas vareupe zhurr	ui/Ui.cpp:194
+OK: 실행	{OK}: vosh	ui/Ui.cpp:194
+동기 신호 끊김 / 정지	sifeek zhyef thek / rrov	ui/Ui.cpp:215
+미디어 없음	mitieo nul	ui/Ui.cpp:234
+내부 칩 온도는 실내 온도와 다릅니다.	umo chip kerrcu hevin kerrme khefteulo.	ui/CoreScreens.cpp:87
+OK / 길게 <> 정보 페이지	{OK} / rrom <> inu liv	ui/CoreScreens.cpp:111
+완료	karis	ui/CoreScreens.cpp:129
+%d일 남음	%d nis ppavmo	ui/CoreScreens.cpp:133
+%d일 지남	%d nis rrafmo	ui/CoreScreens.cpp:133
+시간 설정 필요	tim ruufe ruamo	ui/CoreScreens.cpp:138
+AHT10 대기	{AHT10} chife	ui/CoreScreens.cpp:175
+집중하는 시간	khozshune tim	ui/CoreScreens.cpp:182
+수고했어요	ttaram	ui/CoreScreens.cpp:183
+일시 정지	pit rrov	ui/CoreScreens.cpp:184
+준비되면 OK	oresmusen {OK}	ui/CoreScreens.cpp:185
+AHT10 응답 대기 중	{AHT10} ekho chifeshuwamo	ui/CoreScreens.cpp:210
+환경 위험 임계값	hairr phak limel vet	ui/CoreScreens.cpp:211
+환경 권장 범위 벗어남	hairr oven mirel zhuv	ui/CoreScreens.cpp:212
+AP 종료 중	{AP} tiimshuwamo	app/App.cpp:249
+업데이트 / 부팅 검증 대기	nevis / puthing sevit chife	app/App.cpp:275
+펌웨어 전송 중 AP를 닫을 수 없습니다	feomweeore virawanov {AP} map pa^kazhuteulo	app/App.cpp:288
+AP 준비 불가: 업데이트 또는 메모리 상태 확인	{AP} ores pa^kazhu: nevis vel memeori ssiverr phrav	app/App.cpp:309
+AP 시작 실패	{AP} ein folak	app/App.cpp:317
+GitHub 릴리스 확인 중	{GitHub} rilis phravshuwamo	app/App.cpp:346
+업데이트 확인 불가: Wi-Fi/SD/작업 상태 확인	nevis phrav pa^kazhu: {Wi-Fi}/{SD}/phrathek ssiverr phrav	app/App.cpp:347
+다른 업데이트 작업 중	khefne nevis phrathekshuwamo	app/App.cpp:358
+온도가 높아 업데이트 보류	kerrra ozuteunov nevis sevirr	app/App.cpp:358
+먼저 새 버전 확인 후 다운로드	purio nuv vareupe phrav ash ravithi	app/App.cpp:370
+다운로드 후 길게 OK	ravithi ash rrom {OK}	app/App.cpp:370
+iPhone이 이 명령을 지원하지 않음	{iPhone}ra ras ferunre tarrshupamo	app/App.cpp:383
+iPhone 재생 제어 사용 불가	{iPhone} vimel kheril izmo pa^kazhu	app/App.cpp:413
+내부 온도 높음 / 냉각 대기	umo kerr ozu / sizirr chife	app/App.cpp:416,1021
+브라우저에서 재생 / 일시 정지	prauzeoverro vimel / pit rrov	app/App.cpp:418
+복구 / 업데이트 중에는 설정을 변경하지 않습니다	zhurr / nevis phrathekshuwasen ruufere karazshupalo	app/App.cpp:428
+GitHub 자동 업데이트 설정 저장됨	{GitHub} mivo nevis ruufe valthikmumo	app/App.cpp:487
+자동 업데이트 설정 저장 실패	mivo nevis ruufe valthik folak	app/App.cpp:487
+GitHub Releases 확인 중	{GitHub} {Releases} phravshuwamo	app/App.cpp:491
+업데이트 확인 불가	nevis phrav pa^kazhu	app/App.cpp:491
+미디어 형식 / 읽기 오류 - NEXT로 다음 파일	mitieo kkaf / listhi feok - {NEXT}ro sato fail	app/App.cpp:637
+서명된 GitHub 릴리스 설치 후 재시작	sikelmukene {GitHub} rilis afel ash kra ein	app/App.cpp:813
+새 버전 v%s / MENU > 업데이트	nuv vareupe {v}%s / {MENU} > nevis	app/App.cpp:820
+AP Sync / 브라우저 오디오	{AP} {Sync} / prauzeo otio	app/App.cpp:876
+MENU > 설정 AP에서 업로드	{MENU} > ruufe {AP}verro virathi	app/App.cpp:878
+새 펌웨어 검증 중 (60초)	nuv feomweeo sevitshuwamo (60 zev)	app/App.cpp:902
+복구: BACK 길게 / 이전 펌웨어로 복귀	zhurr: {BACK} rrom / yas feomweeoro oteu	app/App.cpp:904
+복구 모드: SD 생략 / BACK 길게 재시도	zhurr emas: {SD} rafmo / {BACK} rrom kra ripen	app/App.cpp:904
+AMS 명령 전송 실패	{AMS} ferun virathi folak	app/App.cpp:964
+Wi-Fi 시험 성공 / 저장됨	{Wi-Fi} terrkaf sorin / valthikmumo	app/App.cpp:975
+Wi-Fi 연결됨 / 저장 실패	{Wi-Fi} wezhmumo / valthik folak	app/App.cpp:978
+새 버전을 확인하는 중...	nuv vareupere phravshuwamo...	update/Firmware.cpp:73
+다운로드하는 중...	raviwamo...	update/Firmware.cpp:75
+릴리스 정보를 받지 못했습니다 (Wi-Fi/게시 여부 확인)	rilis inu ravimo pa^kazhuteukelo ({Wi-Fi}/waz hesh phrav)	update/Firmware.cpp:90
+새 버전 v%s 사용 가능 (현재 v%s)	nuv vareupe {v}%s izmo kazhu (rras {v}%s)	update/Firmware.cpp:140
+최신 버전입니다 (v%s)	phin vareupeteulo ({v}%s)	update/Firmware.cpp:144
+올바르지 않은 릴리스 정보	pa^sein rilis inu	update/Firmware.cpp:149
+서명 확인 완료 / 길게 OK로 설치	sikel phrav karis / rrom {OK}ro afel	update/Firmware.cpp:291
+시론	siron	ui/SettingsScreen.cpp (언어 항목 값, 문자 이름 그대로)

@@ -12,7 +12,8 @@ done
 "${CXX:-g++}" -std=c++17 -Wall -Wextra -Werror -g -O1 \
   -fsanitize=address,undefined -fno-omit-frame-pointer -ffunction-sections -fdata-sections \
   -I"$root/src" -I"$font" "$root/tests/render/render_ui.cpp" \
-  "$root/src/display/Canvas.cpp" "$root/src/ui/Ui.cpp" "$root/src/ui/CoreScreens.cpp" \
+  "$root/src/display/Canvas.cpp" "$root/src/display/SironFont.cpp" "$root/src/ui/Ui.cpp" \
+  "$root/src/ui/CoreScreens.cpp" "$root/src/ui/Language.cpp" "$root/src/ui/SironStrings.cpp" \
   "$root/src/ui/NowScreen.cpp" "$root/src/ui/SettingsScreen.cpp" \
   "$root/src/lyrics/Renderer.cpp" "$root/src/lyrics/Lyrics.cpp" \
   "$root/src/core/Text.cpp" "$root/src/core/Logic.cpp" "$root/src/media/Session.cpp" \

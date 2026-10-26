@@ -1,5 +1,6 @@
 #include "Canvas.h"
 #include "../core/Text.h"
+#include "SironFont.h"
 #include <algorithm>
 #include <cstring>
 #ifdef ARDUINO
@@ -134,6 +135,8 @@ uint32_t asciiLookalike(uint32_t cp) {
 }
 } // namespace
 int Canvas::selectGlyph(uint32_t &cp) {
+  if (const auto *g = siron::glyph(cp))
+    return g->width;
   // Unifont Japanese omits halfwidth kana. Render their fullwidth equivalents
   // without changing stored metadata, track keys or lyric text.
   static constexpr uint16_t halfwidthKana[]{
@@ -166,6 +169,26 @@ int Canvas::selectGlyph(uint32_t &cp) {
     advance = u8g2_GetGlyphWidth(&font_, cp);
   }
   return advance;
+}
+void Canvas::drawGlyph(uint32_t cp) {
+  const auto *g = siron::glyph(cp);
+  if (!g) {
+    u8g2_DrawGlyph(&font_, 0, 14, cp);
+    return;
+  }
+  // Same top as Unifont (cell top = oy_); horizontal runs keep the rect count low.
+  for (int row = 0; row < 16; ++row)
+    for (int col = 0; col < g->width;) {
+      if (!(g->rows[row] & (0x8000u >> col))) {
+        ++col;
+        continue;
+      }
+      int end = col;
+      while (end < g->width && (g->rows[row] & (0x8000u >> end)))
+        ++end;
+      rect(ox_ + col * scale_, oy_ + row * scale_, (end - col) * scale_, scale_, ink_);
+      col = end;
+    }
 }
 int Canvas::textWidth(std::string_view text, int scale) {
   size_t p = 0;
@@ -211,7 +234,7 @@ void Canvas::text(int x, int y, int w, int h, std::string_view value, uint16_t c
       const int advance = selectGlyph(cp);
       ox_ = left;
       oy_ = row;
-      u8g2_DrawGlyph(&font_, 0, 14, cp);
+      drawGlyph(cp);
       left += advance * scale_;
     }
     if (pos < value.size() && value[pos] == '\n')
@@ -250,7 +273,7 @@ void Canvas::marquee(int x, int y, int w, std::string_view value, uint16_t color
     const int advance = selectGlyph(cp);
     ox_ = left;
     oy_ = y;
-    u8g2_DrawGlyph(&font_, 0, 14, cp);
+    drawGlyph(cp);
     left += advance;
   }
   x0_ = y0_ = 0;

@@ -38,6 +38,7 @@ void App::begin() {
   if (!recovery_.active()) rgb_.begin();
   log("INPUT", buttons_.begin() ? "5 ms sampler ready" : "sampler unavailable; polling fallback");
   const bool nvs = store_.load(settings_, secrets_);
+  setLanguage(store_.uiLanguage() == 1 ? Language::Siron : Language::Korean);
   log("SETTINGS",
       nvs ? "NVS loaded; validated defaults available" : "NVS unavailable; using defaults");
   if (recovery_.active()) {
@@ -177,6 +178,15 @@ void App::tickRecovery(uint32_t now) {
   display_.flush();
   shutdown(millis());
   vTaskDelay(1);
+}
+void App::toggleLanguage(uint32_t now) {
+  const bool siron = language() != Language::Siron;
+  if (!store_.saveUiLanguage(siron ? 1 : 0)) {
+    notice("Language save failed", now);
+    return;
+  }
+  setLanguage(siron ? Language::Siron : Language::Korean);
+  log("UI", "language=%s", siron ? "siron" : "korean");
 }
 void App::notice(const char *message, uint32_t now) {
   cleanUtf8(notice_, sizeof(notice_), message);
@@ -335,18 +345,20 @@ void App::input(const InputEvent &e, uint32_t now) {
       if (settingsEditing_)
         changeSetting(direction, now);
       else
-        setting_ = (int(setting_) + 7 + direction) % 7;
+        setting_ = (int(setting_) + int(settingItems) + direction) % int(settingItems);
     } else if (e.key == Key::Ok && e.press == Press::Short) {
       if (setting_ < 4)
         settingsEditing_ = !settingsEditing_;
-      else if (setting_ == 4 && !updateBusy)
+      else if (setting_ == 4)
+        toggleLanguage(now);
+      else if (setting_ == 5 && !updateBusy)
         network_.begin(secrets_, settings_);
-      else if (setting_ == 5)
+      else if (setting_ == 6)
         notice(!updateBusy && thermalState_ < 2 && firmware_.request(Firmware::Work::Check)
                    ? "GitHub 릴리스 확인 중"
                    : "업데이트 확인 불가: Wi-Fi/SD/작업 상태 확인",
                now);
-      else if (setting_ == 6)
+      else if (setting_ == 7)
         power_.request(now, updateBusy);
     }
     return;
@@ -485,6 +497,9 @@ void App::console(const char *cmd, uint32_t now) {
   } else if (!strcmp(cmd, "update-auto on") || !strcmp(cmd, "update-auto off")) {
     notice(store_.saveAutoUpdate(!strcmp(cmd, "update-auto on"))
                ? "GitHub 자동 업데이트 설정 저장됨" : "자동 업데이트 설정 저장 실패", now);
+  } else if (!strcmp(cmd, "lang korean") || !strcmp(cmd, "lang siron")) {
+    if ((language() == Language::Siron) != !strcmp(cmd, "lang siron"))
+      toggleLanguage(now);
   } else if (!strcmp(cmd, "update-check")) {
     notice(!bootConfirm_.pending() && thermalState_ < 2 &&
                    firmware_.request(Firmware::Work::Check)
@@ -515,6 +530,7 @@ void App::console(const char *cmd, uint32_t now) {
     log("UI", "set key=value | wifi SSID|password | time UTC_epoch");
     log("UI", "status | update-check | update-auto on|off | sleep; credentials are never echoed");
     log("UI", "update-check | update-auto on | update-auto off (GitHub Releases)");
+    log("UI", "lang korean | lang siron (screen language)");
   } else
     notice("Unknown command; type help", now);
 }

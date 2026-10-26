@@ -43,6 +43,7 @@ private:
   void applySettings(uint32_t now);
   void closeAp(uint32_t now);
   void notice(const char *message, uint32_t now);
+  void toggleLanguage(uint32_t now);
   Settings settings_;
   Secrets secrets_;
   SettingsStore store_;

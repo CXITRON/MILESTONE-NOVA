@@ -114,6 +114,7 @@ bool SettingsStore::load(Settings &s, Secrets &secrets) {
   if (!p.begin("nova", false))
     return false;
   autoUpdate_ = p.getBool("update-auto", false);
+  uiLanguage_ = p.getUChar("ui-lang", 0) == 1 ? 1 : 0;
   hasSettings_ = loadRecord(p, s, validSettings);
   if (hasSettings_ && p.isKey("settings"))
     p.remove("settings"); // Schema-1 blob, no longer needed once a current record exists.
@@ -238,8 +239,10 @@ bool SettingsStore::reset(bool credentials) {
   Preferences p;
   bool ok = p.begin("nova", false) && p.clear();
   p.end();
-  if (ok)
+  if (ok) {
     autoUpdate_ = false;
+    uiLanguage_ = 0;
+  }
   if (credentials) {
     ok = (p.begin("nova-secrets", false) && p.clear()) && ok;
     p.end();
@@ -255,6 +258,18 @@ bool SettingsStore::saveAutoUpdate(bool enabled) {
   p.end();
   if (ok)
     autoUpdate_ = enabled;
+  return ok;
+}
+bool SettingsStore::saveUiLanguage(uint8_t language) {
+  if (language > 1)
+    return false;
+  Preferences p;
+  if (!p.begin("nova", false))
+    return false;
+  const bool ok = p.putUChar("ui-lang", language) == 1 && p.getUChar("ui-lang", 2) == language;
+  p.end();
+  if (ok)
+    uiLanguage_ = language;
   return ok;
 }
 } // namespace nova

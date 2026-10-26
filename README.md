@@ -5,6 +5,8 @@ LOLIN S3 Pro 한 대로 구동하는 탁상형 펌웨어, 버전 **0.1.0**.
 배터리 추정, NOW/앨범아트/동기 가사, SD 미디어, Wi-Fi/NTP, BLE, GitHub 릴리스 업데이트,
 설정 AP/오프라인 포털, AP Sync, Artwork Worker 200×200 자동 조회, 환경 CSV,
 RGB, Deep Sleep OFF를 새 C++ 모듈로 구현한다.
+화면 언어는 한국어와 사용자 인공어 시론어 중 고른다(기기 설정 `Language`, 콘솔 `lang siron|korean`).
+시론어 문구 표는 `assets/siron/ui-strings.tsv`, 글자·표 생성은 `scripts/build/siron_assets.py`가 맡는다.
 기능별 구현·검증 근거는 [기능 대조표](docs/design/feature-parity.md)에 기록한다.
 
 실제 ESP32-S3 빌드와 호스트 테스트를 수행했다. **실물 동작·장시간 안정성은 아직
@@ -671,3 +673,13 @@ MCU의 RTC RAM에 기록하므로 외장 RTC 모듈이 없어도 동작하지만
 
 현재 이 기능은 소스·호스트·빌드 검증 대상이며, 실제 기기의 복구 버튼·직접 플래시·전원 차단
 검증과 배포 여부는 C0044/C0045의 최신 상태를 확인한다.
+
+## 시론어 화면 언어 — 1.1.0
+
+[GitHub 릴리스 v1.1.0](https://github.com/CXITRON/MILESTONE-NOVA/releases/tag/v1.1.0)
+
+기기 설정 `Language`(또는 USB 콘솔 `lang siron`)로 LCD의 한국어 문구를 사용자 인공어 시론어로 바꿔 보여 준다.
+가사·곡 정보·영어 문구·포털 웹 화면은 바꾸지 않는다. 언어는 NVS 별도 키 `ui-lang`에 저장해 기존 설정 레코드를 그대로 둔다.
+시론 글자는 conlang 프로젝트의 16픽셀 비트맵 시안(42자)이고, 문구 표는 `assets/siron/ui-strings.tsv` 78줄이다.
+설정 화면에 항목이 하나 늘어 Wi-Fi retry, Signed OTA, Power OFF가 한 칸씩 아래로 내려갔다.
+호스트 렌더·시험·빌드와 베스퍼 교차검증을 통과했고, 실기 확인은 아직 없다([C0047](docs/agents/reports/report_C0047_2026_10_26.md)).

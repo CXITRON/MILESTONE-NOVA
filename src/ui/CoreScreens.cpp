@@ -6,12 +6,14 @@ void row(Canvas &c, int y, const char *label, const char *value) {
   c.text(16, y, 96, 20, label, c.muted());
   c.text(112, y, 112, 20, value, color::white);
 }
+// D-Day text is drawn at 2x; longer text (Siron "%d nis ppavmo") drops to 1x instead of clipping.
+int fit(Canvas &c, const char *text, int width) { return c.textWidth(text, 2) <= width ? 2 : 1; }
 void message(Canvas &c, const View &v, int y, int height = 40) {
   const auto &s = *v.settings;
   if (s.scroll)
-    c.marquee(24, y, 192, s.message, s.messageColor, v.now, s.scrollSpeed, !s.alignLeft);
+    c.marquee(24, y, 192, tr(s.message), s.messageColor, v.now, s.scrollSpeed, !s.alignLeft);
   else
-    c.text(24, y, 192, height, s.message, s.messageColor, 1, !s.alignLeft);
+    c.text(24, y, 192, height, tr(s.message), s.messageColor, 1, !s.alignLeft);
 }
 void diagnostic(Canvas &c, const View &v) {
   char value[128];
@@ -84,7 +86,7 @@ void diagnostic(Canvas &c, const View &v) {
     row(c, 92, "CHIP TEMP", value);
     snprintf(value, sizeof(value), "%d", v.thermalState);
     row(c, 132, "THERMAL", value);
-    c.text(16, 190, 208, 64, "내부 칩 온도는 실내 온도와 다릅니다.", c.muted(), 1, true);
+    c.text(16, 190, 208, 64, tr("내부 칩 온도는 실내 온도와 다릅니다."), c.muted(), 1, true);
     break;
   case 9:
     row(c, 86, "AMS", v.bleStatus);
@@ -97,7 +99,7 @@ void diagnostic(Canvas &c, const View &v) {
     row(c, 86, "VERSION", value);
     snprintf(value, sizeof(value), "%u %%", v.updateProgress);
     row(c, 126, "PROGRESS", value);
-    c.text(16, 168, 208, 90, v.updateStatus, color::white);
+    c.text(16, 168, 208, 90, shown(v.updateStatus, value, sizeof(value)), color::white);
     break;
   case 11:
     snprintf(value, sizeof(value), "%lu MHz",
@@ -108,7 +110,7 @@ void diagnostic(Canvas &c, const View &v) {
     row(c, 206, "AP SYNC", v.sync ? (v.syncStale ? "Stale / stopped" : "Active") : "Inactive");
     break;
   }
-  c.text(16, 264, 208, 24, "OK / 길게 <> 정보 페이지", c.muted(), 1, true);
+  c.text(16, 264, 208, 24, tr("OK / 길게 <> 정보 페이지"), c.muted(), 1, true);
 }
 } // namespace
 void coreScreen(Canvas &c, const View &v) {
@@ -126,16 +128,17 @@ void coreScreen(Canvas &c, const View &v) {
     const int days = civilDay(s.ddayYear, s.ddayMonth, s.ddayDay) -
                      civilDay(local.tm_year + 1900, local.tm_mon + 1, local.tm_mday);
     if (days < 0 && s.afterComplete)
-      snprintf(dday, sizeof(dday), "완료");
+      snprintf(dday, sizeof(dday), "%s", tr("완료"));
     else if (!days)
       snprintf(dday, sizeof(dday), "D-DAY");
     else if (s.ddayText)
-      snprintf(dday, sizeof(dday), days > 0 ? "%d일 남음" : "%d일 지남", days > 0 ? days : -days);
+      snprintf(dday, sizeof(dday), tr(days > 0 ? "%d일 남음" : "%d일 지남"),
+               days > 0 ? days : -days);
     else
       snprintf(dday, sizeof(dday), "D%c%d", days > 0 ? '-' : '+', days > 0 ? days : -days);
   } else {
     snprintf(clock, sizeof(clock), "--:--");
-    snprintf(date, sizeof(date), "시간 설정 필요");
+    snprintf(date, sizeof(date), "%s", tr("시간 설정 필요"));
     snprintf(dday, sizeof(dday), "D-?");
   }
   switch (v.screen) {
@@ -149,7 +152,7 @@ void coreScreen(Canvas &c, const View &v) {
     break;
   case Screen::DDay:
     c.text(16, 82, 208, 24, s.label, s.accentColor, 1, true);
-    c.text(0, 123, 240, 58, dday, s.eventColor, 2, true);
+    c.text(0, 123, 240, 58, dday, s.eventColor, fit(c, dday, 240), true);
     snprintf(text, sizeof(text), "%04u.%02u.%02u", s.ddayYear, s.ddayMonth, s.ddayDay);
     c.text(0, 190, 240, 24, text, s.dateColor, 1, true);
     message(c, v, 239);
@@ -159,30 +162,32 @@ void coreScreen(Canvas &c, const View &v) {
     if (s.scroll)
       message(c, v, 158);
     else
-      c.text(24, 130, 192, 128, s.message, s.messageColor, 2, !s.alignLeft);
+      c.text(24, 130, 192, 128, tr(s.message), s.messageColor, 2, !s.alignLeft);
     break;
   case Screen::DDayClock:
     c.text(16, 76, 208, 24, s.label, s.accentColor, 1, true);
-    c.text(0, 112, 240, 52, dday, s.eventColor, 2, true);
+    c.text(0, 112, 240, 52, dday, s.eventColor, fit(c, dday, 240), true);
     c.text(0, 184, 240, 44, clock, s.timeColor, 2, true);
     c.text(0, 244, 240, 24, date, s.dateColor, 1, true);
     break;
   case Screen::Dashboard:
     c.text(16, 78, 208, 44, clock, s.timeColor, 2, true);
     c.text(16, 127, 208, 22, date, s.dateColor, 1, true);
-    c.text(16, 164, 208, 42, dday, s.eventColor, 2, true);
+    c.text(16, 164, 208, 42, dday, s.eventColor, fit(c, dday, 208), true);
     message(c, v, 216);
-    snprintf(text, sizeof(text), v.environmentValid ? "%.1f C / %.0f %%" : "AHT10 대기",
-             v.temperature, v.humidity);
+    if (v.environmentValid)
+      snprintf(text, sizeof(text), "%.1f C / %.0f %%", v.temperature, v.humidity);
+    else
+      snprintf(text, sizeof(text), "%s", tr("AHT10 대기"));
     c.text(16, 257, 208, 22, text, s.mutedColor, 1, true);
     break;
   case Screen::Timer: {
     formatTime(text, sizeof(text), v.timer->remaining(v.now) + 999);
     c.text(0, 108, 240, 60, text, s.timeColor, 3, true);
-    const char *state = v.timer->state() == FocusTimer::State::Running    ? "집중하는 시간"
-                        : v.timer->state() == FocusTimer::State::Finished ? "수고했어요"
-                        : v.timer->state() == FocusTimer::State::Paused   ? "일시 정지"
-                                                                          : "준비되면 OK";
+    const char *state = v.timer->state() == FocusTimer::State::Running    ? tr("집중하는 시간")
+                        : v.timer->state() == FocusTimer::State::Finished ? tr("수고했어요")
+                        : v.timer->state() == FocusTimer::State::Paused   ? tr("일시 정지")
+                                                                          : tr("준비되면 OK");
     c.text(0, 188, 240, 40, state, s.accentColor, 1, true);
     const uint32_t total = s.focusSeconds * 1000, remaining = v.timer->remaining(v.now);
     progressBar(c, 248, total > remaining ? total - remaining : 0, total);
@@ -207,9 +212,9 @@ void coreScreen(Canvas &c, const View &v) {
       c.text(16, 169, 208, 42, text, s.accentColor, 2, true);
     }
     c.text(16, 246, 208, 36,
-           !v.environmentValid ? "AHT10 응답 대기 중"
-           : critical          ? "환경 위험 임계값"
-           : warning           ? "환경 권장 범위 벗어남"
+           !v.environmentValid ? tr("AHT10 응답 대기 중")
+           : critical          ? tr("환경 위험 임계값")
+           : warning           ? tr("환경 권장 범위 벗어남")
                                : "TEMPERATURE / HUMIDITY",
            v.environmentValid && warning ? color::warning : s.mutedColor, 1, true);
     break;

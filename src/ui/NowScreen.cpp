@@ -20,7 +20,7 @@ void nowScreen(Canvas &c, const View &v) {
     snprintf(total, sizeof(total), "--:--");
   snprintf(line, sizeof(line), "%s / %s", elapsed, total);
   c.text(72, 39, 140, 20, line, s.mutedColor, 1, true);
-  const char *title = track.title[0] ? track.title : "미디어 수신 대기",
+  const char *title = track.title[0] ? track.title : tr("미디어 수신 대기"),
              *artist = track.artist[0] ? track.artist : "Unknown artist",
              *album = track.album[0] ? track.album : "Unknown album";
   const auto label = [&](int y, const char *text, uint16_t ink) {

@@ -59,4 +59,9 @@ public:
     const uint8_t byte = value;
     return putBytes(key, &byte, 1);
   }
+  uint8_t getUChar(const char *key, uint8_t fallback = 0) {
+    const auto &value = testNvs[space_][key];
+    return value.size() == 1 ? value[0] : fallback;
+  }
+  size_t putUChar(const char *key, uint8_t value) { return putBytes(key, &value, 1); }
 };

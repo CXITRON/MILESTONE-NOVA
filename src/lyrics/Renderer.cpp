@@ -1,3 +1,4 @@
+#include "../ui/Language.h"
 #include "Renderer.h"
 namespace nova {
 void LyricsRenderer::draw(Canvas &c, const Lyrics &l, int current, bool positionKnown) const {
@@ -9,11 +10,11 @@ void LyricsRenderer::draw(Canvas &c, const Lyrics &l, int current, bool position
     return;
   }
   if (!positionKnown) {
-    c.text(16, 134, 208, 60, "재생 위치를 기다리는 중", c.muted(), 1, true);
+    c.text(16, 134, 208, 60, tr("재생 위치를 기다리는 중"), c.muted(), 1, true);
     return;
   }
   if (current < 0) {
-    c.text(16, 118, 208, 60, "가사가 곧 시작됩니다", c.muted(), 1, true);
+    c.text(16, 118, 208, 60, tr("가사가 곧 시작됩니다"), c.muted(), 1, true);
     c.text(16, 206, 208, 54, l.line(0), color::white, 1, true);
     return;
   }
@@ -41,11 +42,11 @@ void LyricsRenderer::drawCompact(Canvas &c, const Lyrics *l, int current, bool p
     return;
   }
   if (!positionKnown) {
-    c.text(16, top + 44, 208, 40, "재생 위치를 기다리는 중", c.muted(), 1, true);
+    c.text(16, top + 44, 208, 40, tr("재생 위치를 기다리는 중"), c.muted(), 1, true);
     return;
   }
   if (current < 0) {
-    c.text(16, top + 8, 208, 20, "가사가 곧 시작됩니다", c.muted(), 1, true);
+    c.text(16, top + 8, 208, 20, tr("가사가 곧 시작됩니다"), c.muted(), 1, true);
     c.text(20, top + 40, 200, 44, l->line(0), color::white, 1, true);
     return;
   }

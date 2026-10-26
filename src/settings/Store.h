@@ -10,6 +10,10 @@ public:
   bool reset(bool credentials);
   bool autoUpdate() const { return autoUpdate_; }
   bool saveAutoUpdate(bool enabled);
+  // Screen language (0 Korean, 1 Siron). Its own NVS key like "update-auto", so the Settings
+  // record layout and existing saved settings stay valid.
+  uint8_t uiLanguage() const { return uiLanguage_; }
+  bool saveUiLanguage(uint8_t language);
   // Validation/open failure or the exact ESP-IDF write/commit error, plus NVS entries then.
   const char *lastError() const { return error_; }
   unsigned nvsFree() const { return nvsFree_; }
@@ -22,6 +26,7 @@ public:
 private:
   bool hasSettings_ = false;
   bool autoUpdate_ = false;
+  uint8_t uiLanguage_ = 0;
   const char *error_ = "";
   unsigned nvsFree_ = 0, nvsTotal_ = 0, usageFree_ = 0, usageTotal_ = 0;
 };

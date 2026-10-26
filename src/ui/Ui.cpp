@@ -3,6 +3,9 @@
 #include <algorithm>
 #include <cstdio>
 namespace nova {
+const char *shown(const char *text, char *buffer, size_t capacity) {
+  return trFormatted(text, buffer, capacity) ? buffer : text;
+}
 void formatTime(char *out, size_t n, uint32_t ms) {
   snprintf(out, n, "%02u:%02u", unsigned(ms / 60000), unsigned(ms / 1000 % 60));
 }
@@ -39,11 +42,12 @@ void Ui::chrome(Canvas &c, const View &v) {
                        : v.screen == Screen::Settings ? "PREV/NEXT  OK  BACK"
                        : v.screen == Screen::Timer    ? "OK Start/Pause  Hold Reset"
                        : v.screen == Screen::Now
-                           ? (v.canPlay ? "OK Play/Pause  Hold Layout" : "<> Layout  제어 불가")
+                           ? (v.canPlay ? "OK Play/Pause  Hold Layout"
+                                        : tr("<> Layout  제어 불가"))
                        : v.screen == Screen::Media
                            ? (v.sync ? "Browser audio   BACK End" : "<> Select  OK Play/Pause")
                            : "< PREV     MENU     NEXT >";
-  c.text(12, 300, 216, 18, footer, c.muted(), 1, true);
+  c.text(10, 300, 220, 18, footer, c.muted(), 1, true);
 }
 // Tone curve and burn-in shift in one pass. The canvas lives in PSRAM, so each row is copied into
 // internal RAM, converted there, and written back; this replaced two full-screen passes.
@@ -142,7 +146,7 @@ void Ui::render(Canvas &c, const View &v) {
     c.text(0, 112, 240, 48, "NOVA", color::white, 3, true);
     c.text(0, 170, 240, 20, "MILESTONE", c.accent(), 1, true);
     if (v.settings)
-      c.text(16, 223, 208, 54, v.settings->message, v.settings->messageColor, 1, true);
+      c.text(16, 223, 208, 54, tr(v.settings->message), v.settings->messageColor, 1, true);
     return;
   }
   mark = stamp();
@@ -150,14 +154,16 @@ void Ui::render(Canvas &c, const View &v) {
   add(&RenderTimes::chrome, mark);
   mark = stamp();
   if (v.sleeping) {
-    c.text(16, 110, 208, 60, "전원을 끄는 중", color::white, 1, true);
-    c.text(16, 200, 208, 50, "OK 버튼을 놓아 주세요", c.muted(), 1, true);
+    c.text(16, 110, 208, 60, tr("전원을 끄는 중"), color::white, 1, true);
+    c.text(16, 200, 208, 50, tr("OK 버튼을 놓아 주세요"), c.muted(), 1, true);
     return;
   }
   switch (v.screen) {
   case Screen::Menu: {
-    static constexpr const char *labels[]{"CORE",     "MEDIA", "NOW",  "기기 설정", "설정 AP",
-                                          "업데이트", "복구",  "진단", "재시작",    "전원 OFF"};
+    const char *const labels[]{"CORE",         "MEDIA",        "NOW",
+                               tr("기기 설정"), tr("설정 AP"),   tr("업데이트"),
+                               tr("복구"),      tr("진단"),      tr("재시작"),
+                               tr("전원 OFF")};
     const unsigned start = v.menu > 6 ? v.menu - 6 : 0;
     for (unsigned i = start; i < std::min(start + 7, unsigned(MenuAction::Count)); ++i) {
       const int y = 76 + (i - start) * 28;
@@ -170,17 +176,17 @@ void Ui::render(Canvas &c, const View &v) {
   case Screen::Setup:
     c.text(16, 78, 208, 36, "MILESTONE-NOVA-SETUP", color::white, 1, true);
     c.text(16, 128, 208, 24, "AP PASSWORD", c.muted(), 1, true);
-    c.text(16, 155, 208, 60, v.apPassword[0] ? v.apPassword : "OPEN / 암호 없음", c.accent(), 1,
-           true);
+    c.text(16, 155, 208, 60, v.apPassword[0] ? v.apPassword : tr("OPEN / 암호 없음"), c.accent(),
+           1, true);
     c.text(16, 222, 208, 24, "http://192.168.4.1", color::white, 1, true);
-    c.text(16, 254, 208, 22, "BACK으로 AP 종료", c.muted(), 1, true);
+    c.text(16, 254, 208, 22, tr("BACK으로 AP 종료"), c.muted(), 1, true);
     break;
   case Screen::Updates:
   case Screen::Recovery: {
-    static constexpr const char *items[]{"새 버전 확인", "다운로드 + 서명 검증",
-                                         "이전 펌웨어로 복구"};
+    const char *const items[]{tr("새 버전 확인"), tr("다운로드 + 서명 검증"),
+                              tr("이전 펌웨어로 복구")};
     char current[32];
-    snprintf(current, sizeof(current), "현재 v%s", board::version);
+    snprintf(current, sizeof(current), tr("현재 v%s"), board::version);
     c.text(112, 39, 112, 20, current, c.muted());
     for (unsigned i = 0; i < 3; ++i) {
       const int y = 82 + i * 29;
@@ -188,10 +194,12 @@ void Ui::render(Canvas &c, const View &v) {
         c.rect(10, y - 3, 220, 27, color::panel);
       c.text(18, y, 204, 22, items[i], i == v.recoveryItem ? c.accent() : c.muted());
     }
-    c.text(16, 176, 208, 80, v.updateStatus, color::white, 1, true);
-    c.text(16, 260, 208, 26,
-           v.updateReady ? "길게 OK: 설치 후 재시작"
-                         : v.recoveryItem == 2 ? "길게 OK: 이전 버전 복구" : "OK: 실행",
+    char status[160];
+    c.text(16, 176, 208, 80, shown(v.updateStatus, status, sizeof(status)), color::white, 1,
+           true);
+    c.text(12, 260, 216, 26,
+           v.updateReady ? tr("길게 OK: 설치 후 재시작")
+                         : v.recoveryItem == 2 ? tr("길게 OK: 이전 버전 복구") : tr("OK: 실행"),
            color::warning, 1, true);
     progressBar(c, 289, v.updateProgress, 100);
     break;
@@ -212,10 +220,14 @@ void Ui::render(Canvas &c, const View &v) {
   add(&RenderTimes::screen, mark);
   mark = stamp();
   if (v.syncStale && v.screen == Screen::Media)
-    c.text(16, 263, 208, 20, "동기 신호 끊김 / 정지", color::warning, 1, true);
+    c.text(16, 263, 208, 20, tr("동기 신호 끊김 / 정지"), color::warning, 1, true);
   if (v.notice && v.notice[0]) {
-    c.rect(8, 264, 224, 29, color::panel);
-    c.text(14, 268, 212, 20, v.notice, color::warning);
+    char notice[160];
+    const char *text = shown(v.notice, notice, sizeof(notice));
+    // Siron notices run longer than Korean; a second line keeps them readable in their 4 s.
+    const int extra = c.textWidth(text) > 212 ? 18 : 0;
+    c.rect(8, 264 - extra, 224, 29 + extra, color::panel);
+    c.text(14, 268 - extra, 212, 20 + extra, text, color::warning);
   }
   add(&RenderTimes::overlay, mark);
   mark = stamp();
@@ -231,7 +243,7 @@ void mediaScreen(Canvas &c, const View &v) {
     c.image(0, top, side, side, v.mediaPixels, v.settings->mediaMonochrome);
   else if (!v.mediaPixels) {
     c.rect(0, top, side, side, color::panel);
-    c.text(48, top + side / 2 - 20, 144, 60, "미디어 없음", c.muted(), 1, true);
+    c.text(48, top + side / 2 - 20, 144, 60, tr("미디어 없음"), c.muted(), 1, true);
   }
   c.text(16, top + side + 2, 208, 18, v.mediaName, color::white, 1, true);
   progressBar(c, 291, v.mediaPosition, v.mediaDuration);

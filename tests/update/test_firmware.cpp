@@ -111,6 +111,22 @@ int main(int argc, char **argv) {
   assert(!reload.saveAutoUpdate(false) && reload.autoUpdate());
   testNvsWriteFail = false;
   assert(reload.reset(false) && !reload.autoUpdate());
+  // Screen language is its own key too: settings records stay byte-identical, reset clears it.
+  assert(store.save(original) && reload.uiLanguage() == 0);
+  const auto withSettings = testNvs["nova"];
+  assert(reload.saveUiLanguage(1) && !reload.saveUiLanguage(2) && reload.uiLanguage() == 1);
+  assert(testNvs["nova"]["a"] == withSettings.at("a") &&
+         testNvs["nova"]["b"] == withSettings.at("b"));
+  {
+    SettingsStore again;
+    Settings settings;
+    assert(again.load(settings, secrets) && again.uiLanguage() == 1);
+    assert(!strcmp(settings.message, original.message));
+    testNvsWriteFail = true;
+    assert(!again.saveUiLanguage(0) && again.uiLanguage() == 1);
+    testNvsWriteFail = false;
+    assert(again.reset(false) && again.uiLanguage() == 0);
+  }
 
   // v0.1.8 stored Secrets with 1,089 unused bytes of OTA fields. Loading must keep the Wi-Fi
   // profiles, store the smaller record, and drop the old copy even when the partition is full.

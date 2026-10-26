@@ -4,6 +4,7 @@
 #include "../lyrics/Lyrics.h"
 #include "../media/Session.h"
 #include "../settings/Values.h"
+#include "Language.h"
 #include "Navigation.h"
 #include <ctime>
 namespace nova {
@@ -51,10 +52,14 @@ public:
 private:
   void chrome(Canvas &canvas, const View &view);
 };
+// Rows of the device settings screen (App::input and settingsScreen share this count).
+inline constexpr unsigned settingItems = 8;
 void coreScreen(Canvas &canvas, const View &view);
 void nowScreen(Canvas &canvas, const View &view);
 void settingsScreen(Canvas &canvas, const View &view);
 void mediaScreen(Canvas &canvas, const View &view);
 void progressBar(Canvas &canvas, int y, uint32_t position, uint32_t duration);
 void formatTime(char *out, size_t size, uint32_t ms);
+// Notices and update status arrive already formatted; this shows them in the screen language.
+const char *shown(const char *text, char *buffer, size_t capacity);
 } // namespace nova
