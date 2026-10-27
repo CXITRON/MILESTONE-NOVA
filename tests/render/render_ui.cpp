@@ -255,6 +255,17 @@ int main(int argc, char **argv) {
   v.timer = &ready;
   save("CORE", "집중 타이머 · 시작 전");
   reset(Screen::Timer);
+  v.timer = &ready;
+  v.focusEditing = true;
+  save("CORE", "집중 타이머 · 시간 편집");
+  FocusTimer edited;
+  edited.reset(1530);
+  reset(Screen::Timer);
+  v.timer = &edited;
+  v.focusEditing = true;
+  v.focusStep = 2;
+  save("CORE", "집중 타이머 · 초 단위 편집");
+  reset(Screen::Timer);
   v.timer = &timerPaused;
   save("CORE", "집중 타이머 · 일시 정지");
   reset(Screen::Timer);
@@ -333,6 +344,8 @@ int main(int argc, char **argv) {
   // One-line hints must fit their boxes (Ui.cpp: update hint 216 px, footer 220 px).
   assert(c.textWidth(tr("길게 OK: 설치 후 재시작")) <= 216);
   assert(c.textWidth(tr("<> Layout  제어 불가")) <= 220);
+  for (const char *footer : {"OK Start  Hold Minutes", "<> MENU Step  OK Done"})
+    assert(c.textWidth(footer) <= 220);
   {
     char out[160];
     assert(trFormatted("새 버전 v0.2.0 사용 가능 (현재 v0.1.0)", out, sizeof(out)));

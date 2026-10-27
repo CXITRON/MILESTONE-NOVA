@@ -40,7 +40,11 @@ void Ui::chrome(Canvas &c, const View &v) {
                        : v.screen == Screen::Updates || v.screen == Screen::Recovery
                            ? "<> Select  OK / Hold OK"
                        : v.screen == Screen::Settings ? "PREV/NEXT  OK  BACK"
-                       : v.screen == Screen::Timer    ? "OK Start/Pause  Hold Reset"
+                       : v.screen == Screen::Timer
+                           ? (v.focusEditing ? "<> MENU Step  OK Done"
+                              : v.timer && v.timer->state() == FocusTimer::State::Idle
+                                  ? "OK Start  Hold Minutes"
+                                  : "OK Start/Pause  Hold Reset")
                        : v.screen == Screen::Now
                            ? (v.canPlay ? "OK Play/Pause  Hold Layout"
                                         : tr("<> Layout  제어 불가"))

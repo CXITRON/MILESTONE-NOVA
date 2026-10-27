@@ -35,10 +35,11 @@ struct View {
   bool environmentValid = false, batteryValid = false, wifi = false, ble = false, sd = false,
        rtc = false;
   bool fastMedia = true; // Reference rendering can disable fusion for pixel equivalence tests.
-  bool mediaPlaying = false, sleeping = false, settingsEditing = false, warning = false;
+  bool mediaPlaying = false, sleeping = false, settingsEditing = false, focusEditing = false,
+       warning = false;
   float temperature = 0, humidity = 0, volts = 0, percent = 0;
   uint32_t mediaPosition = 0, mediaDuration = 0;
-  unsigned setting = 0;
+  unsigned setting = 0, focusStep = 0;
   const char *bleStatus = "Off";
   const char *wifiStatus = "Off";
   const char *ip = "--";
@@ -54,6 +55,9 @@ private:
 };
 // Rows of the device settings screen (App::input and settingsScreen share this count).
 inline constexpr unsigned settingItems = 8;
+// Focus editor steps cycled with MENU: 5 min, 1 min, 1 s (App::input and the Focus screen share them).
+inline constexpr unsigned focusSteps = 3;
+inline constexpr int focusStepSeconds[focusSteps]{300, 60, 1};
 void coreScreen(Canvas &canvas, const View &view);
 void nowScreen(Canvas &canvas, const View &view);
 void settingsScreen(Canvas &canvas, const View &view);

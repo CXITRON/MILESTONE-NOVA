@@ -202,16 +202,21 @@ void App::changeSetting(int direction, uint32_t now) {
     settings_.rgbBrightness = std::clamp(int(settings_.rgbBrightness) + direction * 4, 0, 96);
     break;
   case 2:
-    settings_.focusSeconds = std::clamp(int(settings_.focusSeconds) + direction * 60, 60, 14400);
-    if (timer_.state() == FocusTimer::State::Idle)
-      timer_.reset(settings_.focusSeconds);
-    break;
+    adjustFocus(direction, 60, now);
+    return;
   case 3:
     settings_.lyricsView = !settings_.lyricsView;
     break;
   default:
     return;
   }
+  settingsDirty_ = true;
+  savedAt_ = now;
+}
+void App::adjustFocus(int direction, int step, uint32_t now) {
+  settings_.focusSeconds = std::clamp(int(settings_.focusSeconds) + direction * step, 60, 14400);
+  if (timer_.state() == FocusTimer::State::Idle)
+    timer_.reset(settings_.focusSeconds);
   settingsDirty_ = true;
   savedAt_ = now;
 }
@@ -280,20 +285,26 @@ void App::input(const InputEvent &e, uint32_t now) {
     return;
   }
   const bool updateBusy = firmware_.busy() || bootConfirm_.pending();
+  if (screen_ != Screen::Timer)
+    focusEditing_ = false;
   if (e.key == Key::Menu && e.press == Press::Long) {
     if (!power_.request(now, updateBusy))
       notice("업데이트 / 부팅 검증 대기", now);
     return;
   }
+  if (e.key == Key::Menu && e.press == Press::Short && focusEditing_) {
+    focusStep_ = (focusStep_ + 1) % focusSteps;
+    return;
+  }
   if (e.key == Key::Menu && e.press == Press::Short) {
     navigation_.openMenu();
     screen_ = navigation_.screen();
-    settingsEditing_ = false;
+    settingsEditing_ = focusEditing_ = false;
     return;
   }
   if (e.key == Key::Back && e.press == Press::Short) {
-    if (settingsEditing_)
-      settingsEditing_ = false;
+    if (settingsEditing_ || focusEditing_)
+      settingsEditing_ = focusEditing_ = false;
     else if (network_.ap() && screen_ != Screen::Menu) {
       if (firmware_.busy()) notice("펌웨어 전송 중 AP를 닫을 수 없습니다", now);
       else closeAp(now);
@@ -388,6 +399,14 @@ void App::input(const InputEvent &e, uint32_t now) {
       systemPage_ = (int(systemPage_) + 12 + direction) % 12;
     return;
   }
+  if (focusEditing_) {
+    // PREV/NEXT also repeat while held, so a long hold walks the minutes quickly.
+    if (direction)
+      adjustFocus(direction, focusStepSeconds[focusStep_], now);
+    else if (e.key == Key::Ok && e.press == Press::Short)
+      focusEditing_ = false;
+    return;
+  }
   if (direction) {
     if (screen_ == Screen::Now) {
       if (e.press == Press::Long) {
@@ -412,7 +431,12 @@ void App::input(const InputEvent &e, uint32_t now) {
   if (e.key != Key::Ok)
     return;
   if (screen_ == Screen::Timer) {
-    if (e.press == Press::Long)
+    // Hold OK resets a started timer; on an idle timer it opens the minutes editor instead.
+    if (e.press == Press::Long && timer_.state() == FocusTimer::State::Idle) {
+      focusEditing_ = true;
+      focusStep_ = 0;
+    }
+    else if (e.press == Press::Long)
       timer_.reset(settings_.focusSeconds);
     else if (e.press == Press::Short)
       timer_.toggle(now);
@@ -889,6 +913,8 @@ void App::render(uint32_t now) {
   v.ip = address_;
   v.setting = setting_;
   v.settingsEditing = settingsEditing_;
+  v.focusEditing = focusEditing_ && screen_ == Screen::Timer;
+  v.focusStep = focusStep_;
   v.mediaName = playback_.synchronized()                   ? "AP Sync / 브라우저 오디오"
                 : catalog_ && mediaItem_ < catalog_->count ? catalog_->entries[mediaItem_].title
                                                            : "MENU > 설정 AP에서 업로드";

@@ -183,8 +183,10 @@ void coreScreen(Canvas &c, const View &v) {
     break;
   case Screen::Timer: {
     formatTime(text, sizeof(text), v.timer->remaining(v.now) + 999);
-    c.text(0, 108, 240, 60, text, s.timeColor, 3, true);
-    const char *state = v.timer->state() == FocusTimer::State::Running    ? tr("집중하는 시간")
+    c.text(0, 108, 240, 60, text, v.focusEditing ? color::warning : s.timeColor, 3, true);
+    static constexpr const char *steps[focusSteps]{"Step 5 min", "Step 1 min", "Step 1 sec"};
+    const char *state = v.focusEditing                                    ? steps[v.focusStep % focusSteps]
+                        : v.timer->state() == FocusTimer::State::Running  ? tr("집중하는 시간")
                         : v.timer->state() == FocusTimer::State::Finished ? tr("수고했어요")
                         : v.timer->state() == FocusTimer::State::Paused   ? tr("일시 정지")
                                                                           : tr("준비되면 OK");

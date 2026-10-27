@@ -233,7 +233,8 @@ GPIO43/44 UART0, 115200 baud로 출력한다. USB console은 개행 단위 명�
 | CORE PREV/NEXT | 설정된 순서와 사용 화면 mask로 이동. 기존 7개 조합 + Focus/환경 |
 | BACK 짧게 | 편집/메뉴 취소. AP가 열려 있으면 AP와 Sync 종료 |
 | MENU 0.9초 이상 | OFF 요청; 업데이트/새 이미지 부팅 확인 중에는 거절 |
-| Focus OK | 시작/일시정지/재개; 길게 누르면 기본 시간으로 reset |
+| Focus OK | 시작/일시정지/재개; 시작한 뒤 길게 누르면 기본 시간으로 reset |
+| Focus 대기 중 길게 OK | 시간 편집: PREV/NEXT로 증감(누르고 있으면 반복), MENU로 단위 5분 → 1분 → 1초, OK·BACK으로 끝냄. 1분-240분, 바로 저장 |
 | NOW OK | iPhone이 지원하는 경우 play/pause; 길게 누르면 레이아웃 변경 |
 | NOW PREV/NEXT 짧게 / 길게 | 레이아웃 / 지원되는 이전·다음 곡 명령 |
 | MEDIA PREV/NEXT, OK | 사용 설정된 이전·다음 파일 / 로컬 영상 재생·정지 |

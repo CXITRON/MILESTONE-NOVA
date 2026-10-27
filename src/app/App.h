@@ -29,6 +29,7 @@ private:
   void tickRecovery(uint32_t now);
   void console(const char *command, uint32_t now);
   void changeSetting(int direction, uint32_t now);
+  void adjustFocus(int direction, int step, uint32_t now);
   void assets(uint32_t now);
   void internetUpdate(uint32_t now);
   void recordSaveFailure(uint32_t now);
@@ -89,8 +90,8 @@ private:
   uint32_t savedAt_ = 0, lastGeneration_ = 0, mediaGeneration_ = 1, mediaRequested_ = 0;
   uint32_t lastAssetRevision_ = 0;
   uint32_t noticed_ = 0, shutdownAt_ = 0;
-  unsigned setting_ = 0, mediaItem_ = 0;
-  bool bleStarted_ = false, settingsDirty_ = false, settingsEditing_ = false;
+  unsigned setting_ = 0, mediaItem_ = 0, focusStep_ = 0;
+  bool bleStarted_ = false, settingsDirty_ = false, settingsEditing_ = false, focusEditing_ = false;
   bool mediaValid_ = false, assetsNeeded_ = false, assetPending_ = false,
        mediaFailed_ = false, assetError_ = false;
   bool shutdownStarted_ = false, storageStopping_ = false, peripheralsOff_ = false;
