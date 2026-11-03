@@ -66,10 +66,18 @@ public:
   void toggleAlphabet();
   Result letter(const char *code);
   Result space();
-  void erase();
+  void erase(); // The open syllable's last jamo, else the character before the cursor.
   void seal() { composer_.seal(); }
-  // Committed text followed by the open syllable, NUL-terminated.
-  size_t preview(char *out, size_t size) const;
+  // Starts editing saved text (cut at a character boundary to fit) with the cursor at the end.
+  void load(const char *utf8);
+  // Close the open syllable and step the cursor one character; false at either end.
+  bool left();
+  bool right();
+  bool atEnd() const { return cursor_ == length_; }
+  bool composing() const { return !composer_.empty(); }
+  // The text with the open syllable at the cursor, NUL-terminated; `cursor` gets the byte
+  // offset just after the open syllable, where the caret is drawn.
+  size_t preview(char *out, size_t size, size_t *cursor = nullptr) const;
   const char *finish(); // Closes the open syllable and returns the whole text.
   size_t bytes() const { return length_; }
   bool empty() const { return !length_ && composer_.empty(); }
@@ -79,7 +87,7 @@ private:
   bool append(const char *utf8);
   bool room(size_t extra) const;
   char text_[capacity + 1]{};
-  size_t length_ = 0;
+  size_t length_ = 0, cursor_ = 0; // Bytes; the cursor sits on a character boundary.
   Composer composer_;
   bool hangul_ = true;
 };

@@ -451,6 +451,46 @@ void morseTests() {
     r = e.letter(i % 2 ? "." : "--");
   check(r == morse::Editor::Result::Full && e.bytes() <= morse::Editor::capacity);
   check(validUtf8(e.finish()));
+  // Editing a saved memo: the cursor starts at the end and steps over whole characters.
+  e.clear();
+  e.load("가A나");
+  check(e.atEnd() && typed(e) == "가A나");
+  check(e.left() && e.left()); // Between 가 and A.
+  check(!e.atEnd());
+  size_t caret = 0;
+  char out[morse::Editor::capacity + 1];
+  // A syllable keyed mid-text composes at the cursor and shows there.
+  keyJamo(e, {"-...", "."}); // 다
+  e.preview(out, sizeof(out), &caret);
+  check(std::string(out) == "가다A나" && caret == strlen("가다"));
+  // Moving closes the open syllable, so a vowel after a move cannot steal its final.
+  keyJamo(e, {"-.-"}); // 당 (open)
+  check(e.composing());
+  check(e.right()); // Past A.
+  check(!e.composing());
+  keyJamo(e, {"."});
+  check(typed(e) == "가당Aㅏ나");
+  e.erase();
+  e.erase(); // Removes A, before the cursor.
+  check(typed(e) == "가당나");
+  e.preview(out, sizeof(out), &caret);
+  check(caret == strlen("가당"));
+  check(e.left() && e.left() && !e.left()); // Stops at the start.
+  e.erase(); // Nothing before the cursor.
+  check(typed(e) == "가당나");
+  check(e.space() == morse::Editor::Result::Added);
+  check(std::string(e.finish()) == " 가당나");
+  check(e.right() && e.right() && e.right() && e.atEnd() && !e.right());
+  // A newline from a file edited on a PC is one character to the cursor.
+  e.load("a\nb");
+  check(e.left() && e.left());
+  e.erase();
+  check(std::string(e.finish()) == "\nb");
+  // Loading too much keeps whole characters only.
+  std::string longText(morse::Editor::capacity - 1, 'x');
+  longText += "가";
+  e.load(longText.c_str());
+  check(e.bytes() == morse::Editor::capacity - 1 && validUtf8(e.finish()));
 }
 int main() {
   textTests();

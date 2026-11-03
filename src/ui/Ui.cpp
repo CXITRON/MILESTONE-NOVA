@@ -39,8 +39,8 @@ void Ui::chrome(Canvas &c, const View &v) {
   c.rect(16, 296, 208, 1, color::panel);
   const char *footer = v.screen == Screen::Menu || v.screen == Screen::MemoList
                            ? "<> Select  OK  BACK"
-                       : v.screen == Screen::MemoEdit ? "<Del  >Space  Hold> Split"
-                       : v.screen == Screen::MemoView ? "<> Scroll  Hold OK Delete"
+                       : v.screen == Screen::MemoEdit ? "<Del  >Space  Hold<> Move"
+                       : v.screen == Screen::MemoView ? "<> Scroll OK Edit Hold Del"
                        : v.screen == Screen::Setup ? "BACK Close AP"
                        : v.screen == Screen::Updates || v.screen == Screen::Recovery
                            ? "<> Select  OK / Hold OK"

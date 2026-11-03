@@ -344,7 +344,8 @@ int main(int argc, char **argv) {
   // One-line hints must fit their boxes (Ui.cpp: update hint 216 px, footer 220 px).
   assert(c.textWidth(tr("길게 OK: 설치 후 재시작")) <= 216);
   assert(c.textWidth(tr("<> Layout  제어 불가")) <= 220);
-  for (const char *footer : {"OK Start  Hold Minutes", "<> MENU Step  OK Done"})
+  for (const char *footer : {"OK Start  Hold Minutes", "<> MENU Step  OK Done",
+                             "<Del  >Space  Hold<> Move", "<> Scroll OK Edit Hold Del"})
     assert(c.textWidth(footer) <= 220);
   {
     char out[160];
@@ -445,6 +446,16 @@ int main(int argc, char **argv) {
               "IN VIEW WHILE OLDER ONES SCROLL OFF THE TOP OF THE BOX AS MORE IS KEYED IN "
               "ONE LETTER AT A TIME 12345";
   save("모스 메모", "입력 · 영문, 긴 글");
+  // Editing a saved memo: the caret mid-text, after the open syllable 당.
+  memo.hangul = true;
+  memo.code = "";
+  memo.text = "장보기: 우유, 계란\n내일 당 아침 7시";
+  memo.cursor = strlen("장보기: 우유, 계란\n내일 당");
+  const uint32_t blink = v.now;
+  v.now = 500; // Caret in its visible half of the blink.
+  save("모스 메모", "편집 · 가운데 커서");
+  v.now = blink;
+  memo.cursor = size_t(-1);
   reset(Screen::MemoView);
   v.memo = &memo;
   memo.name = "20261103-190512";

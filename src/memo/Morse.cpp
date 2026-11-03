@@ -2,6 +2,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstring>
+#include <utility>
 namespace nova::morse {
 void Keyer::reset() {
   clear();
@@ -241,18 +242,33 @@ size_t encodeUtf8(uint32_t cp, char (&out)[5]) {
   return n;
 }
 void Editor::clear() {
-  length_ = 0;
+  length_ = cursor_ = 0;
   text_[0] = 0;
   composer_.clear();
+}
+namespace {
+bool continuation(char c) { return (uint8_t(c) & 0xC0) == 0x80; }
+} // namespace
+void Editor::load(const char *utf8) {
+  clear();
+  size_t n = std::min(strlen(utf8), capacity);
+  while (n && n < strlen(utf8) && continuation(utf8[n]))
+    --n; // Never split a character.
+  memcpy(text_, utf8, n);
+  text_[n] = 0;
+  length_ = cursor_ = n;
 }
 // The open syllable is always shown, so it counts against the capacity before it closes.
 bool Editor::room(size_t extra) const { return length_ + 3 + extra <= capacity; }
 bool Editor::append(const char *utf8) {
+  // Inserts at the cursor and moves the cursor past the insertion.
   const size_t n = strlen(utf8);
   if (length_ + n > capacity)
     return false;
-  memcpy(text_ + length_, utf8, n + 1);
+  memmove(text_ + cursor_ + n, text_ + cursor_, length_ - cursor_ + 1);
+  memcpy(text_ + cursor_, utf8, n);
   length_ += n;
+  cursor_ += n;
   return true;
 }
 bool Editor::append(uint32_t cp) {
@@ -295,25 +311,53 @@ Editor::Result Editor::space() {
 void Editor::erase() {
   if (composer_.erase())
     return;
-  // Remove one whole UTF-8 codepoint.
-  while (length_ && (uint8_t(text_[length_ - 1]) & 0xC0) == 0x80)
-    --length_;
-  if (length_)
-    --length_;
-  text_[length_] = 0;
+  // Remove one whole UTF-8 codepoint before the cursor.
+  size_t start = cursor_;
+  while (start && continuation(text_[start - 1]))
+    --start;
+  if (start)
+    --start;
+  memmove(text_ + start, text_ + cursor_, length_ - cursor_ + 1);
+  length_ -= cursor_ - start;
+  cursor_ = start;
 }
-size_t Editor::preview(char *out, size_t size) const {
+bool Editor::left() {
+  append(composer_.flush());
+  if (!cursor_)
+    return false;
+  do
+    --cursor_;
+  while (cursor_ && continuation(text_[cursor_]));
+  return true;
+}
+bool Editor::right() {
+  append(composer_.flush());
+  if (cursor_ == length_)
+    return false;
+  do
+    ++cursor_;
+  while (cursor_ < length_ && continuation(text_[cursor_]));
+  return true;
+}
+size_t Editor::preview(char *out, size_t size, size_t *cursor) const {
   if (!size)
     return 0;
   char open[5] = "";
   if (const uint32_t cp = composer_.current())
     encodeUtf8(cp, open);
-  const size_t a = std::min(length_, size - 1);
-  memcpy(out, text_, a);
-  const size_t b = std::min(strlen(open), size - 1 - a);
-  memcpy(out + a, open, b);
-  out[a + b] = 0;
-  return a + b;
+  // Before the cursor, the open syllable, then the rest; each part is cut to what fits.
+  size_t n = 0;
+  for (const auto &[part, bytes] : {std::pair<const char *, size_t>{text_, cursor_},
+                                    {open, strlen(open)},
+                                    {text_ + cursor_, length_ - cursor_}}) {
+    const size_t take = std::min(bytes, size - 1 - n);
+    memcpy(out + n, part, take);
+    n += take;
+    if (cursor && part == open)
+      *cursor = n;
+  }
+  out[n] = 0;
+  return n;
 }
 const char *Editor::finish() {
   append(composer_.flush());

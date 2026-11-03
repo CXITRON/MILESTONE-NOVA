@@ -90,6 +90,10 @@ private:
   bool memosReady_ = false, keyTiming_ = false, memoLoading_ = false, memoConfirm_ = false;
   bool memoListWanted_ = false, memoReadWanted_ = false, memoSaveWanted_ = false,
        memoRemoveWanted_ = false;
+  // memoEditing_: the editor holds the opened memo (memoName_), and saving replaces its file.
+  // memoWhole_: memoText_ is the whole file, so editing it cannot drop anything.
+  // memoSealHold_: this NEXT hold split a syllable, so its repeats do not move the cursor.
+  bool memoEditing_ = false, memoWhole_ = false, memoSealHold_ = false;
   PortalSnapshot *snapshot_ = nullptr;
   MediaCatalog *catalog_ = nullptr;
   Lyrics *lyrics_ = nullptr;

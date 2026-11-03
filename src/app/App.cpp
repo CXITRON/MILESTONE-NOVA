@@ -531,41 +531,69 @@ void App::memoInput(const InputEvent &e, uint32_t now) {
       if (!memoItem_) {
         editor_.clear();
         keyer_.reset();
+        memoEditing_ = false;
         navigation_.page(Screen::MemoEdit);
       } else {
         snprintf(memoName_, sizeof(memoName_), "%s", memoIndex_.names[memoItem_ - 1]);
         memoText_[0] = 0;
         memoScroll_ = 0;
-        memoConfirm_ = false;
+        memoConfirm_ = memoWhole_ = false;
         memoLoading_ = memoReadWanted_ = true;
         navigation_.page(Screen::MemoView);
       }
     } else if (e.key == Key::Back && tap)
       navigation_.back();
   } else if (screen_ == Screen::MemoEdit) {
-    if (e.key == Key::Prev && step) {
+    // PREV/NEXT tap: erase / space. Held (Long, then Repeat): move the cursor, except that the
+    // first hold of NEXT on an open syllable splits it (박|기 instead of 바끼).
+    if (e.key == Key::Next && e.press != Press::Repeat)
+      memoSealHold_ = false;
+    if (e.key == Key::Prev && tap) {
       if (!keyer_.empty())
         keyer_.clear(); // First drop the letter being keyed.
       else
         editor_.erase();
+    } else if (e.key == Key::Prev && step) {
+      keyer_.clear();
+      editor_.left();
     } else if (e.key == Key::Next && tap) {
       memoLetter(now);
       if (editor_.space() == morse::Editor::Result::Full)
         notice("메모가 가득 찼습니다", now);
-    } else if (e.key == Key::Next && e.press == Press::Long) {
+    } else if (e.key == Key::Next && e.press == Press::Long &&
+               (editor_.composing() || !keyer_.empty())) {
       memoLetter(now);
-      editor_.seal(); // 박|기 instead of 바끼.
+      editor_.seal();
+      memoSealHold_ = true;
       notice("음절 나눔", now);
+    } else if (e.key == Key::Next && step && !memoSealHold_) {
+      keyer_.clear();
+      editor_.right();
     } else if (e.key == Key::Menu && tap) {
       memoLetter(now);
       editor_.toggleAlphabet();
     } else if (e.key == Key::Back && tap) {
       memoLetter(now);
-      if (!editor_.empty()) {
-        memoSaveWanted_ = memoLoading_ = true;
-        notice("메모 저장 중", now);
+      if (!memoEditing_) {
+        if (!editor_.empty()) {
+          memoSaveWanted_ = memoLoading_ = true;
+          notice("메모 저장 중", now);
+        }
+        navigation_.page(Screen::MemoList);
+      } else {
+        // An edited memo goes back to its view. Unchanged text is not rewritten, and an emptied
+        // memo keeps its file: deleting stays the explicit long-OK action.
+        const char *text = editor_.finish();
+        if (!*text) {
+          notice("빈 메모는 저장하지 않습니다", now);
+          memoEditing_ = false;
+        } else if (strcmp(text, memoText_)) {
+          memoSaveWanted_ = memoLoading_ = true;
+          notice("메모 저장 중", now);
+        } else
+          memoEditing_ = false;
+        navigation_.page(Screen::MemoView);
       }
-      navigation_.page(Screen::MemoList);
     }
   } else if (screen_ == Screen::MemoView) {
     if (direction && step) {
@@ -580,9 +608,18 @@ void App::memoInput(const InputEvent &e, uint32_t now) {
         memoRemoveWanted_ = memoLoading_ = true;
         navigation_.page(Screen::MemoList);
       }
-    } else if (e.key == Key::Ok && tap)
+    } else if (e.key == Key::Ok && tap && memoConfirm_)
       memoConfirm_ = false;
-    else if (e.key == Key::Back && tap) {
+    else if (e.key == Key::Ok && tap && !memoLoading_) {
+      if (!memoWhole_)
+        notice("이 메모는 편집할 수 없습니다 / 1 KB 초과", now);
+      else {
+        editor_.load(memoText_);
+        keyer_.reset();
+        memoEditing_ = true;
+        navigation_.page(Screen::MemoEdit);
+      }
+    } else if (e.key == Key::Back && tap) {
       memoConfirm_ = false;
       navigation_.page(Screen::MemoList);
     }
@@ -603,7 +640,7 @@ void App::memoTick(uint32_t now) {
   if (!memos_.busy()) {
     if (memoSaveWanted_) {
       memoSaveWanted_ = false;
-      memos_.save(editor_.finish(), time(nullptr));
+      memos_.save(editor_.finish(), time(nullptr), memoEditing_ ? memoName_ : nullptr);
     } else if (memoRemoveWanted_) {
       memoRemoveWanted_ = false;
       memos_.remove(memoName_);
@@ -629,12 +666,19 @@ void App::memoTick(uint32_t now) {
     break;
   case Memos::Op::Read:
     snprintf(memoText_, sizeof(memoText_), "%s", ok ? memos_.text() : "");
+    memoWhole_ = ok && memos_.whole();
     memoLoading_ = false;
     if (!ok)
       notice("메모를 읽지 못했습니다", now);
     break;
   case Memos::Op::Save:
-    if (ok) {
+    if (ok && memoEditing_) {
+      notice("메모 저장됨", now);
+      snprintf(memoText_, sizeof(memoText_), "%s", editor_.finish()); // Fits: same capacity.
+      editor_.clear();
+      memoEditing_ = false;
+      memoLoading_ = false;
+    } else if (ok) {
       notice("메모 저장됨", now);
       editor_.clear();
       memoItem_ = 1; // The new memo is the newest.
@@ -643,7 +687,7 @@ void App::memoTick(uint32_t now) {
       // The text stays in the editor; going back there lets it be saved again.
       notice("메모 저장 실패 / SD 확인", now);
       memoLoading_ = false;
-      if (screen_ == Screen::MemoList) {
+      if (screen_ == Screen::MemoList || screen_ == Screen::MemoView) {
         navigation_.page(Screen::MemoEdit);
         screen_ = navigation_.screen();
       }
@@ -1147,7 +1191,7 @@ void App::render(uint32_t now) {
   MemoPanel memo;
   if (screen_ == Screen::MemoList || screen_ == Screen::MemoEdit || screen_ == Screen::MemoView) {
     if (screen_ == Screen::MemoEdit)
-      editor_.preview(memoPreview_, sizeof(memoPreview_));
+      editor_.preview(memoPreview_, sizeof(memoPreview_), &memo.cursor);
     memo.text = screen_ == Screen::MemoEdit ? memoPreview_ : memoText_;
     memo.code = keyer_.code();
     memo.name = memoName_;

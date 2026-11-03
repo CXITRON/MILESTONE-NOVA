@@ -29,13 +29,14 @@ bool Memos::start(Op op, const char *name) {
 bool Memos::list() { return start(Op::List, nullptr); }
 bool Memos::read(const char *name) { return start(Op::Read, name); }
 bool Memos::remove(const char *name) { return start(Op::Remove, name); }
-bool Memos::save(const char *text, time_t epoch) {
+bool Memos::save(const char *text, time_t epoch, const char *name) {
   if (busy())
     return false;
-  // The worker reads text_ only after start() publishes the request below.
+  // The worker reads text_ and replace_ only after start() publishes the request below.
   snprintf(text_, sizeof(text_), "%s", text);
   epoch_ = epoch;
-  return start(Op::Save, nullptr);
+  replace_ = name && *name;
+  return start(Op::Save, replace_ ? name : nullptr);
 }
 bool Memos::busy() const {
   if (!mutex_)
@@ -102,17 +103,26 @@ bool Memos::doRead() {
   job.data = reinterpret_cast<uint8_t *>(text_);
   job.length = sizeof(text_) - 1;
   text_[0] = 0;
+  whole_ = false;
   if (!storage_->execute(job))
     return false;
   text_[job.actual] = 0;
   // A file edited elsewhere may not be valid UTF-8; show what is safe.
   char *clean = reinterpret_cast<char *>(listing_);
   cleanUtf8(clean, sizeof(text_), text_);
+  whole_ = job.actual == job.total && !strcmp(clean, text_) && strlen(text_) == job.actual;
   strcpy(text_, clean);
   return true;
 }
 bool Memos::doSave() {
   FileJob job;
+  if (replace_) {
+    job.op = FileOp::Write;
+    memoPath(name_, job.path, sizeof(job.path));
+    job.data = reinterpret_cast<uint8_t *>(text_);
+    job.length = strlen(text_);
+    return storage_->execute(job);
+  }
   bool free = false;
   // Never overwrite: a second memo in the same second takes the next free second.
   for (unsigned bump = 0; bump < 10 && !free; ++bump) {

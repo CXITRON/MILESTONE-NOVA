@@ -56,20 +56,28 @@ void list(Canvas &c, const MemoPanel &m) {
 }
 void edit(Canvas &c, const View &v, const MemoPanel &m) {
   c.text(176, 39, 48, 20, m.hangul ? tr("한글") : "ABC", color::warning);
-  // The newest lines stay visible; older ones scroll off the top.
+  // The cursor's line stays visible, at the bottom once the text is longer than the panel.
   constexpr unsigned shown = 8;
   const MemoLine *l = wrapped;
   const std::string_view text = m.text;
   const unsigned count = std::min<unsigned>(
       wrapMemo(text, memoTextWidth, wrapped, std::size(wrapped)), std::size(wrapped));
-  const unsigned first = count > shown ? count - shown : 0;
+  const size_t cursor = std::min(m.cursor, text.size());
+  // The first line whose end reaches the cursor; a cursor at a wrap point opens the next line,
+  // except at the very end of the text.
+  unsigned at = count - 1;
+  for (unsigned i = 0; i < count; ++i)
+    if (cursor < l[i].end || (cursor == l[i].end && (i + 1 == count || l[i + 1].start > cursor))) {
+      at = i;
+      break;
+    }
+  const unsigned first = at >= shown ? at - shown + 1 : 0;
   c.rect(10, 64, 220, 8 + shown * lineStep, color::panel);
   lines(c, text, 68, first, shown, l, count, color::white);
   if (v.now / 500 % 2 || m.pressed) {
-    // Cursor after the last character.
-    const auto &last = l[count - 1];
-    const int x = 16 + c.textWidth(text.substr(last.start, last.end - last.start));
-    c.rect(std::min(x, 222), 68 + int(count - 1 - first) * lineStep, 2, 16, c.accent());
+    const size_t start = std::min<size_t>(l[at].start, cursor);
+    const int x = 16 + c.textWidth(text.substr(start, cursor - start));
+    c.rect(std::min(x, 222), 68 + int(at - first) * lineStep, 2, 16, c.accent());
   }
   if (m.code[0])
     symbols(c, m.code, 222);

@@ -20,6 +20,7 @@ struct MemoPanel {
   const char *name = "";  // Opened memo, YYYYMMDD-HHMMSS.
   const MemoIndex *index = nullptr;
   unsigned item = 0, scroll = 0;
+  size_t cursor = size_t(-1);   // Caret byte offset in the editor text; past the end = at the end.
   uint32_t split = 0, held = 0; // Dot/dash split and how long OK is held now (ms).
   bool hangul = true, pressed = false, loading = false, confirm = false;
 };
