@@ -86,7 +86,7 @@ bool Storage::begin(Settings &s, Secrets &secrets, bool importSettings) {
   if (!mounted_)
     log("SD", "unavailable; worker allows later remount");
   if (mounted_) {
-    for (const char *dir : {"/config", "/lyrics", "/artwork", "/media", "/logs", "/update"})
+    for (const char *dir : {"/config", "/lyrics", "/artwork", "/media", "/logs", "/update", "/memo"})
       SD.mkdir(dir);
     importConfig(s, secrets, importSettings);
   }

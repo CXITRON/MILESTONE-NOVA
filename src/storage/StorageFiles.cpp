@@ -539,7 +539,7 @@ void Storage::fileJob(FileJob &j) {
     catalog_->count = 0;
     catalogSequence_ = 0;
     if (mounted_) {
-      for (const char *dir : {"/config", "/lyrics", "/artwork", "/media", "/logs", "/update"})
+      for (const char *dir : {"/config", "/lyrics", "/artwork", "/media", "/logs", "/update", "/memo"})
         SD.mkdir(dir);
       recoverTransfer();
     } else

@@ -3,6 +3,7 @@
 #include "../display/Canvas.h"
 #include "../lyrics/Lyrics.h"
 #include "../media/Session.h"
+#include "../memo/MemoNames.h"
 #include "../settings/Values.h"
 #include "Language.h"
 #include "Navigation.h"
@@ -11,6 +12,16 @@ namespace nova {
 // Microseconds spent in each part of Ui::render, filled only when the app supplies a clock.
 struct RenderTimes {
   uint32_t clear = 0, chrome = 0, screen = 0, overlay = 0, post = 0;
+};
+// Morse memo screens: the list, the editor and an opened memo.
+struct MemoPanel {
+  const char *text = "";  // Editor text (with the open syllable) or the opened memo.
+  const char *code = "";  // Dots and dashes keyed for the current letter.
+  const char *name = "";  // Opened memo, YYYYMMDD-HHMMSS.
+  const MemoIndex *index = nullptr;
+  unsigned item = 0, scroll = 0;
+  uint32_t split = 0, held = 0; // Dot/dash split and how long OK is held now (ms).
+  bool hangul = true, pressed = false, loading = false, confirm = false;
 };
 struct View {
   int64_t (*clock)() = nullptr;  // Optional microsecond clock; null disables timing.
@@ -28,6 +39,7 @@ struct View {
   const MediaSession *media = nullptr;
   const Lyrics *lyrics = nullptr;
   const FocusTimer *timer = nullptr;
+  const MemoPanel *memo = nullptr;
   const uint16_t *artwork = nullptr;
   const uint16_t *mediaPixels = nullptr;
   uint32_t now = 0, uptime = 0, freeHeap = 0, minHeap = 0, freePsram = 0, loopMaxUs = 0;
@@ -61,6 +73,10 @@ inline constexpr int focusStepSeconds[focusSteps]{300, 60, 1};
 void coreScreen(Canvas &canvas, const View &view);
 void nowScreen(Canvas &canvas, const View &view);
 void settingsScreen(Canvas &canvas, const View &view);
+void memoScreen(Canvas &canvas, const View &view);
+// Memo body lines that fit on the opened-memo screen; App clamps scrolling with it.
+inline constexpr unsigned memoViewLines = 9;
+inline constexpr int memoTextWidth = 208;
 void mediaScreen(Canvas &canvas, const View &view);
 void progressBar(Canvas &canvas, int y, uint32_t position, uint32_t duration);
 void formatTime(char *out, size_t size, uint32_t ms);

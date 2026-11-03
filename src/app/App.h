@@ -7,6 +7,7 @@
 #include "../media/BleMedia.h"
 #include "../media/Playback.h"
 #include "../media/TrackAssets.h"
+#include "../memo/Memos.h"
 #include "../network/Network.h"
 #include "../portal/Portal.h"
 #include "../power/Power.h"
@@ -45,6 +46,10 @@ private:
   void closeAp(uint32_t now);
   void notice(const char *message, uint32_t now);
   void toggleLanguage(uint32_t now);
+  void openMemos(uint32_t now);
+  void memoInput(const InputEvent &event, uint32_t now);
+  void memoLetter(uint32_t now);
+  void memoTick(uint32_t now);
   Settings settings_;
   Secrets secrets_;
   SettingsStore store_;
@@ -74,6 +79,17 @@ private:
   Firmware::State lastUpdateState_ = Firmware::State::Idle;
   Portal portal_;
   Diagnostics diagnostics_;
+  // Morse memo: OK keys dots/dashes on MemoEdit; SD work goes through memos_ on the service worker.
+  Memos memos_;
+  morse::Keyer keyer_;
+  morse::Editor editor_;
+  MemoIndex memoIndex_;
+  char memoText_[morse::Editor::capacity + 1]{}, memoPreview_[morse::Editor::capacity + 1]{};
+  char memoName_[MemoIndex::nameSize]{};
+  unsigned memoItem_ = 0, memoScroll_ = 0;
+  bool memosReady_ = false, keyTiming_ = false, memoLoading_ = false, memoConfirm_ = false;
+  bool memoListWanted_ = false, memoReadWanted_ = false, memoSaveWanted_ = false,
+       memoRemoveWanted_ = false;
   PortalSnapshot *snapshot_ = nullptr;
   MediaCatalog *catalog_ = nullptr;
   Lyrics *lyrics_ = nullptr;

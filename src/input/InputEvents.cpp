@@ -8,7 +8,13 @@ void InputEvents::begin(const std::array<bool, 5> &pressed, uint32_t now) {
 void InputEvents::sample(const std::array<bool, 5> &pressed, uint32_t now) {
   for (size_t i = 0; i < keys_.size(); ++i) {
     const auto press = keys_[i].sample(pressed[i], now, i == 1 || i == 3);
-    if (press != Press::None)
+    bool down = false;
+    uint32_t at = 0;
+    const bool edge = keys_[i].edge(down, at);
+    if (timing_ && static_cast<Key>(i) == Key::Ok) {
+      if (edge)
+        push({Key::Ok, down ? Press::Down : Press::Up, at});
+    } else if (press != Press::None)
       push({static_cast<Key>(i), press});
   }
 }

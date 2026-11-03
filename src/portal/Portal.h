@@ -1,6 +1,7 @@
 #pragma once
 #include "../artwork/Artwork.h"
 #include "../lyrics/OnlineLyrics.h"
+#include "../memo/Memos.h"
 #include "../network/Network.h"
 #include "../ui/Navigation.h"
 #include "../update/Firmware.h"
@@ -59,6 +60,8 @@ struct PortalSnapshot {
 class Portal {
 public:
   bool begin(Storage &storage, Artwork &artwork, OnlineLyrics &lyrics, Firmware &firmware);
+  // Morse memo SD work runs on this worker too; set before begin().
+  void memos(Memos &memos) { memos_ = &memos; }
   void open(bool enabled);
   void suspend(bool enabled);
   bool suspended() const { return !ready_ || (suspendRequested_ && suspended_); }
@@ -106,6 +109,7 @@ private:
   Artwork *artwork_ = nullptr;
   OnlineLyrics *lyrics_ = nullptr;
   Firmware *firmware_ = nullptr;
+  Memos *memos_ = nullptr;
   WebServer server_{80};
   DNSServer dns_;
   QueueHandle_t commands_ = nullptr, logs_ = nullptr;

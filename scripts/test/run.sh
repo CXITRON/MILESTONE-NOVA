@@ -7,6 +7,7 @@ mkdir -p "$root/build/tests"
   "$root/tests/test_core.cpp" \
   "$root/src/core/Text.cpp" "$root/src/core/Logic.cpp" \
   "$root/src/input/Button.cpp" "$root/src/input/InputEvents.cpp" "$root/src/settings/Values.cpp" \
+  "$root/src/memo/Morse.cpp" \
   "$root/src/lyrics/Lyrics.cpp" "$root/src/media/Session.cpp" \
   "$root/src/media/HelperProtocol.cpp" "$root/src/media/AmsDecoder.cpp" -o "$root/build/tests/core"
 ASAN_OPTIONS=${ASAN_OPTIONS:-detect_leaks=0} "$root/build/tests/core"

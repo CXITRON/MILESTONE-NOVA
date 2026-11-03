@@ -415,6 +415,44 @@ int main(int argc, char **argv) {
   reset(Screen::Settings);
   v.setting = 4;
   save("메뉴 / 설정", "기기 설정 · 언어 한국어");
+  // Morse memo: list, keying (open syllable, pending code, held key), opened memo.
+  MemoIndex memoIndex;
+  for (const char *name : {"20261101-081500", "20261103-190512", "20261102-223001"})
+    memoIndex.add(name);
+  MemoPanel memo;
+  memo.index = &memoIndex;
+  reset(Screen::MemoList);
+  v.memo = &memo;
+  memo.item = 1;
+  save("모스 메모", "목록");
+  MemoIndex emptyIndex;
+  memo.index = &emptyIndex;
+  memo.item = 0;
+  save("모스 메모", "목록 · 비어 있음");
+  memo.index = &memoIndex;
+  reset(Screen::MemoEdit);
+  v.memo = &memo;
+  memo.text = "오늘 모스 메모 시험 SOS 1번 안ㄴ";
+  memo.code = ".-..";
+  memo.split = 240;
+  memo.pressed = true;
+  memo.held = 330;
+  save("모스 메모", "입력 · 한글, 선 누르는 중");
+  memo.hangul = false;
+  memo.pressed = false;
+  memo.code = "...--";
+  memo.text = "MORSE MEMO TEST WITH A LONG LINE THAT WRAPS AND KEEPS THE NEWEST LINES "
+              "IN VIEW WHILE OLDER ONES SCROLL OFF THE TOP OF THE BOX AS MORE IS KEYED IN "
+              "ONE LETTER AT A TIME 12345";
+  save("모스 메모", "입력 · 영문, 긴 글");
+  reset(Screen::MemoView);
+  v.memo = &memo;
+  memo.name = "20261103-190512";
+  memo.text = "안녕\n두 번째 줄입니다. 모스 부호로 적은 메모를 NOVA 화면에서 다시 봅니다. "
+              "길면 PREV와 NEXT로 내려 봅니다. 끝까지 내려가면 스크롤 막대가 아래에 닿습니다.";
+  memo.scroll = 1;
+  memo.confirm = true;
+  save("모스 메모", "보기 · 삭제 확인");
   if (fclose(manifest))
     return 2;
   printf("Rendered %u scenes using the firmware UI\n", count);

@@ -191,7 +191,7 @@ bool safeStoragePath(const char *path) {
   if (!path || path[0] != '/' || strlen(path) > 120 || !validUtf8(path))
     return false;
   bool root = false;
-  for (const char *p : {"/media", "/artwork", "/lyrics", "/logs", "/update", "/config"}) {
+  for (const char *p : {"/media", "/artwork", "/lyrics", "/logs", "/update", "/config", "/memo"}) {
     const size_t n = strlen(p);
     if (!strncmp(path, p, n) && (path[n] == '/' || !path[n]))
       root = true;

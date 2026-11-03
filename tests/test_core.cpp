@@ -7,6 +7,7 @@
 #include "media/AmsDecoder.h"
 #include "media/HelperProtocol.h"
 #include "media/Session.h"
+#include "memo/Morse.h"
 #include "settings/Values.h"
 #include <cassert>
 #include <cmath>
@@ -14,6 +15,7 @@
 #include <iostream>
 #include <limits>
 #include <random>
+#include <string>
 #include <vector>
 using namespace nova;
 namespace {
@@ -320,11 +322,142 @@ void amsTests() {
   check(session.position(0x1E8U) == 2000);
 }
 } // namespace
+// Keys one letter with the given dot/dash lengths and returns the keyer's code.
+std::string keyLetter(morse::Keyer &k, const char *code, uint32_t &now, uint32_t dot, uint32_t dash) {
+  for (const char *c = code; *c; ++c) {
+    k.down(now);
+    now += *c == '.' ? dot : dash;
+    k.up(now);
+    now += dot;
+    check(!k.letterDue(now));
+  }
+  now += 2 * k.split();
+  check(k.letterDue(now));
+  std::string out = k.code();
+  k.clear();
+  return out;
+}
+std::string typed(morse::Editor &e) {
+  char out[morse::Editor::capacity + 1];
+  e.preview(out, sizeof(out));
+  return out;
+}
+void keyJamo(morse::Editor &e, std::initializer_list<const char *> codes) {
+  for (const char *c : codes)
+    check(e.letter(c) == morse::Editor::Result::Added);
+}
+void morseTests() {
+  // Timing mode: OK reports debounced edges with the time the level changed; others unchanged.
+  InputEvents keys;
+  std::array<bool, 5> pressed{};
+  InputEvent event;
+  keys.begin(pressed, 0);
+  keys.timing(true);
+  for (uint32_t t = 0; t <= 2000; t += 5) {
+    pressed[2] = (t >= 100 && t < 160) || (t >= 400 && t < 1500);
+    pressed[3] = t >= 1700 && t < 1800;
+    keys.sample(pressed, t);
+  }
+  check(keys.pop(event) && event.key == Key::Ok && event.press == Press::Down && event.at == 100);
+  check(keys.pop(event) && event.press == Press::Up && event.at == 160);
+  check(keys.pop(event) && event.press == Press::Down && event.at == 400);
+  check(keys.pop(event) && event.press == Press::Up && event.at == 1500);
+  check(keys.pop(event) && event.key == Key::Next && event.press == Press::Short);
+  check(!keys.pop(event));
+  keys.timing(false);
+  for (uint32_t t = 2000; t <= 2400; t += 5) {
+    pressed[2] = t >= 2100 && t < 2200;
+    keys.sample(pressed, t);
+  }
+  check(keys.pop(event) && event.key == Key::Ok && event.press == Press::Short && !keys.pop(event));
+  // Practiced speed: 60 ms dots, 180 ms dashes; the split settles between them.
+  morse::Keyer k;
+  k.reset();
+  uint32_t now = 1000;
+  check(keyLetter(k, ".-..", now, 60, 180) == ".-..");
+  check(k.split() > 60 && k.split() < 180);
+  check(keyLetter(k, "--.-", now, 60, 180) == "--.-");
+  // A slow beginner (280 / 900 ms) is read correctly once both lengths have appeared.
+  k.reset();
+  now = 0xFFFFF000U; // Across the millis wrap.
+  keyLetter(k, "-.", now, 280, 900);
+  check(k.split() > 280 && k.split() < 900);
+  check(keyLetter(k, "..-.", now, 280, 900) == "..-.");
+  // Too many symbols mark the letter as overflowed instead of growing the code.
+  k.reset();
+  for (int i = 0; i < 9; ++i) {
+    k.down(i * 200);
+    k.up(i * 200 + 60);
+  }
+  check(k.overflow() && strlen(k.code()) == morse::Keyer::maxCode);
+  check(!strcmp(morse::latin("..--.."), "?") && !morse::latin("........"));
+  check(morse::jamo(".-..") == 0x3131 && morse::jamo("-.--") == 0x3154);
+
+  morse::Editor e;
+  e.clear();
+  // 안녕: ㅇㅏㄴ ㄴㅕㅇ — the second ㄴ starts a new syllable, ㅇ closes as a final.
+  keyJamo(e, {"-.-", ".", "..-.", "..-.", "...", "-.-"});
+  check(typed(e) == "안녕");
+  // 각 + ㅏ moves the final: 가가. 닭 keeps its cluster until a vowel takes ㄱ: 달기.
+  e.clear();
+  keyJamo(e, {".-..", ".", ".-..", "."});
+  check(typed(e) == "가가");
+  e.clear();
+  keyJamo(e, {"-...", ".", "...-", ".-..", "-.-"});
+  check(typed(e) == "닭ㅇ");
+  e.clear();
+  keyJamo(e, {"-...", ".", "...-", ".-..", "..-"});
+  check(typed(e) == "달기");
+  // Doubled consonants and compound vowels: 꽈, 있어 (ㅆ final stays before ㅇ), 밖이 → 바끼.
+  e.clear();
+  keyJamo(e, {".-..", ".-..", ".-", "."});
+  check(typed(e) == "꽈");
+  e.clear();
+  keyJamo(e, {"-.-", "..-", "--.", "--.", "-.-", "-"});
+  check(typed(e) == "있어");
+  e.clear();
+  keyJamo(e, {".--", ".", ".-..", ".-..", "..-"});
+  check(typed(e) == "바끼");
+  // Sealing keeps 박 closed so the next ㄱ starts 기.
+  e.clear();
+  keyJamo(e, {".--", ".", ".-.."});
+  e.seal();
+  keyJamo(e, {".-..", "..-"});
+  check(typed(e) == "박기");
+  // Erase removes jamo of the open syllable first, then whole committed characters.
+  e.erase();
+  check(typed(e) == "박ㄱ");
+  e.erase();
+  check(typed(e) == "박");
+  e.erase();
+  check(typed(e).empty() && e.empty());
+  e.erase(); // Erasing empty text is harmless.
+  check(typed(e).empty());
+  // Digits work in Hangul mode; letters need the Latin alphabet.
+  check(e.letter(".----") == morse::Editor::Result::Added);
+  check(e.letter("...---...") == morse::Editor::Result::Unknown);
+  e.toggleAlphabet();
+  check(!e.hangul());
+  keyJamo(e, {"...", "---", "..."});
+  check(e.space() == morse::Editor::Result::Added);
+  check(e.letter(".-.-.-") == morse::Editor::Result::Added);
+  check(std::string(e.finish()) == "1SOS .");
+  // The buffer refuses input instead of overflowing.
+  e.clear();
+  e.toggleAlphabet();
+  check(e.hangul());
+  morse::Editor::Result r = morse::Editor::Result::Added;
+  for (int i = 0; i < 2000 && r == morse::Editor::Result::Added; ++i)
+    r = e.letter(i % 2 ? "." : "--");
+  check(r == morse::Editor::Result::Full && e.bytes() <= morse::Editor::capacity);
+  check(validUtf8(e.finish()));
+}
 int main() {
   textTests();
   logicTests();
   buttonTests();
   inputBacklogTests();
+  morseTests();
   lyricTests();
   mediaTests();
   amsTests();

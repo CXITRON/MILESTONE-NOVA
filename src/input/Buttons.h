@@ -9,6 +9,7 @@ public:
   bool begin();
   bool poll(InputEvent &event);
   uint32_t dropped();
+  void timing(bool on);
 
 private:
   static void task(void *context);

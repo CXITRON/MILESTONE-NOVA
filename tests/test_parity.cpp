@@ -116,8 +116,9 @@ int main() {
   assert(p.sync(1, 0, 2000, false, 10));
   assert(p.position(100) == 2000);
   assert(safeStoragePath("/media/한글.nvi"));
+  assert(safeStoragePath("/memo/20261103-190512.txt"));
   for (const char *s : {"/media/../config/key", "/media//test", "/other/x", "media/x", "/media/./x",
-                        "/media/xx\\yy"})
+                        "/media/xx\\yy", "/memos/x", "/memo/../config/key"})
     assert(!safeStoragePath(s));
   std::vector<uint8_t> image(51216);
   memcpy(image.data(), "NVI1", 4);

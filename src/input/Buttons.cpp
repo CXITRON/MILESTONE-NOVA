@@ -33,6 +33,11 @@ void Buttons::task(void *context) {
     vTaskDelayUntil(&wake, period);
   }
 }
+void Buttons::timing(bool on) {
+  portENTER_CRITICAL(&gate_);
+  events_.timing(on);
+  portEXIT_CRITICAL(&gate_);
+}
 bool Buttons::poll(InputEvent &event) {
   if (!sampler_)
     sample(); // Allocation failure retains the previous synchronous behavior.

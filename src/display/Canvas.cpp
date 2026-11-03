@@ -1,5 +1,6 @@
 #include "Canvas.h"
 #include "../core/Text.h"
+#include "JamoFont.h"
 #include "SironFont.h"
 #include <algorithm>
 #include <cstring>
@@ -133,9 +134,15 @@ uint32_t asciiLookalike(uint32_t cp) {
     return '?';
   }
 }
+// Built-in bitmaps that the Unifont faces lack: Siron letters and lone Hangul jamo.
+const siron::Glyph *bitmap(uint32_t cp) {
+  if (const auto *g = siron::glyph(cp))
+    return g;
+  return jamo::glyph(cp);
+}
 } // namespace
 int Canvas::selectGlyph(uint32_t &cp) {
-  if (const auto *g = siron::glyph(cp))
+  if (const auto *g = bitmap(cp))
     return g->width;
   // Unifont Japanese omits halfwidth kana. Render their fullwidth equivalents
   // without changing stored metadata, track keys or lyric text.
@@ -171,7 +178,7 @@ int Canvas::selectGlyph(uint32_t &cp) {
   return advance;
 }
 void Canvas::drawGlyph(uint32_t cp) {
-  const auto *g = siron::glyph(cp);
+  const auto *g = bitmap(cp);
   if (!g) {
     u8g2_DrawGlyph(&font_, 0, 14, cp);
     return;

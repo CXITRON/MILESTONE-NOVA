@@ -31,11 +31,16 @@ void Ui::chrome(Canvas &c, const View &v) {
       "SYSTEM",        "NOW",        "MEDIA",     "SETTINGS",
       "MILESTONE",     "MENU",       "SETUP AP",  "UPDATE",
       "RECOVERY",      "MESSAGE",    "DASHBOARD", "CLOCK + MESSAGE",
-      "D-DAY + CLOCK", "DIAGNOSTICS"};
+      "D-DAY + CLOCK", "DIAGNOSTICS", "MEMO",
+      "MORSE MEMO",    "MEMO"};
+  static_assert(sizeof(titles) / sizeof(*titles) == unsigned(Screen::MemoView) + 1);
   if (v.screen != Screen::Media || v.sleeping || !v.fastMedia)
     c.text(16, 39, 208, 20, titles[static_cast<unsigned>(v.screen)], c.accent());
   c.rect(16, 296, 208, 1, color::panel);
-  const char *footer = v.screen == Screen::Menu    ? "<> Select  OK  BACK"
+  const char *footer = v.screen == Screen::Menu || v.screen == Screen::MemoList
+                           ? "<> Select  OK  BACK"
+                       : v.screen == Screen::MemoEdit ? "<Del  >Space  Hold> Split"
+                       : v.screen == Screen::MemoView ? "<> Scroll  Hold OK Delete"
                        : v.screen == Screen::Setup ? "BACK Close AP"
                        : v.screen == Screen::Updates || v.screen == Screen::Recovery
                            ? "<> Select  OK / Hold OK"
@@ -165,9 +170,10 @@ void Ui::render(Canvas &c, const View &v) {
   switch (v.screen) {
   case Screen::Menu: {
     const char *const labels[]{"CORE",         "MEDIA",        "NOW",
-                               tr("기기 설정"), tr("설정 AP"),   tr("업데이트"),
+                               tr("모스 메모"), tr("기기 설정"), tr("설정 AP"),   tr("업데이트"),
                                tr("복구"),      tr("진단"),      tr("재시작"),
                                tr("전원 OFF")};
+    static_assert(sizeof(labels) / sizeof(*labels) == unsigned(MenuAction::Count));
     const unsigned start = v.menu > 6 ? v.menu - 6 : 0;
     for (unsigned i = start; i < std::min(start + 7, unsigned(MenuAction::Count)); ++i) {
       const int y = 76 + (i - start) * 28;
@@ -216,6 +222,11 @@ void Ui::render(Canvas &c, const View &v) {
     break;
   case Screen::Settings:
     settingsScreen(c, v);
+    break;
+  case Screen::MemoList:
+  case Screen::MemoEdit:
+  case Screen::MemoView:
+    memoScreen(c, v);
     break;
   default:
     coreScreen(c, v);

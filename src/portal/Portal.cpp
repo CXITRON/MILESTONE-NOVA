@@ -1064,6 +1064,8 @@ void Portal::run() {
         lyrics_->process();
     }
     firmware_->process();
+    if (memos_ && !recoveryMode())
+      memos_->process();
     vTaskDelay(pdMS_TO_TICKS(5));
   }
 }

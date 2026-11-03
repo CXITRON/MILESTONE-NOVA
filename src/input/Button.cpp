@@ -2,8 +2,8 @@
 namespace nova {
 void Button::begin(bool pressed, uint32_t now) {
   raw_ = down_ = suppressed_ = pressed;
-  longSent_ = false;
-  changed_ = started_ = repeated_ = now;
+  longSent_ = edge_ = false;
+  changed_ = started_ = repeated_ = edgeAt_ = now;
 }
 Press Button::sample(bool pressed, uint32_t now, bool repeat) {
   if (pressed != raw_) {
@@ -12,6 +12,9 @@ Press Button::sample(bool pressed, uint32_t now, bool repeat) {
   }
   if (raw_ != down_ && now - changed_ >= 30) {
     down_ = raw_;
+    // A key held since begin() reports neither edge, like it reports no press.
+    edge_ = !suppressed_;
+    edgeAt_ = changed_;
     if (down_) {
       started_ = now;
       longSent_ = false;
@@ -36,5 +39,13 @@ Press Button::sample(bool pressed, uint32_t now, bool repeat) {
     return Press::Repeat;
   }
   return Press::None;
+}
+bool Button::edge(bool &down, uint32_t &at) {
+  if (!edge_)
+    return false;
+  edge_ = false;
+  down = down_;
+  at = edgeAt_;
+  return true;
 }
 } // namespace nova

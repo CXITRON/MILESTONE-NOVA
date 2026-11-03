@@ -20,12 +20,16 @@ enum class Screen : uint8_t {
   Dashboard,
   DateMessage,
   DDayClock,
-  Diagnostics
+  Diagnostics,
+  MemoList,
+  MemoEdit,
+  MemoView
 };
 enum class MenuAction : uint8_t {
   Core,
   Media,
   Now,
+  Memo,
   Settings,
   Setup,
   Updates,

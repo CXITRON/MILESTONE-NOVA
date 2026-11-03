@@ -123,6 +123,8 @@ void App::begin() {
   firmware_.recoveryMode(false);
   autoUpdate_.begin(millis());
   log("UPDATE", "GitHub Releases ready; automatic=%d", int(store_.autoUpdate()));
+  memosReady_ = memos_.begin(storage_);
+  portal_.memos(memos_);
   serviceReady_ = portal_.begin(storage_, artwork_, onlineLyrics_, firmware_);
   firmware_.serviceReady(serviceReady_);
   navigation_.core(settings_.coreStart);
@@ -264,6 +266,25 @@ void App::closeAp(uint32_t now) {
   notice("AP 종료 중", now);
 }
 void App::input(const InputEvent &e, uint32_t now) {
+  // Raw OK edges arrive only while the memo editor has turned key timing on.
+  if (e.press == Press::Down || e.press == Press::Up) {
+    if (screen_ != Screen::MemoEdit || power_.pending() || shutdownStarted_ || recovery_.active())
+      return;
+    lastInput_ = lastCycle_ = now;
+    if (screenOff_) {
+      // The press that wakes the screen is not a symbol; its release finds no press.
+      if (e.press == Press::Down) {
+        screenOff_ = false;
+        display_.brightness(settings_.lcdBrightness);
+      }
+      return;
+    }
+    if (e.press == Press::Down)
+      keyer_.down(e.at);
+    else
+      keyer_.up(e.at);
+    return;
+  }
   if (power_.pending() || shutdownStarted_)
     return;
   lastInput_ = lastCycle_ = now;
@@ -290,6 +311,10 @@ void App::input(const InputEvent &e, uint32_t now) {
   if (e.key == Key::Menu && e.press == Press::Long) {
     if (!power_.request(now, updateBusy))
       notice("업데이트 / 부팅 검증 대기", now);
+    return;
+  }
+  if (screen_ == Screen::MemoList || screen_ == Screen::MemoEdit || screen_ == Screen::MemoView) {
+    memoInput(e, now);
     return;
   }
   if (e.key == Key::Menu && e.press == Press::Short && focusEditing_) {
@@ -323,6 +348,8 @@ void App::input(const InputEvent &e, uint32_t now) {
       const auto action = navigation_.action();
       if (action <= MenuAction::Now)
         selectMode(static_cast<Profile>(action), now);
+      else if (action == MenuAction::Memo)
+        openMemos(now);
       else if (action == MenuAction::Settings)
         navigation_.page(Screen::Settings);
       else if (action == MenuAction::Setup) {
@@ -458,6 +485,178 @@ void App::input(const InputEvent &e, uint32_t now) {
     }
   } else if (screen_ == Screen::System && e.press == Press::Short)
     systemPage_ = (systemPage_ + 1) % 12;
+}
+void App::openMemos(uint32_t now) {
+  if (!memosReady_ || !storage_.mounted()) {
+    notice("모스 메모: SD 카드 필요", now);
+    return;
+  }
+  memoItem_ = 0;
+  memoLoading_ = memoListWanted_ = true;
+  navigation_.page(Screen::MemoList);
+}
+void App::memoLetter(uint32_t now) {
+  if (keyer_.empty())
+    return;
+  char text[48];
+  if (keyer_.overflow())
+    notice("알 수 없는 부호", now);
+  else
+    switch (editor_.letter(keyer_.code())) {
+    case morse::Editor::Result::Unknown:
+      snprintf(text, sizeof(text), "알 수 없는 부호 %s", keyer_.code());
+      notice(text, now);
+      break;
+    case morse::Editor::Result::Full:
+      notice("메모가 가득 찼습니다", now);
+      break;
+    case morse::Editor::Result::Added:
+      break;
+    }
+  keyer_.clear();
+}
+void App::memoInput(const InputEvent &e, uint32_t now) {
+  const int direction = e.key == Key::Prev ? -1 : e.key == Key::Next ? 1 : 0;
+  // Held PREV/NEXT keep stepping (Long, then Repeat), like the other lists.
+  const bool step = e.press == Press::Short || e.press == Press::Long || e.press == Press::Repeat;
+  const bool tap = e.press == Press::Short;
+  if (e.key == Key::Menu && tap && screen_ != Screen::MemoEdit) {
+    memoConfirm_ = false;
+    navigation_.openMenu();
+  } else if (screen_ == Screen::MemoList) {
+    const unsigned items = 1 + memoIndex_.count;
+    if (direction && step)
+      memoItem_ = (memoItem_ + items + direction) % items;
+    else if (e.key == Key::Ok && tap && !memoLoading_) {
+      if (!memoItem_) {
+        editor_.clear();
+        keyer_.reset();
+        navigation_.page(Screen::MemoEdit);
+      } else {
+        snprintf(memoName_, sizeof(memoName_), "%s", memoIndex_.names[memoItem_ - 1]);
+        memoText_[0] = 0;
+        memoScroll_ = 0;
+        memoConfirm_ = false;
+        memoLoading_ = memoReadWanted_ = true;
+        navigation_.page(Screen::MemoView);
+      }
+    } else if (e.key == Key::Back && tap)
+      navigation_.back();
+  } else if (screen_ == Screen::MemoEdit) {
+    if (e.key == Key::Prev && step) {
+      if (!keyer_.empty())
+        keyer_.clear(); // First drop the letter being keyed.
+      else
+        editor_.erase();
+    } else if (e.key == Key::Next && tap) {
+      memoLetter(now);
+      if (editor_.space() == morse::Editor::Result::Full)
+        notice("메모가 가득 찼습니다", now);
+    } else if (e.key == Key::Next && e.press == Press::Long) {
+      memoLetter(now);
+      editor_.seal(); // 박|기 instead of 바끼.
+      notice("음절 나눔", now);
+    } else if (e.key == Key::Menu && tap) {
+      memoLetter(now);
+      editor_.toggleAlphabet();
+    } else if (e.key == Key::Back && tap) {
+      memoLetter(now);
+      if (!editor_.empty()) {
+        memoSaveWanted_ = memoLoading_ = true;
+        notice("메모 저장 중", now);
+      }
+      navigation_.page(Screen::MemoList);
+    }
+  } else if (screen_ == Screen::MemoView) {
+    if (direction && step) {
+      const unsigned lines = wrapMemo(memoText_, memoTextWidth, nullptr, 0);
+      const unsigned last = lines > memoViewLines ? lines - memoViewLines : 0;
+      memoScroll_ = std::clamp(int(memoScroll_) + direction, 0, int(last));
+    } else if (e.key == Key::Ok && e.press == Press::Long && !memoLoading_) {
+      if (!memoConfirm_)
+        memoConfirm_ = true;
+      else {
+        memoConfirm_ = false;
+        memoRemoveWanted_ = memoLoading_ = true;
+        navigation_.page(Screen::MemoList);
+      }
+    } else if (e.key == Key::Ok && tap)
+      memoConfirm_ = false;
+    else if (e.key == Key::Back && tap) {
+      memoConfirm_ = false;
+      navigation_.page(Screen::MemoList);
+    }
+  }
+  screen_ = navigation_.screen();
+}
+void App::memoTick(uint32_t now) {
+  const bool timing = screen_ == Screen::MemoEdit && !recovery_.active();
+  if (timing != keyTiming_) {
+    buttons_.timing(timing);
+    keyTiming_ = timing;
+    keyer_.clear();
+  }
+  if (screen_ == Screen::MemoEdit && keyer_.letterDue(now))
+    memoLetter(now);
+  if (!memosReady_)
+    return;
+  if (!memos_.busy()) {
+    if (memoSaveWanted_) {
+      memoSaveWanted_ = false;
+      memos_.save(editor_.finish(), time(nullptr));
+    } else if (memoRemoveWanted_) {
+      memoRemoveWanted_ = false;
+      memos_.remove(memoName_);
+    } else if (memoReadWanted_) {
+      memoReadWanted_ = false;
+      memos_.read(memoName_);
+    } else if (memoListWanted_) {
+      memoListWanted_ = false;
+      memos_.list();
+    }
+  }
+  Memos::Op op;
+  bool ok;
+  if (!memos_.receive(op, ok))
+    return;
+  switch (op) {
+  case Memos::Op::List:
+    memoIndex_ = memos_.index();
+    memoLoading_ = false;
+    memoItem_ = std::min(memoItem_, memoIndex_.count);
+    if (!ok)
+      notice("메모 목록을 읽지 못했습니다", now);
+    break;
+  case Memos::Op::Read:
+    snprintf(memoText_, sizeof(memoText_), "%s", ok ? memos_.text() : "");
+    memoLoading_ = false;
+    if (!ok)
+      notice("메모를 읽지 못했습니다", now);
+    break;
+  case Memos::Op::Save:
+    if (ok) {
+      notice("메모 저장됨", now);
+      editor_.clear();
+      memoItem_ = 1; // The new memo is the newest.
+      memoListWanted_ = true;
+    } else {
+      // The text stays in the editor; going back there lets it be saved again.
+      notice("메모 저장 실패 / SD 확인", now);
+      memoLoading_ = false;
+      if (screen_ == Screen::MemoList) {
+        navigation_.page(Screen::MemoEdit);
+        screen_ = navigation_.screen();
+      }
+    }
+    break;
+  case Memos::Op::Remove:
+    notice(ok ? "메모 삭제됨" : "메모 삭제 실패", now);
+    memoItem_ = 0;
+    memoListWanted_ = true;
+    break;
+  case Memos::Op::None:
+    break;
+  }
 }
 void App::console(const char *cmd, uint32_t now) {
   if ((recovery_.active() || firmware_.busy()) && strcmp(cmd, "status") && strcmp(cmd, "help")) {
@@ -945,6 +1144,24 @@ void App::render(uint32_t now) {
   if (recovery_.active())
     v.notice = bootConfirm_.pending() ? "복구: BACK 길게 / 이전 펌웨어로 복귀" : "복구 모드: SD 생략 / BACK 길게 재시도";
   v.sleeping = power_.pending();
+  MemoPanel memo;
+  if (screen_ == Screen::MemoList || screen_ == Screen::MemoEdit || screen_ == Screen::MemoView) {
+    if (screen_ == Screen::MemoEdit)
+      editor_.preview(memoPreview_, sizeof(memoPreview_));
+    memo.text = screen_ == Screen::MemoEdit ? memoPreview_ : memoText_;
+    memo.code = keyer_.code();
+    memo.name = memoName_;
+    memo.index = &memoIndex_;
+    memo.item = memoItem_;
+    memo.scroll = memoScroll_;
+    memo.split = keyer_.split();
+    memo.held = keyer_.heldFor(millis());
+    memo.pressed = keyer_.pressed();
+    memo.hangul = editor_.hangul();
+    memo.loading = memoLoading_;
+    memo.confirm = memoConfirm_;
+    v.memo = &memo;
+  }
   renderBuildUs_ += uint64_t(esp_timer_get_time() - buildStart);
   ++renders_;
   ui_.render(display_.canvas(), v);
@@ -967,6 +1184,7 @@ void App::tick() {
     tickRecovery(now);
     return;
   }
+  memoTick(now);
   if (!shutdownStarted_) {
     network_.tick(now, ble_.connected());
     // At most one history line every two minutes, so a flapping link cannot wear the flash.
