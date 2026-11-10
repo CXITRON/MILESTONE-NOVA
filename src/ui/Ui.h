@@ -49,7 +49,7 @@ struct View {
        rtc = false;
   bool fastMedia = true; // Reference rendering can disable fusion for pixel equivalence tests.
   bool mediaPlaying = false, sleeping = false, settingsEditing = false, focusEditing = false,
-       warning = false;
+       warning = false, examSecondLanguage = true;
   float temperature = 0, humidity = 0, volts = 0, percent = 0;
   uint32_t mediaPosition = 0, mediaDuration = 0;
   unsigned setting = 0, focusStep = 0;
@@ -75,6 +75,8 @@ void coreScreen(Canvas &canvas, const View &view);
 void nowScreen(Canvas &canvas, const View &view);
 void settingsScreen(Canvas &canvas, const View &view);
 void memoScreen(Canvas &canvas, const View &view);
+// CSAT timetable: the period for the current local time, its bell stage and time to the next one.
+void examScreen(Canvas &canvas, const View &view);
 // Memo body lines that fit on the opened-memo screen; App clamps scrolling with it.
 inline constexpr unsigned memoViewLines = 9;
 inline constexpr int memoTextWidth = 208;

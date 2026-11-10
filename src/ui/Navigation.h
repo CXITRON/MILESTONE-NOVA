@@ -23,13 +23,15 @@ enum class Screen : uint8_t {
   Diagnostics,
   MemoList,
   MemoEdit,
-  MemoView
+  MemoView,
+  Exam
 };
 enum class MenuAction : uint8_t {
   Core,
   Media,
   Now,
   Memo,
+  Exam,
   Settings,
   Setup,
   Updates,

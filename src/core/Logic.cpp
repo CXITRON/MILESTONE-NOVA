@@ -37,6 +37,90 @@ float batteryPercent(float v) {
       return pct[i - 1] + (v - volts[i - 1]) * (pct[i] - pct[i - 1]) / (volts[i] - volts[i - 1]);
   return 100;
 }
+namespace {
+struct ExamSlot {
+  int start; // Minutes since midnight.
+  const char *period, *subject, *state, *bell; // bell: what starts this slot.
+  uint8_t kind; // 0 waiting, 1 answering, 2 last 10 minutes, 3 finished.
+};
+constexpr int hm(int h, int m) { return h * 60 + m; }
+constexpr ExamSlot examSlots[]{
+    {0, "수능", "입실 전", "08:10까지 입실 완료", "", 0},
+    {hm(8, 10), "1교시", "국어", "입실 완료 · 대기", "입실 완료", 0},
+    {hm(8, 25), "1교시", "국어", "예비령 · 답안지 배부", "예비령", 0},
+    {hm(8, 35), "1교시", "국어", "준비령 · 문제지 배부", "준비령", 0},
+    {hm(8, 40), "1교시", "국어", "본령 · 시험 중", "본령", 1},
+    {hm(9, 50), "1교시", "국어", "종료 10분 전", "종료 10분 전 예령", 2},
+    {hm(10, 0), "쉬는 시간", "휴식", "다음 2교시 수학", "종료령", 0},
+    {hm(10, 20), "2교시", "수학", "예비령 · 답안지 배부", "예비령", 0},
+    {hm(10, 25), "2교시", "수학", "준비령 · 문제지 배부", "준비령", 0},
+    {hm(10, 30), "2교시", "수학", "본령 · 시험 중", "본령", 1},
+    {hm(12, 0), "2교시", "수학", "종료 10분 전", "종료 10분 전 예령", 2},
+    {hm(12, 10), "점심 시간", "점심", "다음 3교시 영어", "종료령", 0},
+    {hm(13, 0), "3교시", "영어", "예비령 · 답안지 배부", "예비령", 0},
+    {hm(13, 5), "3교시", "영어", "준비령 · 문제지 배부", "준비령", 0},
+    {hm(13, 7), "3교시", "영어", "듣기 음질 테스트", "듣기 음질 테스트", 0},
+    {hm(13, 10), "3교시", "영어", "듣기 방송 · 시험 중", "듣기 방송 시작", 1},
+    {hm(14, 10), "3교시", "영어", "종료 10분 전", "종료 10분 전 예령", 2},
+    {hm(14, 20), "쉬는 시간", "휴식", "다음 4교시 한국사", "종료령", 0},
+    {hm(14, 40), "4교시", "한국사", "예비령 · 답안지 배부", "예비령", 0},
+    {hm(14, 45), "4교시", "한국사", "준비령 · 문제지 배부", "준비령", 0},
+    {hm(14, 50), "4교시", "한국사", "본령 · 시험 중", "본령", 1},
+    {hm(15, 10), "4교시", "한국사", "종료 10분 전", "종료 10분 전 예령", 2},
+    {hm(15, 20), "4교시", "탐구", "한국사 문답지 회수", "종료령", 0},
+    {hm(15, 25), "4교시", "탐구", "예비령 · 답안지 배부", "예비령", 0},
+    {hm(15, 30), "4교시", "탐구", "준비령 · 문제지 배부", "준비령", 0},
+    {hm(15, 35), "4교시 제1선택", "탐구 1", "본령 · 시험 중", "본령", 1},
+    {hm(15, 55), "4교시 제1선택", "탐구 1", "종료 10분 전", "종료 10분 전 예령", 2},
+    {hm(16, 5), "4교시", "탐구", "제1선택 문제지 회수", "종료령", 0},
+    {hm(16, 7), "4교시 제2선택", "탐구 2", "시험 중", "제2선택 시작", 1},
+    {hm(16, 27), "4교시 제2선택", "탐구 2", "종료 10분 전", "종료 10분 전 예령", 2},
+    {hm(16, 37), "쉬는 시간", "휴식", "다음 5교시 제2외국어/한문", "종료령", 0},
+    {hm(16, 55), "5교시 제2외국어/한문", "제2외국어", "예비령 · 답안지 배부", "예비령", 0},
+    {hm(17, 0), "5교시 제2외국어/한문", "제2외국어", "준비령 · 문제지 배부", "준비령", 0},
+    {hm(17, 5), "5교시 제2외국어/한문", "제2외국어", "본령 · 시험 중", "본령", 1},
+    {hm(17, 35), "5교시 제2외국어/한문", "제2외국어", "종료 10분 전", "종료 10분 전 예령", 2},
+    {hm(17, 45), "수능", "시험 종료", "수고하셨습니다", "종료령", 3},
+};
+constexpr unsigned examSlotCount = sizeof(examSlots) / sizeof(*examSlots);
+} // namespace
+ExamStatus examStatus(int seconds, bool secondLanguage) {
+  seconds = std::clamp(seconds, 0, 86399);
+  // Without the 5th period the slots from the 16:37 bell on are replaced by the final one.
+  constexpr unsigned fifth = 30; // {16:37 쉬는 시간} row.
+  static_assert(examSlots[fifth].start == hm(16, 37) && examSlots[fifth].kind == 0);
+  const unsigned count = secondLanguage ? examSlotCount : fifth + 1;
+  unsigned at = 0;
+  while (at + 1 < count && examSlots[at + 1].start * 60 <= seconds)
+    ++at;
+  ExamSlot slot = examSlots[at];
+  if (!secondLanguage && at == fifth) {
+    const ExamSlot &last = examSlots[examSlotCount - 1];
+    slot = {slot.start, last.period, last.subject, last.state, slot.bell, last.kind};
+  }
+  ExamStatus status;
+  status.period = slot.period;
+  status.subject = slot.subject;
+  status.state = slot.state;
+  status.testing = slot.kind == 1 || slot.kind == 2;
+  status.closing = slot.kind == 2;
+  status.finished = slot.kind == 3;
+  if (at + 1 < count) {
+    status.next = examSlots[at + 1].bell;
+    status.nextAt = examSlots[at + 1].start * 60;
+  }
+  if (status.testing) {
+    unsigned first = at, last = at;
+    while (first > 0 && (examSlots[first - 1].kind == 1 || examSlots[first - 1].kind == 2))
+      --first;
+    while (last + 1 < count &&
+           (examSlots[last + 1].kind == 1 || examSlots[last + 1].kind == 2))
+      ++last;
+    status.examStart = examSlots[first].start * 60;
+    status.examEnd = last + 1 < count ? examSlots[last + 1].start * 60 : -1;
+  }
+  return status;
+}
 void FocusTimer::reset(uint32_t seconds) {
   remainingMs_ = std::clamp<uint32_t>(seconds, 60, 14400) * 1000;
   state_ = State::Idle;

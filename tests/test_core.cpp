@@ -124,6 +124,47 @@ void logicTests() {
   check(!validDate(2026, 4, 31));
   check(civilDay(2026, 12, 31) + 1 == civilDay(2027, 1, 1));
   check(civilDay(2000, 3, 1) - civilDay(2000, 2, 28) == 2);
+  {
+    const auto at = [](int h, int m, int s = 0) { return examStatus(h * 3600 + m * 60 + s); };
+    auto e = at(6, 0);
+    check(!strcmp(e.subject, "입실 전") && e.nextAt == 8 * 3600 + 600 && !e.testing);
+    e = at(8, 25);
+    check(!strcmp(e.subject, "국어") && strstr(e.state, "예비령") && !strcmp(e.next, "준비령"));
+    e = at(8, 39, 59);
+    check(strstr(e.state, "문제지") && !strcmp(e.next, "본령") && e.nextAt == 8 * 3600 + 2400);
+    e = at(10, 40);
+    check(!strcmp(e.subject, "수학") && e.testing && !e.closing);
+    check(e.examStart == 10 * 3600 + 1800 && e.examEnd == 12 * 3600 + 600);
+    e = at(12, 5);
+    check(e.closing && e.examEnd == 12 * 3600 + 600 && !strcmp(e.next, "종료령"));
+    e = at(12, 30);
+    check(!strcmp(e.subject, "점심") && !e.testing);
+    e = at(13, 8);
+    check(!strcmp(e.subject, "영어") && !strcmp(e.next, "듣기 방송 시작"));
+    e = at(15, 40);
+    check(!strcmp(e.subject, "탐구 1") && e.examStart == 15 * 3600 + 2100 &&
+          e.examEnd == 16 * 3600 + 300);
+    e = at(16, 6);
+    check(!e.testing && strstr(e.state, "회수") && e.nextAt == 16 * 3600 + 420);
+    e = at(16, 30);
+    check(e.closing && e.examStart == 16 * 3600 + 420 && e.examEnd == 16 * 3600 + 2220);
+    e = at(17, 45);
+    check(e.finished && e.nextAt == -1 && !e.next[0]);
+    check(examStatus(-5).nextAt == examStatus(0).nextAt && examStatus(99999).finished);
+    // Without the 5th period: same day up to the 4th-period end, then finished.
+    for (int s = 0; s < 16 * 3600 + 37 * 60; s += 60) {
+      const auto with = examStatus(s), without = examStatus(s, false);
+      check(!strcmp(with.state, without.state) && with.nextAt == without.nextAt &&
+            with.examEnd == without.examEnd);
+    }
+    e = examStatus(16 * 3600 + 30 * 60, false);
+    check(e.closing && e.examEnd == 16 * 3600 + 2220 && !strcmp(e.next, "종료령"));
+    for (int s : {16 * 3600 + 37 * 60, 17 * 3600 + 10 * 60, 23 * 3600}) {
+      e = examStatus(s, false);
+      check(e.finished && !e.testing && e.nextAt == -1 && !strcmp(e.subject, "시험 종료"));
+    }
+    check(!examStatus(17 * 3600 + 10 * 60, true).finished);
+  }
   check(batteryPercent(3.2f) == 0);
   check(batteryPercent(4.2f) == 100);
   check(batteryPercent(NAN) == 0);

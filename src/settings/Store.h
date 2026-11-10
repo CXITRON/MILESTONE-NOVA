@@ -14,6 +14,9 @@ public:
   // record layout and existing saved settings stay valid.
   uint8_t uiLanguage() const { return uiLanguage_; }
   bool saveUiLanguage(uint8_t language);
+  // CSAT timetable: whether the 5th period (제2외국어/한문) is taken. Own NVS key as above.
+  bool examSecondLanguage() const { return examSecondLanguage_; }
+  bool saveExamSecondLanguage(bool enabled);
   // Validation/open failure or the exact ESP-IDF write/commit error, plus NVS entries then.
   const char *lastError() const { return error_; }
   unsigned nvsFree() const { return nvsFree_; }
@@ -27,6 +30,7 @@ private:
   bool hasSettings_ = false;
   bool autoUpdate_ = false;
   uint8_t uiLanguage_ = 0;
+  bool examSecondLanguage_ = true;
   const char *error_ = "";
   unsigned nvsFree_ = 0, nvsTotal_ = 0, usageFree_ = 0, usageTotal_ = 0;
 };

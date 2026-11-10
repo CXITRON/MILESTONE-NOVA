@@ -115,6 +115,7 @@ bool SettingsStore::load(Settings &s, Secrets &secrets) {
     return false;
   autoUpdate_ = p.getBool("update-auto", false);
   uiLanguage_ = p.getUChar("ui-lang", 0) == 1 ? 1 : 0;
+  examSecondLanguage_ = p.getBool("exam-l2", true);
   hasSettings_ = loadRecord(p, s, validSettings);
   if (hasSettings_ && p.isKey("settings"))
     p.remove("settings"); // Schema-1 blob, no longer needed once a current record exists.
@@ -258,6 +259,17 @@ bool SettingsStore::saveAutoUpdate(bool enabled) {
   p.end();
   if (ok)
     autoUpdate_ = enabled;
+  return ok;
+}
+bool SettingsStore::saveExamSecondLanguage(bool enabled) {
+  Preferences p;
+  if (!p.begin("nova", false))
+    return false;
+  const bool ok =
+      p.putBool("exam-l2", enabled) == 1 && p.getBool("exam-l2", !enabled) == enabled;
+  p.end();
+  if (ok)
+    examSecondLanguage_ = enabled;
   return ok;
 }
 bool SettingsStore::saveUiLanguage(uint8_t language) {

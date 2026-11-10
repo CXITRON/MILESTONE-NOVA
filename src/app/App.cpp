@@ -350,6 +350,8 @@ void App::input(const InputEvent &e, uint32_t now) {
         selectMode(static_cast<Profile>(action), now);
       else if (action == MenuAction::Memo)
         openMemos(now);
+      else if (action == MenuAction::Exam)
+        navigation_.page(Screen::Exam);
       else if (action == MenuAction::Settings)
         navigation_.page(Screen::Settings);
       else if (action == MenuAction::Setup) {
@@ -485,6 +487,13 @@ void App::input(const InputEvent &e, uint32_t now) {
     }
   } else if (screen_ == Screen::System && e.press == Press::Short)
     systemPage_ = (systemPage_ + 1) % 12;
+  else if (screen_ == Screen::Exam && e.press == Press::Short) {
+    const bool enabled = !store_.examSecondLanguage();
+    notice(!store_.saveExamSecondLanguage(enabled) ? "설정 저장 실패"
+           : enabled                               ? "5교시 제2외국어/한문 응시"
+                                                   : "5교시 미응시 / 4교시 후 종료",
+           now);
+  }
 }
 void App::openMemos(uint32_t now) {
   if (!memosReady_ || !storage_.mounted()) {
@@ -1188,6 +1197,7 @@ void App::render(uint32_t now) {
   if (recovery_.active())
     v.notice = bootConfirm_.pending() ? "복구: BACK 길게 / 이전 펌웨어로 복귀" : "복구 모드: SD 생략 / BACK 길게 재시도";
   v.sleeping = power_.pending();
+  v.examSecondLanguage = store_.examSecondLanguage();
   MemoPanel memo;
   if (screen_ == Screen::MemoList || screen_ == Screen::MemoEdit || screen_ == Screen::MemoView) {
     if (screen_ == Screen::MemoEdit)

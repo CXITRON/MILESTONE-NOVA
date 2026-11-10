@@ -464,6 +464,32 @@ int main(int argc, char **argv) {
   memo.scroll = 1;
   memo.confirm = true;
   save("모스 메모", "보기 · 삭제 확인");
+  // CSAT timetable at local times across the day (2026-11-19).
+  struct ExamScene {
+    int hour, minute;
+    const char *title;
+  };
+  static constexpr ExamScene examScenes[]{
+      {6, 30, "입실 전"},           {8, 30, "1교시 예비령"},          {10, 40, "2교시 수학 · 시험 중"},
+      {12, 3, "2교시 · 종료 10분 전"}, {12, 30, "점심"},              {13, 8, "3교시 듣기 음질 테스트"},
+      {16, 6, "탐구 제1선택 회수"},   {16, 58, "5교시 예비령"},         {18, 0, "시험 종료"}};
+  for (const auto &[hour, minute, title] : examScenes) {
+    reset(Screen::Exam);
+    tm local{};
+    local.tm_year = 2026 - 1900;
+    local.tm_mon = 10;
+    local.tm_mday = 19;
+    local.tm_hour = hour;
+    local.tm_min = minute;
+    local.tm_sec = 12;
+    local.tm_isdst = -1;
+    v.epoch = mktime(&local);
+    save("수능 시간표", title);
+    if (hour == 16 && minute == 58) {
+      v.examSecondLanguage = false;
+      save("수능 시간표", "제2외국어 미응시 · 16:58");
+    }
+  }
   if (fclose(manifest))
     return 2;
   printf("Rendered %u scenes using the firmware UI\n", count);

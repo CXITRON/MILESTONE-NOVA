@@ -229,4 +229,38 @@ void coreScreen(Canvas &c, const View &v) {
     break;
   }
 }
+void examScreen(Canvas &c, const View &v) {
+  const auto &s = *v.settings;
+  if (v.epoch < 1704067200) {
+    c.text(16, 130, 208, 40, tr("시간 설정 필요"), color::warning, 1, true);
+    return;
+  }
+  tm local{};
+  localtime_r(&v.epoch, &local);
+  const int seconds = local.tm_hour * 3600 + local.tm_min * 60 + local.tm_sec;
+  const ExamStatus e = examStatus(seconds, v.examSecondLanguage);
+  char text[64];
+  strftime(text, sizeof(text), "%H:%M:%S", &local);
+  c.text(124, 39, 100, 20, text, c.muted());
+  c.text(16, 74, 208, 22, tr(e.period), s.accentColor, 1, true);
+  const char *subject = tr(e.subject);
+  const int scale = c.textWidth(subject, 3) <= 236 ? 3 : c.textWidth(subject, 2) <= 236 ? 2 : 1;
+  c.text(0, scale == 3 ? 100 : 112, 240, 58, subject,
+         e.finished ? s.accentColor : s.timeColor, scale, true);
+  c.text(16, 166, 208, 22, tr(e.state),
+         e.closing ? color::warning : e.testing ? s.eventColor : color::white, 1, true);
+  if (e.nextAt >= 0) {
+    const int left = e.nextAt - seconds;
+    if (left >= 3600)
+      snprintf(text, sizeof(text), "%d:%02d:%02d", left / 3600, left / 60 % 60, left % 60);
+    else
+      snprintf(text, sizeof(text), "%02d:%02d", left / 60, left % 60);
+    c.text(0, 198, 240, 40, text, e.closing ? color::warning : s.timeColor, 2, true);
+    char next[80];
+    snprintf(next, sizeof(next), "%s %02d:%02d", tr(e.next), e.nextAt / 3600, e.nextAt / 60 % 60);
+    c.text(16, 244, 208, 22, next, s.mutedColor, 1, true);
+  }
+  if (e.testing && e.examEnd > e.examStart)
+    progressBar(c, 278, uint32_t(seconds - e.examStart), uint32_t(e.examEnd - e.examStart));
+}
 } // namespace nova
