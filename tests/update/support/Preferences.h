@@ -64,4 +64,11 @@ public:
     return value.size() == 1 ? value[0] : fallback;
   }
   size_t putUChar(const char *key, uint8_t value) { return putBytes(key, &value, 1); }
+  uint32_t getUInt(const char *key, uint32_t fallback = 0) {
+    const auto &value = testNvs[space_][key];
+    uint32_t out = fallback;
+    if (value.size() == sizeof(out)) memcpy(&out, value.data(), sizeof(out));
+    return out;
+  }
+  size_t putUInt(const char *key, uint32_t value) { return putBytes(key, &value, sizeof(value)); }
 };

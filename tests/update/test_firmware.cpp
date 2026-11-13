@@ -127,6 +127,25 @@ int main(int argc, char **argv) {
     testNvsWriteFail = false;
     assert(again.reset(false) && again.uiLanguage() == 0);
   }
+  // CSAT keys (5th period, practice run) are their own keys as well and reset to the defaults.
+  {
+    assert(store.save(original));
+    const auto before = testNvs["nova"];
+    SettingsStore exam;
+    Settings settings;
+    assert(exam.load(settings, secrets) && exam.examSecondLanguage() && !exam.examPracticeStart());
+    assert(exam.saveExamSecondLanguage(false) && exam.saveExamPracticeStart(1794000000u));
+    assert(testNvs["nova"]["a"] == before.at("a") && testNvs["nova"]["b"] == before.at("b"));
+    SettingsStore again;
+    assert(again.load(settings, secrets) && !again.examSecondLanguage() &&
+           again.examPracticeStart() == 1794000000u);
+    testNvsWriteFail = true;
+    assert(!again.saveExamPracticeStart(0) && again.examPracticeStart() == 1794000000u);
+    testNvsWriteFail = false;
+    assert(again.saveExamPracticeStart(0) && !again.examPracticeStart());
+    assert(again.saveExamPracticeStart(5) && again.reset(false));
+    assert(again.examSecondLanguage() && !again.examPracticeStart());
+  }
 
   // v0.1.8 stored Secrets with 1,089 unused bytes of OTA fields. Loading must keep the Wi-Fi
   // profiles, store the smaller record, and drop the old copy even when the partition is full.

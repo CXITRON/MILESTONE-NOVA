@@ -43,8 +43,11 @@ void Ui::chrome(Canvas &c, const View &v) {
                        : v.screen == Screen::MemoView ? "<> Scroll OK Edit Hold Del"
                        : v.screen == Screen::Setup ? "BACK Close AP"
                        : v.screen == Screen::Exam
-                           ? (v.examSecondLanguage ? tr("OK 제2외국어 응시  BACK")
-                                                   : tr("OK 제2외국어 미응시  BACK"))
+                           ? (v.examPracticeStart
+                                  ? (v.examSecondLanguage ? tr("OK 제2외국어 O  Hold 연습끝")
+                                                          : tr("OK 제2외국어 X  Hold 연습끝"))
+                                  : (v.examSecondLanguage ? tr("OK 제2외국어 O  Hold 연습")
+                                                          : tr("OK 제2외국어 X  Hold 연습")))
                        : v.screen == Screen::Updates || v.screen == Screen::Recovery
                            ? "<> Select  OK / Hold OK"
                        : v.screen == Screen::Settings ? "PREV/NEXT  OK  BACK"

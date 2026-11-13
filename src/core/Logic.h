@@ -19,6 +19,10 @@ struct ExamStatus {
 // secondsOfDay: local time 0..86399. Without the 5th period (제2외국어/한문) the day ends with
 // the 4th-period bell at 16:37.
 ExamStatus examStatus(int secondsOfDay, bool secondLanguage = true);
+// Practice run: the moment it starts counts as the 1st-period 예비령 (08:25), then the day runs at
+// real speed. Returns the timetable second for examStatus, clamped to 0..86399.
+inline constexpr int examPracticeOrigin = 8 * 3600 + 25 * 60;
+int examPracticeSeconds(int64_t now, int64_t start);
 class FocusTimer {
 public:
   enum class State { Idle, Running, Paused, Finished };

@@ -6,6 +6,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <string>
+#include <utility>
 #include <vector>
 using namespace nova;
 int main(int argc, char **argv) {
@@ -488,6 +489,23 @@ int main(int argc, char **argv) {
     if (hour == 16 && minute == 58) {
       v.examSecondLanguage = false;
       save("수능 시간표", "제2외국어 미응시 · 16:58");
+    }
+  }
+  // Practice run started at 19:00:00: 19:00 is 08:25 예비령, 21:15 is 10:40 수학.
+  {
+    tm local{};
+    local.tm_year = 2026 - 1900;
+    local.tm_mon = 10;
+    local.tm_mday = 13;
+    local.tm_hour = 19;
+    local.tm_isdst = -1;
+    const time_t start = mktime(&local);
+    for (const auto &[offset, title] : {std::pair{12, "연습 시작 · 1교시 예비령"},
+                                        std::pair{2 * 3600 + 15 * 60 + 12, "연습 · 2교시 수학"}}) {
+      reset(Screen::Exam);
+      v.examPracticeStart = uint32_t(start);
+      v.epoch = start + offset;
+      save("수능 시간표", title);
     }
   }
   if (fclose(manifest))

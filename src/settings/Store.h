@@ -17,6 +17,9 @@ public:
   // CSAT timetable: whether the 5th period (제2외국어/한문) is taken. Own NVS key as above.
   bool examSecondLanguage() const { return examSecondLanguage_; }
   bool saveExamSecondLanguage(bool enabled);
+  // CSAT practice run: UTC epoch when it started, 0 when the real timetable is shown. Own NVS key.
+  uint32_t examPracticeStart() const { return examPracticeStart_; }
+  bool saveExamPracticeStart(uint32_t epoch);
   // Validation/open failure or the exact ESP-IDF write/commit error, plus NVS entries then.
   const char *lastError() const { return error_; }
   unsigned nvsFree() const { return nvsFree_; }
@@ -31,6 +34,7 @@ private:
   bool autoUpdate_ = false;
   uint8_t uiLanguage_ = 0;
   bool examSecondLanguage_ = true;
+  uint32_t examPracticeStart_ = 0;
   const char *error_ = "";
   unsigned nvsFree_ = 0, nvsTotal_ = 0, usageFree_ = 0, usageTotal_ = 0;
 };

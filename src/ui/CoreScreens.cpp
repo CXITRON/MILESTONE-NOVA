@@ -237,11 +237,16 @@ void examScreen(Canvas &c, const View &v) {
   }
   tm local{};
   localtime_r(&v.epoch, &local);
-  const int seconds = local.tm_hour * 3600 + local.tm_min * 60 + local.tm_sec;
+  const int clock = local.tm_hour * 3600 + local.tm_min * 60 + local.tm_sec;
+  // Practice run: timetable time follows from the start moment; bells are shown in clock time.
+  const bool practice = v.examPracticeStart != 0;
+  const int seconds = practice ? examPracticeSeconds(v.epoch, v.examPracticeStart) : clock;
   const ExamStatus e = examStatus(seconds, v.examSecondLanguage);
   char text[64];
   strftime(text, sizeof(text), "%H:%M:%S", &local);
   c.text(124, 39, 100, 20, text, c.muted());
+  if (practice)
+    c.text(72, 39, 50, 20, tr("연습"), color::warning);
   c.text(16, 74, 208, 22, tr(e.period), s.accentColor, 1, true);
   const char *subject = tr(e.subject);
   const int scale = c.textWidth(subject, 3) <= 236 ? 3 : c.textWidth(subject, 2) <= 236 ? 2 : 1;
@@ -257,7 +262,8 @@ void examScreen(Canvas &c, const View &v) {
       snprintf(text, sizeof(text), "%02d:%02d", left / 60, left % 60);
     c.text(0, 198, 240, 40, text, e.closing ? color::warning : s.timeColor, 2, true);
     char next[80];
-    snprintf(next, sizeof(next), "%s %02d:%02d", tr(e.next), e.nextAt / 3600, e.nextAt / 60 % 60);
+    const int at = ((clock + left) % 86400 + 86400) % 86400; // Next bell on the device clock.
+    snprintf(next, sizeof(next), "%s %02d:%02d", tr(e.next), at / 3600, at / 60 % 60);
     c.text(16, 244, 208, 22, next, s.mutedColor, 1, true);
   }
   if (e.testing && e.examEnd > e.examStart)

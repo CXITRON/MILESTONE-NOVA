@@ -164,6 +164,18 @@ void logicTests() {
       check(e.finished && !e.testing && e.nextAt == -1 && !strcmp(e.subject, "시험 종료"));
     }
     check(!examStatus(17 * 3600 + 10 * 60, true).finished);
+    // Practice run: the start moment is the 1st-period 예비령, then real-time steps.
+    const int64_t start = 1794000000;
+    check(examPracticeSeconds(start, start) == 8 * 3600 + 25 * 60);
+    e = examStatus(examPracticeSeconds(start, start));
+    check(strstr(e.state, "예비령") && !strcmp(e.subject, "국어") && !strcmp(e.next, "준비령"));
+    e = examStatus(examPracticeSeconds(start + 15 * 60, start));
+    check(e.testing && !strcmp(e.subject, "국어") && e.examStart == 8 * 3600 + 2400);
+    e = examStatus(examPracticeSeconds(start + 2 * 3600 + 15 * 60, start)); // = 10:40
+    check(!strcmp(e.subject, "수학") && e.testing);
+    check(examPracticeSeconds(start - 600, start) == 8 * 3600 + 15 * 60); // clock moved back
+    check(examPracticeSeconds(start - 86400, start) == 0);
+    check(examStatus(examPracticeSeconds(start + 86400 * 3, start)).finished);
   }
   check(batteryPercent(3.2f) == 0);
   check(batteryPercent(4.2f) == 100);

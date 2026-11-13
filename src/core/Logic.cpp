@@ -121,6 +121,9 @@ ExamStatus examStatus(int seconds, bool secondLanguage) {
   }
   return status;
 }
+int examPracticeSeconds(int64_t now, int64_t start) {
+  return int(std::clamp<int64_t>(examPracticeOrigin + (now - start), 0, 86399));
+}
 void FocusTimer::reset(uint32_t seconds) {
   remainingMs_ = std::clamp<uint32_t>(seconds, 60, 14400) * 1000;
   state_ = State::Idle;
