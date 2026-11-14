@@ -51,6 +51,8 @@ struct View {
   bool mediaPlaying = false, sleeping = false, settingsEditing = false, focusEditing = false,
        warning = false, examSecondLanguage = true;
   uint32_t examPracticeStart = 0; // CSAT practice run start (UTC epoch), 0 = real timetable.
+  bool examEditing = false;       // Editing the device-clock minute of the 1st-period 본령.
+  int examEditMinute = 0;
   float temperature = 0, humidity = 0, volts = 0, percent = 0;
   uint32_t mediaPosition = 0, mediaDuration = 0;
   unsigned setting = 0, focusStep = 0;

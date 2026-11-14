@@ -43,7 +43,8 @@ void Ui::chrome(Canvas &c, const View &v) {
                        : v.screen == Screen::MemoView ? "<> Scroll OK Edit Hold Del"
                        : v.screen == Screen::Setup ? "BACK Close AP"
                        : v.screen == Screen::Exam
-                           ? (v.examPracticeStart
+                           ? v.examEditing ? tr("<> 1분  Hold 5분  OK 확정")
+                             : (v.examPracticeStart
                                   ? tr("<> 단계  Hold >스킵 OK끝")
                                   : (v.examSecondLanguage ? tr("OK 제2외국어 O  Hold 연습")
                                                           : tr("OK 제2외국어 X  Hold 연습")))

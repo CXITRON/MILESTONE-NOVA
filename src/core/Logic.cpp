@@ -151,6 +151,14 @@ int examStepTarget(int seconds, int direction, bool secondLanguage) {
   target = std::max(target, examPracticeOrigin);
   return target < seconds ? target : -1;
 }
+int64_t examPracticeStartFor(int64_t now, int clockSeconds, int bellMinute) {
+  int64_t diff = int64_t(bellMinute) * 60 - clockSeconds;
+  if (diff > 43200)
+    diff -= 86400;
+  else if (diff <= -43200)
+    diff += 86400;
+  return now + diff - examPracticeBellOffset;
+}
 int examPracticeSeconds(int64_t now, int64_t start) {
   return int(std::clamp<int64_t>(examPracticeOrigin + (now - start), 0, 86399));
 }

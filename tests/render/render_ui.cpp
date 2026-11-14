@@ -509,6 +509,12 @@ int main(int argc, char **argv) {
       v.epoch = start + offset;
       save("수능 시간표", title);
     }
+    // 본령 time editor at 19:00:12: 18:40 puts the run 20 minutes into 국어.
+    reset(Screen::Exam);
+    v.epoch = start + 12;
+    v.examEditing = true;
+    v.examEditMinute = 18 * 60 + 40;
+    save("수능 시간표", "본령 시각 맞추기 18:40");
   }
   if (fclose(manifest))
     return 2;

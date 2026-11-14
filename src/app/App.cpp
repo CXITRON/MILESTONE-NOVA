@@ -308,6 +308,8 @@ void App::input(const InputEvent &e, uint32_t now) {
   const bool updateBusy = firmware_.busy() || bootConfirm_.pending();
   if (screen_ != Screen::Timer)
     focusEditing_ = false;
+  if (screen_ != Screen::Exam)
+    examEditing_ = false;
   if (e.key == Key::Menu && e.press == Press::Long) {
     if (!power_.request(now, updateBusy))
       notice("업데이트 / 부팅 검증 대기", now);
@@ -324,12 +326,12 @@ void App::input(const InputEvent &e, uint32_t now) {
   if (e.key == Key::Menu && e.press == Press::Short) {
     navigation_.openMenu();
     screen_ = navigation_.screen();
-    settingsEditing_ = focusEditing_ = false;
+    settingsEditing_ = focusEditing_ = examEditing_ = false;
     return;
   }
   if (e.key == Key::Back && e.press == Press::Short) {
-    if (settingsEditing_ || focusEditing_)
-      settingsEditing_ = focusEditing_ = false;
+    if (settingsEditing_ || focusEditing_ || examEditing_)
+      settingsEditing_ = focusEditing_ = examEditing_ = false;
     else if (network_.ap() && screen_ != Screen::Menu) {
       if (firmware_.busy()) notice("펌웨어 전송 중 AP를 닫을 수 없습니다", now);
       else closeAp(now);
@@ -451,6 +453,16 @@ void App::input(const InputEvent &e, uint32_t now) {
         selectMedia(direction, now);
     } else if (screen_ == Screen::System && e.press == Press::Long)
       systemPage_ = (int(systemPage_) + 12 + direction) % 12;
+    else if (screen_ == Screen::Exam && examEditing_) {
+      // PREV/NEXT 1 min; holding walks 5 min per step. The press that opened the editor may
+      // still be held: skip its repeats until a new press (Short or Long) arrives.
+      if (e.press == Press::Short || e.press == Press::Long)
+        examEditHeld_ = false;
+      if (!examEditHeld_ && e.press != Press::None)
+        examEditMinute_ = (examEditMinute_ + direction * (e.press == Press::Short ? 1 : 5) +
+                           1440) % 1440;
+    } else if (screen_ == Screen::Exam && direction < 0 && e.press == Press::Long)
+      openExamEdit(now);
     else if (screen_ == Screen::Exam && direction > 0 && e.press == Press::Long)
       moveExamPractice(0, now);
     else if (screen_ == Screen::Exam && store_.examPracticeStart() && e.press == Press::Short)
@@ -491,7 +503,10 @@ void App::input(const InputEvent &e, uint32_t now) {
     }
   } else if (screen_ == Screen::System && e.press == Press::Short)
     systemPage_ = (systemPage_ + 1) % 12;
-  else if (screen_ == Screen::Exam && e.press == Press::Long) {
+  else if (screen_ == Screen::Exam && examEditing_) {
+    if (e.press == Press::Short)
+      confirmExamEdit(now);
+  } else if (screen_ == Screen::Exam && e.press == Press::Long) {
     // Hold OK: start a practice run now (counts as 08:25 예비령) or return to the real timetable.
     const time_t epoch = time(nullptr);
     const bool start = store_.examPracticeStart() == 0;
@@ -509,6 +524,36 @@ void App::input(const InputEvent &e, uint32_t now) {
                                                    : "5교시 미응시 / 4교시 후 종료",
            now);
   }
+}
+void App::openExamEdit(uint32_t now) {
+  // Hold PREV: enter when the 1st-period 본령 rang (e.g. a friend's start). Starts at the running
+  // practice's 본령, or at the current minute.
+  const time_t epoch = time(nullptr);
+  if (epoch < 1704067200) {
+    notice("시간 설정 필요", now);
+    return;
+  }
+  const uint32_t start = store_.examPracticeStart();
+  const time_t bell = start ? time_t(start) + examPracticeBellOffset : epoch;
+  tm local{};
+  localtime_r(&bell, &local);
+  examEditMinute_ = local.tm_hour * 60 + local.tm_min;
+  examEditing_ = examEditHeld_ = true;
+}
+void App::confirmExamEdit(uint32_t now) {
+  examEditing_ = false;
+  const time_t epoch = time(nullptr);
+  tm local{};
+  localtime_r(&epoch, &local);
+  const int64_t start = examPracticeStartFor(
+      epoch, local.tm_hour * 3600 + local.tm_min * 60 + local.tm_sec, examEditMinute_);
+  char text[96];
+  snprintf(text, sizeof(text), "연습 맞춤 / 국어 본령 %02d:%02d", examEditMinute_ / 60,
+           examEditMinute_ % 60);
+  notice(epoch >= 1704067200 && start > 0 && store_.saveExamPracticeStart(uint32_t(start))
+             ? text
+             : "설정 저장 실패",
+         now);
 }
 void App::moveExamPractice(int direction, uint32_t now) {
   // Practice run only. PREV/NEXT step one bell back or forward; Hold NEXT (direction 0) jumps
@@ -1207,6 +1252,8 @@ void App::render(uint32_t now) {
   v.settingsEditing = settingsEditing_;
   v.focusEditing = focusEditing_ && screen_ == Screen::Timer;
   v.focusStep = focusStep_;
+  v.examEditing = examEditing_ && screen_ == Screen::Exam;
+  v.examEditMinute = examEditMinute_;
   v.mediaName = playback_.synchronized()                   ? "AP Sync / 브라우저 오디오"
                 : catalog_ && mediaItem_ < catalog_->count ? catalog_->entries[mediaItem_].title
                                                            : "MENU > 설정 AP에서 업로드";

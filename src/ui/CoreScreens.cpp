@@ -239,6 +239,26 @@ void examScreen(Canvas &c, const View &v) {
   localtime_r(&v.epoch, &local);
   const int clock = local.tm_hour * 3600 + local.tm_min * 60 + local.tm_sec;
   // Practice run: timetable time follows from the start moment; bells are shown in clock time.
+  if (v.examEditing) {
+    // 본령 time editor: the device-clock minute the 1st-period 본령 rang, and where that puts
+    // the run right now.
+    char text[64];
+    strftime(text, sizeof(text), "%H:%M:%S", &local);
+    c.text(124, 39, 100, 20, text, c.muted());
+    c.text(72, 39, 50, 20, tr("맞춤"), color::warning);
+    c.text(16, 74, 208, 22, tr("1교시 국어 본령 시작"), s.accentColor, 1, true);
+    snprintf(text, sizeof(text), "%02d:%02d", v.examEditMinute / 60, v.examEditMinute % 60);
+    c.text(0, 104, 240, 58, text, s.timeColor, 3, true);
+    const int at = examPracticeSeconds(v.epoch, examPracticeStartFor(v.epoch, clock,
+                                                                     v.examEditMinute));
+    const ExamStatus e = examStatus(at, v.examSecondLanguage);
+    snprintf(text, sizeof(text), "%s %s", tr(e.period), tr(e.subject));
+    c.text(16, 182, 208, 22, text, c.muted(), 1, true);
+    c.text(16, 206, 208, 22, tr(e.state), c.muted(), 1, true);
+    snprintf(text, sizeof(text), "%s %02d:%02d", tr("시간표"), at / 3600, at / 60 % 60);
+    c.text(16, 230, 208, 22, text, s.mutedColor, 1, true);
+    return;
+  }
   const bool practice = v.examPracticeStart != 0;
   const int seconds = practice ? examPracticeSeconds(v.epoch, v.examPracticeStart) : clock;
   const ExamStatus e = examStatus(seconds, v.examSecondLanguage);

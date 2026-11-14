@@ -192,6 +192,26 @@ void logicTests() {
     check(examSkipTarget(16 * 3600 + 40 * 60) == 17 * 3600 + 5 * 60);   // 5th period
     check(examSkipTarget(16 * 3600 + 40 * 60, false) == -1);            // no 5th: finished
     check(examSkipTarget(18 * 3600) == -1);
+    // 본령 time: a friend's 09:40 본령 seen at 10:46:48 puts the run 1:06:48 into 국어.
+    {
+      const int64_t now = 1794000000;
+      const int clock = 10 * 3600 + 46 * 60 + 48;
+      const int64_t run = examPracticeStartFor(now, clock, 9 * 60 + 40);
+      check(examPracticeSeconds(now, run) == 9 * 3600 + 46 * 60 + 48);
+      check(examPracticeSeconds(now + 204, run) == 9 * 3600 + 50 * 60 + 12); // past 종료 10분 전
+      // A later minute schedules the run: 본령 at 19:00 seen at 18:30 is 08:10 입실 완료.
+      const int64_t later = examPracticeStartFor(now, 18 * 3600 + 30 * 60, 19 * 60);
+      check(examPracticeSeconds(now, later) == 8 * 3600 + 10 * 60);
+      check(examPracticeSeconds(now + 1800, later) == 8 * 3600 + 40 * 60);
+      // Across midnight: 23:50 seen at 00:20 is 30 min earlier, 00:10 seen at 23:50 is ahead.
+      check(examPracticeSeconds(now, examPracticeStartFor(now, 20 * 60, 23 * 60 + 50)) ==
+            8 * 3600 + 40 * 60 + 1800);
+      check(examPracticeSeconds(now, examPracticeStartFor(now, 23 * 3600 + 50 * 60, 10)) ==
+            8 * 3600 + 20 * 60);
+      // Same minute: the bell is now.
+      check(examPracticeSeconds(now, examPracticeStartFor(now, 9 * 3600, 9 * 60)) ==
+            8 * 3600 + 40 * 60);
+    }
     // Stage flags for the LEDs.
     e = examStatus(8 * 3600 + 26 * 60);
     check(e.warning && !e.ready && !e.testing);

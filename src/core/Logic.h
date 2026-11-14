@@ -24,6 +24,11 @@ ExamStatus examStatus(int secondsOfDay, bool secondLanguage = true);
 // real speed. Returns the timetable second for examStatus, clamped to 0..86399.
 inline constexpr int examPracticeOrigin = 8 * 3600 + 25 * 60;
 int examPracticeSeconds(int64_t now, int64_t start);
+// Practice start for a run whose 1st-period 본령 (08:40) rings at bellMinute (0..1439) of the device
+// clock. clockSeconds is the device clock now. The bell is taken within 12 h of now, so an earlier
+// time joins a run already going and a later one schedules it.
+inline constexpr int examPracticeBellOffset = 15 * 60; // 08:25 예비령 -> 08:40 본령.
+int64_t examPracticeStartFor(int64_t now, int clockSeconds, int bellMinute);
 // Practice skip: while waiting (예비령, 준비령, breaks) returns the second the next answering block
 // starts (본령, 듣기 방송, 제2선택), or -1 while testing, after the last exam or with nothing left.
 int examSkipTarget(int secondsOfDay, bool secondLanguage = true);

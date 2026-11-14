@@ -46,6 +46,8 @@ private:
   void closeAp(uint32_t now);
   void notice(const char *message, uint32_t now);
   void moveExamPractice(int direction, uint32_t now);
+  void openExamEdit(uint32_t now);
+  void confirmExamEdit(uint32_t now);
   void toggleLanguage(uint32_t now);
   void openMemos(uint32_t now);
   void memoInput(const InputEvent &event, uint32_t now);
@@ -113,6 +115,8 @@ private:
   uint32_t noticed_ = 0, shutdownAt_ = 0;
   unsigned setting_ = 0, mediaItem_ = 0, focusStep_ = 0;
   bool bleStarted_ = false, settingsDirty_ = false, settingsEditing_ = false, focusEditing_ = false;
+  bool examEditing_ = false, examEditHeld_ = false; // 본령 time editor; held: ignore opening repeats.
+  int examEditMinute_ = 0;
   bool mediaValid_ = false, assetsNeeded_ = false, assetPending_ = false,
        mediaFailed_ = false, assetError_ = false;
   bool shutdownStarted_ = false, storageStopping_ = false, peripheralsOff_ = false;
