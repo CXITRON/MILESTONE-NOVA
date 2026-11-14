@@ -451,6 +451,10 @@ void App::input(const InputEvent &e, uint32_t now) {
         selectMedia(direction, now);
     } else if (screen_ == Screen::System && e.press == Press::Long)
       systemPage_ = (int(systemPage_) + 12 + direction) % 12;
+    else if (screen_ == Screen::Exam && direction > 0 && e.press == Press::Long)
+      moveExamPractice(0, now);
+    else if (screen_ == Screen::Exam && store_.examPracticeStart() && e.press == Press::Short)
+      moveExamPractice(direction, now);
     else if (e.press == Press::Short) {
       navigation_.move(direction, settings_.coreMask, settings_.coreOrder);
       screen_ = navigation_.screen();
@@ -505,6 +509,31 @@ void App::input(const InputEvent &e, uint32_t now) {
                                                    : "5교시 미응시 / 4교시 후 종료",
            now);
   }
+}
+void App::moveExamPractice(int direction, uint32_t now) {
+  // Practice run only. PREV/NEXT step one bell back or forward; Hold NEXT (direction 0) jumps
+  // over 예비령/준비령 or a break to the next exam start. The stored start moment moves by the
+  // same amount, so the run keeps flowing from the new stage, also after a reboot.
+  const uint32_t start = store_.examPracticeStart();
+  if (!start) {
+    notice("연습 중에만 가능 / OK 길게 연습 시작", now);
+    return;
+  }
+  const bool l2 = store_.examSecondLanguage();
+  const int seconds = examPracticeSeconds(time(nullptr), start);
+  const int target = direction ? examStepTarget(seconds, direction, l2) : examSkipTarget(seconds, l2);
+  if (target < 0) {
+    notice(!direction ? "건너뛸 대기 없음" : direction > 0 ? "마지막 단계" : "첫 단계", now);
+    return;
+  }
+  if (!store_.saveExamPracticeStart(uint32_t(int64_t(start) - (target - seconds)))) {
+    notice("설정 저장 실패", now);
+    return;
+  }
+  const ExamStatus e = examStatus(target, l2);
+  char text[96];
+  snprintf(text, sizeof(text), "%s / %s", e.period, e.state);
+  notice(text, now);
 }
 void App::openMemos(uint32_t now) {
   if (!memosReady_ || !storage_.mounted()) {
@@ -1391,6 +1420,21 @@ void App::tick() {
     lights.timerFinished = timer_.state() == FocusTimer::State::Finished;
     lights.core = navigation_.profile() == Profile::Core;
     lights.dday = screen_ == Screen::DDay;
+    if (screen_ == Screen::Exam && epoch >= 1704067200) {
+      const uint32_t start = store_.examPracticeStart();
+      const int seconds = start ? examPracticeSeconds(epoch, start)
+                                : local.tm_hour * 3600 + local.tm_min * 60 + local.tm_sec;
+      const ExamStatus e = examStatus(seconds, store_.examSecondLanguage());
+      lights.exam = e.finished  ? ExamLight::Finished
+                    : e.closing ? ExamLight::Closing
+                    : e.testing ? ExamLight::Testing
+                    : e.warning ? ExamLight::Warning
+                    : e.ready   ? ExamLight::Ready
+                                : ExamLight::Waiting;
+      if (e.testing && e.examEnd > e.examStart)
+        lights.examLeft = unsigned(100 * (e.examEnd - seconds) / (e.examEnd - e.examStart));
+      lights.examMark = e.nextAt;
+    }
     lights.track = session_.track().key[0];
     lights.trackGeneration = session_.generation(); // SD revisions are not new songs.
     lights.artLoading = trackAssets_.artPending;

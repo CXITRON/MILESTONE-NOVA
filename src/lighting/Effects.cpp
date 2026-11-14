@@ -22,6 +22,14 @@ LightFrame LightEffects::render(uint32_t now, uint8_t limit, const LightState &s
   }
   if (feedback_ && now - feedbackAt_ >=
       (feedbackEffect_ == LightEffect::ArtReady ? 700u : 1200u)) feedback_ = false;
+  // A stage change on the CSAT screen (bell, or a practice step) flashes once. Opening the
+  // screen only records the current stage.
+  if (s.exam == ExamLight::None) examSeen_ = false;
+  else if (!examSeen_ || examMark_ != s.examMark) {
+    if (examSeen_) examBellAt_ = now + 1;  // +1 keeps "no bell yet" (0) distinct.
+    examSeen_ = true; examMark_ = s.examMark;
+  }
+  const bool examBell = s.exam != ExamLight::None && examBellAt_ && now - (examBellAt_ - 1) < 1500;
   if (s.sleeping || !limit) effect_ = LightEffect::Off;
   else if (s.critical) effect_ = LightEffect::Critical;
   else if (s.updating) effect_ = LightEffect::Update;
@@ -30,6 +38,13 @@ LightFrame LightEffects::render(uint32_t now, uint8_t limit, const LightState &s
   else if (s.synchronized && s.stale) effect_ = LightEffect::SyncLost;
   else if (s.ap && !s.synchronized) effect_ = LightEffect::Ap;
   else if (s.timerFinished) effect_ = LightEffect::TimerDone;
+  else if (examBell) effect_ = LightEffect::ExamBell;
+  else if (s.exam == ExamLight::Waiting) effect_ = LightEffect::ExamWaiting;
+  else if (s.exam == ExamLight::Warning) effect_ = LightEffect::ExamWarning;
+  else if (s.exam == ExamLight::Ready) effect_ = LightEffect::ExamReady;
+  else if (s.exam == ExamLight::Testing) effect_ = LightEffect::ExamTesting;
+  else if (s.exam == ExamLight::Closing) effect_ = LightEffect::ExamClosing;
+  else if (s.exam == ExamLight::Finished) effect_ = LightEffect::ExamFinished;
   else if (s.now && s.connected && !s.media && !s.synchronized && feedback_)
     effect_ = feedbackEffect_;
   else if (s.now && s.connected && !s.media && !s.synchronized && s.track && s.artLoading && !s.artValid && !failedSeen_ &&
@@ -87,6 +102,20 @@ LightFrame LightEffects::render(uint32_t now, uint8_t limit, const LightState &s
     case LightEffect::Clock: g = .7f; b = .55f; a = .22f + .3f * slow; break;
     case LightEffect::DDay: r = 1; g = .42f; b = .05f; a = .22f + .3f * slowWarm; break;
     case LightEffect::Idle: g = .7f; b = .4f; a = .07f; break;
+    case LightEffect::ExamBell:
+      r = g = b = 1; a = .55f * (1 - float(now - (examBellAt_ - 1)) / 1500); break;
+    case LightEffect::ExamWaiting: g = 1; b = .35f; a = .12f + .12f * slow; break;
+    case LightEffect::ExamWarning: r = 1; g = .5f; b = .05f; a = .22f; break;
+    case LightEffect::ExamReady: r = 1; g = .5f; b = .05f; a = .12f + .38f * breath; break;
+    case LightEffect::ExamTesting: {
+      // Remaining time drains the strip; the last lit LED fades with its share.
+      const float filled = float(std::min(s.examLeft, 100u)) * frame.size() / 100;
+      g = .55f; b = 1;
+      a = float(i) + 1 <= filled ? .28f : float(i) < filled ? .28f * std::max(.3f, filled - i) : 0;
+      break;
+    }
+    case LightEffect::ExamClosing: r = 1; g = .22f; a = .12f + .33f * breath; break;
+    case LightEffect::ExamFinished: g = 1; b = .45f; a = .5f * wave; break;
     }
     // Round, and never let a lit channel fall to zero: truncation turned every dim effect off
     // at low brightness limits.

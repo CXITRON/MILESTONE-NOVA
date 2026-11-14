@@ -45,6 +45,7 @@ private:
   void applySettings(uint32_t now);
   void closeAp(uint32_t now);
   void notice(const char *message, uint32_t now);
+  void moveExamPractice(int direction, uint32_t now);
   void toggleLanguage(uint32_t now);
   void openMemos(uint32_t now);
   void memoInput(const InputEvent &event, uint32_t now);

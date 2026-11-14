@@ -500,8 +500,10 @@ int main(int argc, char **argv) {
     local.tm_hour = 19;
     local.tm_isdst = -1;
     const time_t start = mktime(&local);
+    // The third scene is the same run after Hold NEXT at 19:00:12 skipped 예비령/준비령 (15 min).
     for (const auto &[offset, title] : {std::pair{12, "연습 시작 · 1교시 예비령"},
-                                        std::pair{2 * 3600 + 15 * 60 + 12, "연습 · 2교시 수학"}}) {
+                                        std::pair{2 * 3600 + 15 * 60 + 12, "연습 · 2교시 수학"},
+                                        std::pair{15 * 60 + 12, "연습 · 준비령 건너뜀"}}) {
       reset(Screen::Exam);
       v.examPracticeStart = uint32_t(start);
       v.epoch = start + offset;

@@ -176,6 +176,51 @@ void logicTests() {
     check(examPracticeSeconds(start - 600, start) == 8 * 3600 + 15 * 60); // clock moved back
     check(examPracticeSeconds(start - 86400, start) == 0);
     check(examStatus(examPracticeSeconds(start + 86400 * 3, start)).finished);
+    // Skip: waiting jumps to the next answering start; testing or finished has nothing to skip.
+    const int s0 = examPracticeSeconds(start + 12, start); // 08:25:12 예비령
+    check(examSkipTarget(s0) == 8 * 3600 + 40 * 60);
+    check(examPracticeSeconds(start + 12, start - (examSkipTarget(s0) - s0)) == 8 * 3600 + 2400);
+    check(examStatus(examSkipTarget(s0)).testing);
+    check(examSkipTarget(8 * 3600 + 36 * 60) == 8 * 3600 + 40 * 60);   // 준비령
+    check(examSkipTarget(9 * 3600) == -1);                              // 국어 본령
+    check(examSkipTarget(9 * 3600 + 55 * 60) == -1);                    // last 10 minutes
+    check(examSkipTarget(10 * 3600 + 5 * 60) == 10 * 3600 + 30 * 60);   // break -> 수학
+    check(examSkipTarget(12 * 3600 + 30 * 60) == 13 * 3600 + 10 * 60);  // lunch -> 듣기 방송
+    check(examSkipTarget(13 * 3600 + 8 * 60) == 13 * 3600 + 10 * 60);   // 듣기 음질 테스트
+    check(examSkipTarget(15 * 3600 + 22 * 60) == 15 * 3600 + 35 * 60);  // 한국사 회수 -> 탐구 1
+    check(examSkipTarget(16 * 3600 + 6 * 60) == 16 * 3600 + 7 * 60);    // 제1선택 회수 -> 탐구 2
+    check(examSkipTarget(16 * 3600 + 40 * 60) == 17 * 3600 + 5 * 60);   // 5th period
+    check(examSkipTarget(16 * 3600 + 40 * 60, false) == -1);            // no 5th: finished
+    check(examSkipTarget(18 * 3600) == -1);
+    // Stage flags for the LEDs.
+    e = examStatus(8 * 3600 + 26 * 60);
+    check(e.warning && !e.ready && !e.testing);
+    e = examStatus(8 * 3600 + 36 * 60);
+    check(e.ready && !e.warning);
+    check(examStatus(13 * 3600 + 8 * 60).ready);                         // listening sound check
+    e = examStatus(9 * 3600);
+    check(e.testing && !e.warning && !e.ready);
+    e = examStatus(10 * 3600 + 5 * 60);
+    check(!e.warning && !e.ready && !e.testing && !e.finished);       // break
+    check(!examStatus(16 * 3600 + 40 * 60, false).warning);
+    // Step: NEXT is the next bell; PREV restarts the stage, or goes back one within 5 s.
+    check(examStepTarget(8 * 3600 + 25 * 60, 1) == 8 * 3600 + 35 * 60);
+    check(examStepTarget(8 * 3600 + 35 * 60, 1) == 8 * 3600 + 40 * 60);
+    check(examStepTarget(9 * 3600, 1) == 9 * 3600 + 50 * 60);
+    check(examStepTarget(16 * 3600 + 30 * 60, 1, false) == 16 * 3600 + 37 * 60);
+    check(examStepTarget(16 * 3600 + 40 * 60, 1, false) == -1);       // finished, no 5th
+    check(examStepTarget(17 * 3600 + 50 * 60, 1) == -1);              // after the last bell
+    check(examStepTarget(9 * 3600, -1) == 8 * 3600 + 40 * 60);         // back to 본령 start
+    check(examStepTarget(8 * 3600 + 40 * 60 + 3, -1) == 8 * 3600 + 35 * 60); // within 5 s
+    check(examStepTarget(8 * 3600 + 30 * 60, -1) == 8 * 3600 + 25 * 60);
+    check(examStepTarget(8 * 3600 + 25 * 60 + 2, -1) == 8 * 3600 + 25 * 60); // floor 08:25
+    check(examStepTarget(8 * 3600 + 25 * 60, -1) == -1);
+    check(examStepTarget(18 * 3600, -1) == 17 * 3600 + 45 * 60);
+    check(examStepTarget(18 * 3600, -1, false) == 16 * 3600 + 37 * 60);
+    {
+      const int now = examPracticeSeconds(start + 12, start), next = examStepTarget(now, 1);
+      check(examPracticeSeconds(start + 12, start - (next - now)) == 8 * 3600 + 35 * 60);
+    }
   }
   check(batteryPercent(3.2f) == 0);
   check(batteryPercent(4.2f) == 100);

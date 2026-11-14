@@ -32,6 +32,43 @@ int main() {
     c.dday = false;
     for (const auto &pixel : core.render(9000, 0, c)) assert(!pixel.r && !pixel.g && !pixel.b);  // LEDs off
   }
+  // CSAT screen: stage effects, a white flash on a stage change, and the testing strip drains.
+  {
+    LightEffects x;
+    LightState c;
+    x.render(0, 24, c);
+    c.exam = ExamLight::Warning; c.examMark = 100;
+    x.render(2000, 24, c); assert(x.effect() == LightEffect::ExamWarning);  // opening: no flash
+    c.exam = ExamLight::Ready; c.examMark = 200;
+    x.render(2100, 24, c); assert(x.effect() == LightEffect::ExamBell);
+    for (const auto &p : x.render(2100, 24, c)) assert(p.r && p.g && p.b);
+    x.render(3500, 24, c); assert(x.effect() == LightEffect::ExamBell);
+    x.render(3700, 24, c); assert(x.effect() == LightEffect::ExamReady);
+    c.exam = ExamLight::Testing; c.examMark = 300;
+    x.render(9000, 24, c); assert(x.effect() == LightEffect::ExamBell);
+    for (const unsigned left : {100u, 60u, 10u}) {
+      c.examLeft = left;
+      const auto f = x.render(11000, 24, c);
+      assert(x.effect() == LightEffect::ExamTesting);
+      unsigned lit = 0;
+      for (const auto &p : f) lit += p.b != 0;
+      assert(lit == (left == 100 ? 5u : left == 60 ? 3u : 1u));
+    }
+    c.exam = ExamLight::Closing; c.examMark = 400;
+    x.render(20000, 24, c); assert(x.effect() == LightEffect::ExamBell);
+    x.render(22000, 24, c); assert(x.effect() == LightEffect::ExamClosing);
+    for (const auto &p : x.render(22000, 6, c)) assert(p.r);  // visible at the night limit
+    c.timerFinished = true;
+    x.render(22100, 24, c); assert(x.effect() == LightEffect::TimerDone);
+    c.timerFinished = false;
+    c.exam = ExamLight::None;
+    x.render(23000, 24, c); assert(x.effect() == LightEffect::Idle);
+    c.exam = ExamLight::Waiting; c.examMark = 500;               // reopening: no flash
+    x.render(24000, 24, c); assert(x.effect() == LightEffect::ExamWaiting);
+    c.exam = ExamLight::Finished; c.examMark = -1;
+    x.render(25000, 24, c); assert(x.effect() == LightEffect::ExamBell);
+    x.render(27000, 24, c); assert(x.effect() == LightEffect::ExamFinished);
+  }
   s.now = s.connected = s.playing = s.track = true;
   s.trackGeneration = 1;
   // No artwork (offline, disabled, blocked, missing metadata) is not a failure.

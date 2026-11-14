@@ -1,4 +1,5 @@
 #include "Logic.h"
+#include <cstring>
 #include <algorithm>
 #include <cmath>
 namespace nova {
@@ -83,12 +84,13 @@ constexpr ExamSlot examSlots[]{
     {hm(17, 45), "수능", "시험 종료", "수고하셨습니다", "종료령", 3},
 };
 constexpr unsigned examSlotCount = sizeof(examSlots) / sizeof(*examSlots);
+// Without the 5th period the slots from this {16:37 쉬는 시간} row on are replaced by the final one.
+constexpr unsigned examFifth = 30;
+static_assert(examSlots[examFifth].start == hm(16, 37) && examSlots[examFifth].kind == 0);
 } // namespace
 ExamStatus examStatus(int seconds, bool secondLanguage) {
   seconds = std::clamp(seconds, 0, 86399);
-  // Without the 5th period the slots from the 16:37 bell on are replaced by the final one.
-  constexpr unsigned fifth = 30; // {16:37 쉬는 시간} row.
-  static_assert(examSlots[fifth].start == hm(16, 37) && examSlots[fifth].kind == 0);
+  constexpr unsigned fifth = examFifth;
   const unsigned count = secondLanguage ? examSlotCount : fifth + 1;
   unsigned at = 0;
   while (at + 1 < count && examSlots[at + 1].start * 60 <= seconds)
@@ -105,6 +107,8 @@ ExamStatus examStatus(int seconds, bool secondLanguage) {
   status.testing = slot.kind == 1 || slot.kind == 2;
   status.closing = slot.kind == 2;
   status.finished = slot.kind == 3;
+  status.warning = !strcmp(slot.bell, "예비령");
+  status.ready = !strcmp(slot.bell, "준비령") || !strcmp(slot.bell, "듣기 음질 테스트");
   if (at + 1 < count) {
     status.next = examSlots[at + 1].bell;
     status.nextAt = examSlots[at + 1].start * 60;
@@ -120,6 +124,32 @@ ExamStatus examStatus(int seconds, bool secondLanguage) {
     status.examEnd = last + 1 < count ? examSlots[last + 1].start * 60 : -1;
   }
   return status;
+}
+int examSkipTarget(int seconds, bool secondLanguage) {
+  seconds = std::clamp(seconds, 0, 86399);
+  const ExamStatus now = examStatus(seconds, secondLanguage);
+  if (now.testing || now.finished)
+    return -1;
+  const unsigned count = secondLanguage ? examSlotCount : examFifth + 1;
+  for (unsigned i = 0; i < count; ++i)
+    if (examSlots[i].kind == 1 && examSlots[i].start * 60 > seconds)
+      return examSlots[i].start * 60;
+  return -1;
+}
+int examStepTarget(int seconds, int direction, bool secondLanguage) {
+  seconds = std::clamp(seconds, 0, 86399);
+  if (direction > 0)
+    return examStatus(seconds, secondLanguage).nextAt;
+  const unsigned count = secondLanguage ? examSlotCount : examFifth + 1;
+  unsigned at = 0;
+  while (at + 1 < count && examSlots[at + 1].start * 60 <= seconds)
+    ++at;
+  // Like a music player: a few seconds into a stage, PREV goes to the stage before it.
+  int target = examSlots[at].start * 60;
+  if (seconds - target <= 5 && at > 0)
+    target = examSlots[at - 1].start * 60;
+  target = std::max(target, examPracticeOrigin);
+  return target < seconds ? target : -1;
 }
 int examPracticeSeconds(int64_t now, int64_t start) {
   return int(std::clamp<int64_t>(examPracticeOrigin + (now - start), 0, 86399));
